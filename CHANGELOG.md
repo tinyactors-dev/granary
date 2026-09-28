@@ -7,6 +7,11 @@ refuses to publish a version without a `## [<version>]` entry (ADR 0182).
 
 ## [Unreleased]
 
+### Added
+- Release channels: `dev` builds (`<x.y.z>-dev.<epoch>.g<sha>`, dist-tag `dev`)
+  and stable releases (dist-tag `latest`), one release script for the laptop
+  and a manual GitHub Actions workflow that publishes with npm provenance.
+
 ## [0.1.0] - unreleased
 
 ### Added

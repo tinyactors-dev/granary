@@ -14,6 +14,6 @@ Then open the printed URL, connect GitHub from **Settings → GitHub** (creates 
 GitHub App for you) and install it on the repositories to guard.
 
 The full manual ships with the package in `docs/manual/` and lives at
-<https://github.com/tinyactors/granary/tree/main/docs/manual>.
+<https://github.com/tinyactors-dev/granary/tree/main/docs/manual>.
 
 License: MIT.

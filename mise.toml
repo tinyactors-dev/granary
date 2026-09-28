@@ -128,5 +128,14 @@ description = "Install the packed tarball on clean oven/bun Linux containers (ar
 run = "bun tools/release/verify.ts"
 
 [tasks."release:publish"]
-description = "Publish the verified tarball to npm — dry run unless `-- --yes` (ADR 0182)"
-run = "fnox exec -P release -- bun tools/release/publish.ts"
+description = "Publish the verified tarball to npm (dry run unless -- --yes; --channel dev|latest; ADR 0182/0185)"
+run = "bun tools/release/publish.ts"
+
+[tasks.release]
+description = "Release in one go: pack → verify → publish for -- --channel dev|latest (dry run unless --yes; ADR 0186)"
+run = "bun tools/release/release.ts"
+
+[tasks."release:promote"]
+description = "Point the npm `latest` dist-tag at an existing stable version (-- <version> --yes; ADR 0188)"
+run = "fnox exec -P release -- bun tools/release/promote.ts"
+

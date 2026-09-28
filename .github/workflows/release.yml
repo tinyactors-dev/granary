@@ -1,0 +1,114 @@
+# Manually triggered release (ADR 0186). Every step delegates to the single
+# release script, tools/release/release.ts — the same one used on a laptop.
+#
+#   pack      → one tarball, uploaded as an artifact
+#   verify    → installs that tarball natively on x86-64 and arm64 runners
+#   publish   → npm publish --provenance under the channel's dist-tag
+#               (dry run unless dry_run is false)
+#
+# npm credentials: npm trusted publishing (OIDC) for this repository and
+# workflow, configured on npmjs.com — no long-lived token. The repository
+# secret NPM_TOKEN is used instead when it is set.
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "npm dist-tag / channel (dev: <x.y.z>-dev.<epoch>.g<sha>; latest: needs tag v<version> + dated CHANGELOG)"
+        type: choice
+        options: [dev, latest]
+        default: dev
+      dry_run:
+        description: "Dry run (pack + verify + npm publish --dry-run)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  CHANNEL: ${{ inputs.channel }}
+  MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
+  MISE_YES: "1"
+  MISE_TASK_RUN_AUTO_INSTALL: "false" # pack only needs `mise run cli` (bun build)
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: jdx/mise-action@v2
+        with:
+          install: false
+      - run: bun tools/release/release.ts pack --channel "$CHANNEL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: |
+            release/*.tgz
+            release/meta.json
+          if-no-files-found: error
+
+  verify:
+    needs: pack
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest, platform: linux/amd64, arch: amd64 }
+          - { runner: ubuntu-24.04-arm, platform: linux/arm64, arch: arm64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: release
+      - run: bun tools/release/release.ts verify --platform "${{ matrix.platform }}" --out "release/verify-${{ matrix.arch }}.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verify-${{ matrix.arch }}
+          path: release/verify-${{ matrix.arch }}.json
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance + trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags, for the latest channel's v<version> check
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # npm >= 11.5 for trusted publishing and provenance
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: publish
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(publish --channel "$CHANNEL" --provenance)
+          if [ "$DRY_RUN" = "false" ]; then args+=(--yes); fi
+          bun tools/release/release.ts "${args[@]}"

@@ -2,8 +2,13 @@
  * release:pack (ADR 0180): build granary from a clean export of a git ref and
  * assemble the publishable npm package.
  *
- *   bun tools/release/pack.ts [--ref <git-ref>] [--working-tree] [--allow-missing-cli]
+ *   bun tools/release/pack.ts [--channel latest|dev] [--version <semver>] [--ref <git-ref>] [--working-tree] [--allow-missing-cli]
  *
+ * - Version (ADR 0185): `--channel latest` (default) uses package.json's
+ *   version; `--channel dev` computes `<base>-dev.<epoch>.g<sha7>`;
+ *   `--version` overrides both. The version is stamped into the *exported*
+ *   package.json before building, so the server and CLI bundles (which import
+ *   it, src/lib/version.ts) report it; the repo's package.json never changes.
  * - Source: `git archive <ref>` (default HEAD) into release/work/src, so only
  *   committed code ships and the developer's own build/ is never touched.
  *   `--working-tree` copies tracked + untracked-not-ignored files instead
@@ -22,17 +27,23 @@
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import {
+	CHANNELS,
 	META_FILE,
 	RELEASE_DEFAULTS,
 	RELEASE_DIR,
 	ROOT,
 	STAGE_DIR,
 	WORK_DIR,
+	bumpPatch,
+	devVersion,
 	die,
+	isPrerelease,
 	mustSh,
+	npmView,
 	rootVersion,
 	sh,
 	sha256File,
+	type Channel,
 	type PackMeta
 } from './common';
 
@@ -46,12 +57,23 @@ const ref = opt('--ref') ?? 'HEAD';
 const fromWorkingTree = flag('--working-tree');
 const allowMissingCli = flag('--allow-missing-cli');
 
-const version = await rootVersion();
+const channel = (opt('--channel') ?? 'latest') as Channel;
+if (!CHANNELS.includes(channel)) die(`--channel must be one of ${CHANNELS.join(', ')}`);
 const gitSha = (await mustSh(['git', 'rev-parse', `${ref}^{commit}`])).trim();
+const baseVersion = await rootVersion();
+let version = opt('--version') ?? baseVersion;
+if (!opt('--version') && channel === 'dev') {
+	// Dev builds sort above the newest stable release of this base (ADR 0185).
+	const published = await npmView<string>(`${RELEASE_DEFAULTS.name}@${baseVersion}`, 'version');
+	version = devVersion(published === baseVersion ? bumpPatch(baseVersion) : baseVersion, gitSha);
+}
+if (!/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/.test(version)) die(`not a valid SemVer: ${version}`);
+if (channel === 'latest' && isPrerelease(version)) die(`${version} is a prerelease — it can only go to the dev channel (ADR 0188)`);
+if (channel === 'dev' && !/-dev\./.test(version)) die(`dev channel versions look like <x.y.z>-dev.<epoch>.g<sha>, got ${version}`);
 const dirty = fromWorkingTree && (await mustSh(['git', 'status', '--porcelain'])).trim() !== '';
 const src = join(WORK_DIR, 'src');
 
-console.log(`release:pack ${RELEASE_DEFAULTS.name}@${version} from ${fromWorkingTree ? 'working tree' : ref} (${gitSha.slice(0, 12)}${dirty ? ', dirty' : ''})`);
+console.log(`release:pack ${RELEASE_DEFAULTS.name}@${version} [${channel}] from ${fromWorkingTree ? 'working tree' : ref} (${gitSha.slice(0, 12)}${dirty ? ', dirty' : ''})`);
 
 // 1. Clean export ------------------------------------------------------------
 await rm(WORK_DIR, { recursive: true, force: true });
@@ -71,6 +93,13 @@ if (fromWorkingTree) {
 	await mustSh(['git', 'archive', '--format=tar', '-o', tar, gitSha]);
 	await mustSh(['tar', '-xf', tar, '-C', src]);
 	await rm(tar);
+}
+
+// Stamp the release version into the export (never into the repo).
+if (version !== baseVersion) {
+	const pj = join(src, 'package.json');
+	const pkg = (await Bun.file(pj).json()) as Record<string, unknown>;
+	await Bun.write(pj, JSON.stringify({ ...pkg, version }, null, '\t') + '\n');
 }
 
 // 2. Build ------------------------------------------------------------------
@@ -176,6 +205,7 @@ const tarball = join(RELEASE_DIR, tgzName);
 const meta: PackMeta = {
 	name: RELEASE_DEFAULTS.name,
 	version,
+	channel,
 	gitSha,
 	source: fromWorkingTree ? 'working-tree' : 'git',
 	dirty,
