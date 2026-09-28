@@ -12,7 +12,7 @@ import { runCli, useHarness, type Harness } from './harness';
 import { consumeLoginLink, remoteCommand } from './github-app';
 import { expectClosedOnce, expectUntouched, fakeIssue, openIssue, openPullRequest, OWNER, settle, waitClosedOnGithub } from './helpers';
 import { actorFinished } from './traces';
-import { CLOSING_COMMENT_PR } from '../src/lib/schemas/github';
+import { DEFAULT_TEMPLATES } from '../src/lib/schemas/message-template';
 
 const T = 60_000;
 const h: () => Harness = useHarness();
@@ -45,7 +45,8 @@ async function prClosedOnce(i: Awaited<ReturnType<typeof openPullRequest>>) {
 	expect(pr.state_reason ?? null).toBeNull(); // pull requests have no state_reason
 	expect(pr.comments).toHaveLength(1);
 	expect(pr.comments[0]!.body).toContain(i.marker);
-	expect(pr.comments[0]!.body).toContain(CLOSING_COMMENT_PR);
+	// The pull request template (ADR 0250), not the issue one.
+	expect(pr.comments[0]!.body).toContain(DEFAULT_TEMPLATES.pull_request);
 }
 
 describe('pull requests', () => {

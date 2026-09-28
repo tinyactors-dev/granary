@@ -20,10 +20,10 @@ aren't allowed to be closed too, with their own closing message.
 - **Effects.** Same durable outbox, effect key `close:<repoId>:<number>`,
   marker and retries. The comment goes through the issues comments endpoint
   (works for pull requests); closing uses `PATCH /repos/{o}/{r}/pulls/{n}`
-  `{state:'closed'}` (pull requests have no `state_reason`). Default text:
-  "Thanks for the contribution! Pull requests in this repository can only be
-  opened by approved contributors, so this one was closed automatically."
-  (replaced by the configurable templates when they land).
+  `{state:'closed'}` (pull requests have no `state_reason`). The comment is
+  the closing-message template for kind `pull_request` (ADR 0250–0252;
+  repo override → global → built-in default), rendered when the outbox row
+  is written.
 - **Policy.** The same allowlist/association policy decides both kinds.
 - **Per-repo switches.** `github_repos.prs_enabled` (migration 2, default 1)
   next to the existing `enabled` (issues). A pull request is gated only when
