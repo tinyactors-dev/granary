@@ -69,7 +69,8 @@ ssh exe.dev integrations add http-proxy --name grafana-otlp \
 
 In granary, **Ops → Telemetry → New sink**: endpoint
 `http://grafana-otlp.int.exe.xyz`, authentication **exe-peer**, Grafana
-link `https://granary-grafana.exe.xyz/explore`. **Test sink**, save.
+link `https://granary-grafana.exe.xyz/explore`. **Test**, **Save**, then
+switch **Enabled** on and **Save** again.
 
 Alternatively use **exe-vm-token** with a token from
 `ssh exe.dev ssh-key generate-api-key --vm=granary-grafana --label=granary-telemetry`

@@ -25,7 +25,9 @@ Nothing is sent until you add a sink.
 - **Grafana link** (optional): the URL of your Grafana (for example its
   `/explore` page). granary links to it from Ops.
 
-**Test sink** posts a small request for each signal and shows the answers.
+**Test** posts an empty request for each signal and shows the answers.
+**Save**. A new sink is saved disabled; switch **Enabled** on and **Save**
+again to start exporting.
 
 Each sink batches, buffers up to 8 MiB when the endpoint is down (dropping
 the oldest data first and counting the drops), backs off, and recovers by

@@ -16,14 +16,17 @@ backup, decrypts it and checks it. Everything is under **Ops**.
    ID* and *Secret Access Key*, and your *Account ID* (32 hex characters,
    shown on the R2 overview page).
 3. In granary: **Ops → Destinations → New → Cloudflare R2**. Enter the
-   account ID, jurisdiction (`eu`), bucket, an optional prefix (default
-   `granary/`), the access key ID, and the secret access key (stored
-   encrypted, never shown again).
+   account ID, jurisdiction (`eu`), bucket, a prefix (default `prod/`),
+   the access key ID, and the secret access key (stored encrypted, never
+   shown again).
 4. Optionally paste the bucket's dashboard URL as **Storage console link**,
    so granary can link to it.
 5. **Test connection** writes, reads, lists and deletes a probe object, and
-   checks that a manifest can't be overwritten. A destination can only be
-   enabled after a passing test.
+   checks that a manifest can't be overwritten. **Save**. A new destination
+   is saved disabled; run **Test connection** once more on the saved
+   destination, then switch **Enabled** on and **Save**.
+6. **Add it to a plan** (next section). New destinations are not added to
+   existing plans automatically.
 
 A token scoped to one bucket can't create or configure buckets, so granary
 never does. R2 aborts unfinished multipart uploads after 7 days by default.
@@ -35,9 +38,12 @@ disk is fast to restore from but is not a backup.
 
 ## Plans
 
-**Ops → Plans** decides what is backed up where and how often. The default
-is both databases every hour to all enabled destinations, with a restore
-drill per destination every week. **Back up now** runs a plan immediately,
+**Ops → Plans** decides what is backed up where and how often. On first
+start granary creates a **Local copy (same disk)** destination and an
+**All databases** plan: both databases every hour to the local copy, with
+a restore drill per destination every week. Edit the plan and tick your
+off-site destination. Until you do, Ops reports *No off-site backup
+destination*. **Back up now** runs a plan immediately,
 as does `granary backup now` on the server.
 
 A backup runs only if the disk has room: free space minus the database size

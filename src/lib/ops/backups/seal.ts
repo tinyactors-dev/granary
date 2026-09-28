@@ -175,7 +175,7 @@ export async function unsealToFile(opts: { source: ReadableStream<Uint8Array>; m
 	let compBytes = 0;
 	let rawBytes = 0;
 	const partial = `${opts.outPath}.partial`;
-	const out = createWriteStream(partial);
+	const out = createWriteStream(partial, { mode: 0o600 }); // restored databases are as private as the originals
 	const unzstd = zlib.createZstdDecompress();
 	const done = new Promise<void>((resolve, reject) => {
 		unzstd.on('data', (c: Buffer) => {
