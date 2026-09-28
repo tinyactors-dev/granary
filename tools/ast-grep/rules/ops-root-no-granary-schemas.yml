@@ -5,6 +5,9 @@ severity: error
 message: the ops module must not import granary schemas (only ../schemas/standard) (ADR 0080)
 files:
   - src/lib/ops/*.ts
+# ast-grep's `*` also matches `/`: files in subdirectories import ops' own ../schemas/ legitimately.
+ignores:
+  - src/lib/ops/*/**
 utils:
   forbidden:
     all:
