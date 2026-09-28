@@ -7,8 +7,12 @@
  * trace, a `scxml.finished` whose parent step is never emitted (an orphan),
  * and now and then a failed trace with an error span. A new flow appears
  * every few seconds so polling has something to show; ids are stable.
+ * Call sites use tinyactors' own names (`scxml.macrostep …`); like the real
+ * exporter, `span()` renames them `<family> <kind> …` and records
+ * `tinyactors.span.{name,kind}` (ADR 0155).
  */
 import type { SpanAttributeValue, SpanSummary } from '../schemas/dev';
+import { applyFamilySpanName } from './span-name';
 
 let counter = 0;
 const id = (n: number) => {
@@ -29,6 +33,10 @@ class Builder {
 	constructor(readonly traceId: string) {}
 	span(name: string, start: number, dur: number, parent: string | null, attributes: Attrs, extra: Partial<SpanSummary> = {}): string {
 		const spanId = id(16);
+		const named = { name, attributes: { ...attributes } as Record<string, unknown> };
+		applyFamilySpanName(named, typeof attributes['granary.actor.family'] === 'string' ? (attributes['granary.actor.family'] as string) : null);
+		name = named.name;
+		attributes = named.attributes as Attrs;
 		this.spans.push({
 			traceId: this.traceId,
 			spanId,

@@ -49,7 +49,7 @@ function seed(now: number): FakeInfraStateValue {
 			bytes: 2_000 + i * 173,
 			service: i % 4 === 0 ? 'granary-ops' : 'granary',
 			via: (['exe-peer', 'exe-token', 'direct'] as const)[i % 3]!,
-			summary: i % 3 === 0 ? ['scxml.macrostep issue.opened', 'scxml.microstep allowlist.verdict'] : i % 3 === 1 ? ['INFO backup-run succeeded'] : ['ops_backup_age_seconds', 'ops_disk_free_bytes']
+			summary: i % 3 === 0 ? ['issue macrostep issue.opened', 'issue microstep allowlist.verdict'] : i % 3 === 1 ? ['INFO backup-run succeeded'] : ['ops_backup_age_seconds', 'ops_disk_free_bytes']
 		})).reverse(),
 		requests: Array.from({ length: 20 }, (_, i) => ({
 			at: now - (20 - i) * 9_000,

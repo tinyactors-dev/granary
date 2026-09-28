@@ -22,8 +22,16 @@
  * the numeric `scxml.definition` (collected by `otlp.ts`), and the name from
  * event data — `"issueKey":"<key>"` or `"effectKey":"close:<repoId>:<number>"`.
  * Sessions are keyed by `(service, epoch, scxml.session_id)`.
+ *
+ * Span names (ADR 0155): the app (and ops) rename spans of known actors to
+ * `<family> <kind>[ <detail>]` — e.g. `issue macrostep issue.opened` — and
+ * keep the original name in `tinyactors.span.name` and the kind in
+ * `tinyactors.span.kind`. Predicates therefore match on the KIND (attribute
+ * first, else parsed from an unrenamed `scxml.<kind>` name, e.g. the fake
+ * GitHub's spans), never on the span name.
  */
 import type { CollectedSpan } from './otlp';
+import { spanKindOf } from '../src/lib/trace/span-name';
 
 export interface ActorAddress {
 	family: string;
@@ -57,9 +65,9 @@ export const eventDataOf = (s: CollectedSpan) => str(s.attributes['scxml.event.d
 export const finalStateOf = (s: CollectedSpan) => str(s.attributes['scxml.final_state']);
 export const enteredStatesOf = (s: CollectedSpan) => strings(s.attributes['scxml.state.entered']);
 export const activeStatesOf = (s: CollectedSpan) => strings(s.attributes['scxml.state']);
-export const isMacrostep = (s: CollectedSpan) => s.name.startsWith('scxml.macrostep ');
-export const isMicrostep = (s: CollectedSpan) => s.name.startsWith('scxml.microstep ');
-export const isFinished = (s: CollectedSpan) => s.name === 'scxml.finished';
+export const isMacrostep = (s: CollectedSpan) => spanKindOf(s) === 'macrostep';
+export const isMicrostep = (s: CollectedSpan) => spanKindOf(s) === 'microstep';
+export const isFinished = (s: CollectedSpan) => spanKindOf(s) === 'finished';
 
 /** Attributes the app's tracer adds (ADR 0042). */
 export const GRANARY_ATTRS = {

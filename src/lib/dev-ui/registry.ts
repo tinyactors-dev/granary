@@ -87,7 +87,7 @@ export const PREVIEWS: PreviewEntry[] = [
 		stories: [
 			{ id: 'single-issue', title: 'Single issue flow', description: 'Webhook → allowlist check → closing; the relay reply is its own trace.', args: { fixture: 'singleIssue', search: '', address: '', filterable: true, loading: false } },
 			{ id: 'error-span', title: 'Error span', description: 'The relay gave up: error spans in the reply trace.', args: { fixture: 'errorSpan', search: '', address: '', filterable: true, loading: false } },
-			{ id: 'missing-parent', title: 'Missing parent', description: '`scxml.finished` whose parent step was never emitted.', args: { fixture: 'missingParent', search: '', address: '', filterable: true, loading: false } },
+			{ id: 'missing-parent', title: 'Missing parent', description: 'An `issue finished` span whose parent step was never emitted.', args: { fixture: 'missingParent', search: '', address: '', filterable: true, loading: false } },
 			{ id: 'many-traces', title: 'Many traces', description: 'Forty issue flows, all outcomes.', args: { fixture: 'manyTraces', search: '', address: '', filterable: true, loading: false } },
 			{ id: 'empty', title: 'Empty', args: { fixture: 'empty', search: '', address: '', filterable: true, loading: false } },
 			{ id: 'loading', title: 'Loading', args: { fixture: 'empty', search: '', address: '', filterable: true, loading: true } }
