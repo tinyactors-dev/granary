@@ -42,6 +42,7 @@ been published, so none of this history protects anybody; it only confuses.
 | `GRANARY_GITHUB_API_URL`, `GRANARY_GITHUB_WEB_URL` | app | GitHub's REST/web base (the fake in dev/tests; GitHub Enterprise) |
 | `GRANARY_DEV` | app | `1` enables /__dev and the DAP server outside `vite dev` |
 | `GRANARY_DAP_PORT` | app (dev) | DAP server port, default 4711 |
+| `GRANARY_LOG_LEVEL` | app | minimum log level: `debug`, `info` (default), `warn`, `error` (ADR 0234) |
 | `GRANARY_BUILD_DIR` | CLI | where `granary serve` finds the server bundle (default: the package's `build/`) |
 | `GRANARY_RESTORE_SECRET_ACCESS_KEY` | `granary restore` | disaster recovery: bucket secret when ops.sqlite is lost |
 | `GRANARY_SEED_ADMINS` | app, CLI | admin logins |

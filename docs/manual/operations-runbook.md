@@ -78,9 +78,16 @@ Single use; built from `ORIGIN`. Exit 4 means wrong user or data directory
 
 ## Telemetry
 
-Grafana → **Explore**: Loki `{service_name="granary"}` for logs, Tempo for
-traces (span names like `issue macrostep issue.opened`), Prometheus for
-`granary_*` / `ops_*`. Sinks live under **Ops → Telemetry** ([Telemetry](telemetry.md)).
+Grafana → **Explore**: Loki `{service_name="granary"}` (app) and
+`{service_name="granary-ops"}` (backups) for logs, Tempo for traces (HTTP
+spans like `POST /webhook`, actor spans like `issue macrostep issue.opened`),
+Prometheus for `granary_*` / `ops_*`. A log line's trace id opens its trace.
+Quick checks: problems `{service_name=~"granary|granary-ops"} | detected_level=~"error|warn"`,
+webhooks `{service_name="granary"} | webhook_outcome!=""`, backups
+`{service_name="granary-ops"} | backup_state!=""` — more in
+[Telemetry](telemetry.md#useful-logql). On the host, `journalctl -u granary`
+shows the same records as readable lines; `GRANARY_LOG_LEVEL=debug` in
+`granary.env` (then restart) adds probe/asset requests and debug records. Sinks live under **Ops → Telemetry** ([Telemetry](telemetry.md)).
 
 ## Hostname changes
 
