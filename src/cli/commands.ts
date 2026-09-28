@@ -27,13 +27,16 @@ export function parseDuration(s: string): number {
 	return Number(m[1]) * { s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[m[2] as 's' | 'm' | 'h' | 'd'];
 }
 
-/** Open granary.sqlite (running migrations) for the offline fallback. */
-function openDirect<T>(ctx: Context, fn: (admins: AdminStore, origin: string) => T): T {
+/**
+ * Open granary.sqlite (running migrations) for the offline fallback. Only
+ * reached after `requireDataDir` (ADR 0232), so this never creates a
+ * database in a dir `granary init` didn't set up.
+ */
+function openDirect<T>(ctx: Context, fn: (admins: AdminStore, origin: string | null) => T): T {
 	const config = loadConfig(ctx.env);
 	const wal = new Wal(config.databasePath);
 	try {
-		const origin = config.origin ?? `http://localhost:${config.port}`;
-		return fn(new AdminStore(wal.db), origin);
+		return fn(new AdminStore(wal.db), config.origin);
 	} catch (e) {
 		if (e instanceof AdminStoreError) throw new CliError(`${e.message} (${e.code})`);
 		throw e;
@@ -41,6 +44,9 @@ function openDirect<T>(ctx: Context, fn: (admins: AdminStore, origin: string) =>
 		wal.close();
 	}
 }
+
+export const noOriginMessage = (ctx: Context) =>
+	`no ORIGIN configured for ${ctx.dataDir}: a sign-in link must use granary's public URL. Set ORIGIN=https://… in ${ctx.envFile} (then restart granary if it runs) and try again.`;
 
 const fmtTime = (ms: number) => new Date(ms).toISOString().replace('T', ' ').replace(/\.\d+Z$/, 'Z');
 
@@ -51,7 +57,7 @@ function adminTable(list: Admin[]): string {
 }
 
 const note = (ctx: Context, via: 'socket' | 'direct') => {
-	if (via === 'direct' && !ctx.json) console.error('(granary is not running: wrote granary.sqlite directly)');
+	if (via === 'direct' && !ctx.json) console.error(`(granary is not running for ${ctx.dataDir}: wrote its granary.sqlite directly)`);
 };
 
 export async function adminAdd(ctx: Context, p: Parsed): Promise<void> {
@@ -76,7 +82,13 @@ export async function adminList(ctx: Context): Promise<void> {
 export async function loginLink(ctx: Context, p: Parsed): Promise<void> {
 	const login = p.args[0]!;
 	const ttlMs = parseDuration(String(p.options.ttl ?? '15m'));
-	const r = await viaSocketOrDirect(ctx, 'login-link', { login, ttlMs }, () => openDirect(ctx, (a, origin) => a.createLoginLink({ login, ttlMs }, ACTOR, origin)));
+	const r = await viaSocketOrDirect(ctx, 'login-link', { login, ttlMs }, () =>
+		openDirect(ctx, (a, origin) => {
+			// A link is only useful at granary's public URL: never guess localhost (ADR 0232).
+			if (!origin) throw new CliError(noOriginMessage(ctx), EXIT.error);
+			return a.createLoginLink({ login, ttlMs }, ACTOR, origin);
+		})
+	);
 	note(ctx, r.via);
 	print(ctx, r.result, () =>
 		[`One-time sign-in link for ${r.result.login} (valid until ${fmtTime(r.result.expiresAt)}, single use):`, '', `  ${r.result.url}`, '', 'It is shown only once.'].join('\n')

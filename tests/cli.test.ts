@@ -3,9 +3,10 @@
  * 0203): init, admins, login links, config, doctor, exit codes.
  */
 import { describe, expect, test } from 'bun:test';
-import { existsSync, statSync } from 'node:fs';
+import { appendFileSync, chmodSync, existsSync, mkdtempSync, readdirSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runCli, useHarness, type Harness } from './harness';
+import { ROOT, cliEntry, runCli, useHarness, type Harness } from './harness';
 import { consumeLoginLink } from './github-app';
 import { EXIT, DATA_DIR_LAYOUT } from '../src/lib/schemas/cli';
 
@@ -100,4 +101,85 @@ describe('granary CLI', () => {
 		},
 		T
 	);
+});
+
+/**
+ * The CLI without the harness's `--data`/`GRANARY_DATA_DIR` (ADR 0232): only
+ * PATH, a scratch HOME and what the test passes.
+ */
+async function runBare(args: string[], env: Record<string, string>): Promise<{ code: number; stdout: string; stderr: string }> {
+	const proc = Bun.spawn(['bun', cliEntry(), ...args], {
+		cwd: ROOT,
+		env: { PATH: process.env.PATH ?? '/usr/bin:/bin', ...env },
+		stdin: 'ignore',
+		stdout: 'pipe',
+		stderr: 'pipe'
+	});
+	const timer = setTimeout(() => proc.kill('SIGKILL'), 20_000);
+	const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+	clearTimeout(timer);
+	return { code, stdout, stderr };
+}
+
+describe('granary CLI data dir (ADR 0232)', () => {
+	const scratch = () => mkdtempSync(join(tmpdir(), 'granary-cli-'));
+
+	test('a missing default data dir is refused and nothing is created', async () => {
+		const home = scratch();
+		const r = await runBare(['login-link', 'dhamidi'], { HOME: home, GRANARY_TEST_SYSTEM_DATA_DIR: join(home, 'no-such-system-dir') });
+		expect(r.code).toBe(EXIT.dataDir);
+		expect(r.stderr).toContain('does not exist');
+		expect(r.stderr).toContain('per-user default');
+		expect(readdirSync(home)).toEqual([]);
+	});
+
+	test('an existing but uninitialised data dir is refused and stays empty', async () => {
+		const dir = scratch();
+		for (const args of [['admin', 'add', 'alice'], ['login-link', 'alice'], ['config', 'get', 'github.mode'], ['doctor']]) {
+			const r = await runBare([...args, '--data', dir], { HOME: scratch() });
+			expect(r.code).toBe(EXIT.dataDir);
+			expect(r.stderr).toContain('not initialised');
+		}
+		expect(readdirSync(dir)).toEqual([]);
+	});
+
+	test('the system data dir is used when it exists; GRANARY_DATA_DIR beats it', async () => {
+		// The harness's initialised, running data dir plays /var/lib/granary.
+		const viaSystem = await runBare(['admin', 'list', '--json'], { HOME: scratch(), GRANARY_TEST_SYSTEM_DATA_DIR: h().tmpDir });
+		expect(viaSystem.code).toBe(EXIT.ok);
+		expect(Array.isArray(JSON.parse(viaSystem.stdout))).toBe(true);
+		const empty = scratch();
+		const viaEnv = await runBare(['admin', 'list'], { HOME: scratch(), GRANARY_TEST_SYSTEM_DATA_DIR: h().tmpDir, GRANARY_DATA_DIR: empty });
+		expect(viaEnv.code).toBe(EXIT.dataDir);
+		expect(viaEnv.stderr).toContain('from GRANARY_DATA_DIR');
+	});
+
+	test.skipIf(process.getuid?.() === 0)('an inaccessible data dir fails with a sudo -u hint instead of falling back', async () => {
+		const dir = scratch();
+		writeFileSync(join(dir, DATA_DIR_LAYOUT.envFile), 'ORIGIN=https://granary.example.test\n');
+		chmodSync(dir, 0o000);
+		try {
+			const r = await runBare(['admin', 'add', 'alice', '--data', dir], { HOME: scratch() });
+			expect(r.code).toBe(EXIT.dataDir);
+			expect(r.stderr).toContain('cannot access data dir');
+			expect(r.stderr).toMatch(/sudo -u \S+ granary admin add alice --data /);
+		} finally {
+			chmodSync(dir, 0o700);
+		}
+	});
+
+	test('login-link refuses without ORIGIN and uses granary.env ORIGIN offline', async () => {
+		const dir = join(scratch(), 'data');
+		const home = scratch();
+		expect((await runBare(['init', '--data', dir, '--yes-i-stored-the-key', '--json'], { HOME: home })).code).toBe(EXIT.ok);
+		expect((await runBare(['admin', 'add', 'alice', '--data', dir], { HOME: home })).code).toBe(EXIT.ok);
+		const refused = await runBare(['login-link', 'alice', '--data', dir], { HOME: home });
+		expect(refused.code).toBe(EXIT.error);
+		expect(refused.stderr).toContain('no ORIGIN configured');
+		expect(refused.stdout).not.toContain('localhost');
+		appendFileSync(join(dir, DATA_DIR_LAYOUT.envFile), '\nORIGIN=https://granary.example.test\n');
+		const ok = await runBare(['login-link', 'alice', '--data', dir, '--json'], { HOME: home });
+		expect(ok.code).toBe(EXIT.ok);
+		expect((JSON.parse(ok.stdout) as { url: string }).url.startsWith('https://granary.example.test/auth/link/')).toBe(true);
+	});
 });

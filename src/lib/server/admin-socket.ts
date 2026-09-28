@@ -35,7 +35,8 @@ export interface AdminSocketDeps {
 	backend: Backend;
 	admins: AdminStore;
 	dataDir: string;
-	origin: string;
+	/** `ORIGIN`, or null when unset (URLs are then refused, never guessed; ADR 0232). */
+	origin: string | null;
 	databasePath: string;
 	/** Applies env seeds now; returns what was applied (`config seed`). */
 	seed(): string[];
@@ -75,6 +76,7 @@ export function adminHandlers(d: AdminSocketDeps): { [K in AdminCommandPath]: Ha
 		'login-link': (b: { login: string; ttlMs?: number }) => d.backend.createLoginLink({ login: b.login, ttlMs: b.ttlMs }, actor),
 		'github/status': () => d.backend.getGitHubStatus(),
 		'github/setup-url': async (b: { login?: string }) => {
+			if (!d.origin) throw new BackendError('invalid', 'ORIGIN is not set: set ORIGIN=https://… in granary.env and restart granary');
 			const url = `${d.origin}/settings/github`;
 			if (!b.login) return { url };
 			return { url, loginLink: await d.backend.createLoginLink({ login: b.login }, actor) };

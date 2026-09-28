@@ -25,7 +25,12 @@ export const EXIT = {
 	error: 1,
 	usage: 2,
 	/** The command needs a running server (admin socket) and there is none. */
-	serverNotRunning: 3
+	serverNotRunning: 3,
+	/**
+	 * The data dir is missing, not initialised, or not accessible as this user
+	 * (ADR 0232). Nothing was created or written.
+	 */
+	dataDir: 4
 } as const;
 
 /**
@@ -53,7 +58,7 @@ export interface CliCommand {
 	description: string;
 }
 
-const DATA: CliOption = { name: 'data', type: 'string', description: 'Data directory (else GRANARY_DATA_DIR, $XDG_STATE_HOME/granary, ~/.local/state/granary)' };
+const DATA: CliOption = { name: 'data', type: 'string', description: 'Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary)' };
 const JSON_OUT: CliOption = { name: 'json', type: 'boolean', description: 'Print the raw JSON result' };
 
 export const CLI_COMMANDS: readonly CliCommand[] = [

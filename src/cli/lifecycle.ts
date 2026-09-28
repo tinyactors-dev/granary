@@ -10,7 +10,7 @@ import { MASTER_KEY_ENV } from '../lib/platform/secrets/contract';
 import { firstEnv, generateMasterKey, kekIdOf, decodeKeyMaterial } from '../lib/platform/secrets/keys';
 import { versionAtLeast } from '../lib/server/doctor';
 import type { Parsed } from './args';
-import { CliError, livePid, parseEnvFile, requireOffline, type Context } from './context';
+import { CliError, livePid, parseEnvFile, requireDataDir, requireOffline, type Context } from './context';
 
 const ENV_SKELETON = (origin: string | null) => `# granary process settings (ADR 0157). Everything else — the GitHub
 # connection, admins, allowlist, backups, telemetry — is configured in the product.
@@ -197,10 +197,13 @@ export async function restore(ctx: Context, p: Parsed): Promise<number> {
 		console.log(RESTORE_HELP);
 		return EXIT.ok;
 	}
-	await requireOffline(ctx, '`granary restore`');
 	const rest = [...p.rest];
 	const direct = rest.some((a) => a === '--r2-account' || a.startsWith('--r2-account=') || a === '--endpoint' || a.startsWith('--endpoint='));
 	const hasOpsDb = rest.some((a) => a === '--ops-db' || a.startsWith('--ops-db='));
+	// Config mode reads the data dir's ops.sqlite: it must be granary's (ADR 0232).
+	// Direct mode (disaster recovery on a fresh host) needs no data dir.
+	if (!direct && !hasOpsDb) requireDataDir(ctx);
+	await requireOffline(ctx, '`granary restore`');
 	if (!direct && !hasOpsDb && !rest.includes('--help') && !rest.includes('-h')) rest.unshift('--ops-db', join(ctx.dataDir, DATA_DIR_LAYOUT.opsDatabase));
 	process.env.GRANARY_DATA_DIR = ctx.dataDir;
 	for (const [k, v] of Object.entries(ctx.envFileVars)) if (process.env[k] === undefined) process.env[k] = v;

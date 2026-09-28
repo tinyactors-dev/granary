@@ -99,6 +99,7 @@ export function usage(topic: string | null): string {
 		...CLI_COMMANDS.map((c) => `  ${(c.name + c.args.map((a) => ` <${a}>`).join('')).padEnd(width)}${c.description}`),
 		'',
 		'Run `granary <command> --help` for its options. Data directory: --data, else',
-		'GRANARY_DATA_DIR, $XDG_STATE_HOME/granary, ~/.local/state/granary.'
+		'GRANARY_DATA_DIR, else /var/lib/granary if it exists, else $XDG_STATE_HOME/granary or',
+		'~/.local/state/granary. Run commands against /var/lib/granary as its owner: sudo -u granary granary …'
 	].join('\n');
 }

@@ -6,7 +6,7 @@
 import { EXIT } from '../lib/schemas/cli';
 import { UsageError, parseArgs, usage } from './args';
 import * as cmd from './commands';
-import { CliError, createContext } from './context';
+import { CliError, createContext, requireDataDir } from './context';
 import { init, restore, serve } from './lifecycle';
 
 async function main(argv: string[]): Promise<number> {
@@ -16,6 +16,23 @@ async function main(argv: string[]): Promise<number> {
 		return EXIT.ok;
 	}
 	const ctx = createContext(parsed.options);
+	// ADR 0232: every command that touches a data dir checks it first and never
+	// creates state outside `init`/`serve`; restore checks inside (its direct
+	// disaster-recovery mode needs no data dir).
+	switch (parsed.command.name) {
+		case 'init':
+			requireDataDir(ctx, { allowMissing: true, allowUninitialised: true });
+			break;
+		case 'serve':
+			requireDataDir(ctx, { allowUninitialised: true });
+			break;
+		case 'restore':
+		case 'systemd-unit':
+		case 'version':
+			break;
+		default:
+			requireDataDir(ctx);
+	}
 	switch (parsed.command.name) {
 		case 'serve':
 			return serve(ctx, parsed);

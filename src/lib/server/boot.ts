@@ -140,7 +140,7 @@ export async function bootBackend(config: Config, opts: { devMode: boolean }): P
 		backend,
 		admins: backend.adminStore,
 		dataDir,
-		origin: backend.origin,
+		origin: config.origin,
 		databasePath: resolve(config.databasePath),
 		seed: () => seedAdmins(backend.adminStore, config),
 		onConfigChanged: () => runtime.github.refreshMode('cli'),

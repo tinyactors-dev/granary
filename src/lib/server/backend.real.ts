@@ -656,7 +656,10 @@ export class RealBackend implements Backend {
 		return this.#adminCall(() => this.#admins.removeAdmin(login, removedBy));
 	}
 	async createLoginLink(input: CreateLoginLinkInput, createdBy: string): Promise<CreatedLoginLink> {
-		return this.#adminCall(() => this.#admins.createLoginLink(input, createdBy, this.origin));
+		const origin = this.#rt.config.origin;
+		// A link is only useful at the public URL: never fall back to localhost (ADR 0232).
+		if (!origin) throw new BackendError('invalid', 'ORIGIN is not set: set ORIGIN=https://… in granary.env and restart granary, then create the link again');
+		return this.#adminCall(() => this.#admins.createLoginLink(input, createdBy, origin));
 	}
 	async consumeLoginLink(token: string): Promise<CreatedSession | null> {
 		const login = this.#admins.consumeLoginLink(token);

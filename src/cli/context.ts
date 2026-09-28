@@ -3,11 +3,11 @@
  * environment merged with `<data>/granary.env` (process env wins), whether a
  * server is running (pid file + admin socket), and the socket client.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { accessSync, constants, existsSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import type { TSchema } from '@sinclair/typebox';
 import { ADMIN_COMMANDS, ADMIN_SOCKET_PREFIX, type AdminCommandPath, type AdminRequest, type AdminResponse } from '../lib/schemas/admin-socket';
-import { DATA_DIR_LAYOUT, EXIT } from '../lib/schemas/cli';
+import { DATA_DIR_LAYOUT, EXIT, SYSTEM_DATA_DIR } from '../lib/schemas/cli';
 import { resolveDataDir } from '../lib/schemas/config';
 import { issuesOf } from '../lib/schemas/standard';
 
@@ -36,8 +36,34 @@ export function parseEnvFile(text: string): Record<string, string> {
 	return out;
 }
 
+/** How the CLI picked its data dir (ADR 0232), for error messages. */
+export type DataDirSource = 'flag' | 'env' | 'system' | 'default';
+
+const SOURCE_TEXT: Record<DataDirSource, string> = {
+	flag: 'from --data',
+	env: 'from GRANARY_DATA_DIR',
+	system: 'the system data dir, which exists on this host',
+	default: 'the per-user default: $XDG_STATE_HOME/granary or ~/.local/state/granary'
+};
+
+/**
+ * The CLI's data dir (ADR 0232): `--data` > `GRANARY_DATA_DIR` >
+ * `/var/lib/granary` when it exists > the per-user XDG default. The system
+ * dir wins over the per-user default so that an admin on a server never
+ * silently gets a second, empty data dir in their home.
+ */
+export function resolveCliDataDir(env: Record<string, string | undefined>, flag: string | null): { path: string; source: DataDirSource } {
+	if (flag) return { path: resolve(resolveDataDir(env, flag)), source: 'flag' };
+	if (env.GRANARY_DATA_DIR) return { path: resolve(resolveDataDir(env)), source: 'env' };
+	// GRANARY_TEST_SYSTEM_DATA_DIR stands in for /var/lib/granary in tests (no root needed).
+	const system = env.GRANARY_TEST_SYSTEM_DATA_DIR || SYSTEM_DATA_DIR;
+	if (existsSync(system)) return { path: resolve(system), source: 'system' };
+	return { path: resolve(resolveDataDir(env)), source: 'default' };
+}
+
 export interface Context {
 	dataDir: string;
+	dataDirSource: DataDirSource;
 	/** process.env merged over `<data>/granary.env`. */
 	env: Record<string, string | undefined>;
 	envFile: string;
@@ -49,10 +75,10 @@ export interface Context {
 
 export function createContext(options: Record<string, string | boolean>): Context {
 	const flag = typeof options.data === 'string' ? options.data : null;
-	const dataDir = resolve(resolveDataDir(process.env, flag));
+	const { path: dataDir, source: dataDirSource } = resolveCliDataDir(process.env, flag);
 	const envFile = join(dataDir, DATA_DIR_LAYOUT.envFile);
 	let envFileVars: Record<string, string> = {};
-	if (existsSync(envFile)) {
+	if (accessible(dataDir) && existsSync(envFile)) {
 		try {
 			envFileVars = parseEnvFile(readFileSync(envFile, 'utf8'));
 		} catch (e) {
@@ -61,6 +87,7 @@ export function createContext(options: Record<string, string | boolean>): Contex
 	}
 	return {
 		dataDir,
+		dataDirSource,
 		env: { ...envFileVars, ...process.env, GRANARY_DATA_DIR: dataDir },
 		envFile,
 		envFileVars,
@@ -68,6 +95,99 @@ export function createContext(options: Record<string, string | boolean>): Contex
 		pidFile: join(dataDir, DATA_DIR_LAYOUT.pidFile),
 		json: options.json === true
 	};
+}
+
+function accessible(dir: string): boolean {
+	try {
+		accessSync(dir, constants.R_OK | constants.W_OK | constants.X_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** The login name for a uid from /etc/passwd, else the uid itself. */
+function userName(uid: number): string {
+	try {
+		for (const line of readFileSync('/etc/passwd', 'utf8').split('\n')) {
+			const f = line.split(':');
+			if (f.length > 2 && Number(f[2]) === uid) return f[0]!;
+		}
+	} catch {
+		/* no /etc/passwd */
+	}
+	try {
+		// macOS keeps users in directory services, not /etc/passwd.
+		const r = Bun.spawnSync(['id', '-nu', String(uid)], { stderr: 'ignore' });
+		const name = r.stdout.toString().trim();
+		if (r.exitCode === 0 && name) return name;
+	} catch {
+		/* no `id` */
+	}
+	return String(uid);
+}
+
+function currentUser(): string {
+	return process.env.USER ?? process.env.LOGNAME ?? (typeof process.getuid === 'function' ? userName(process.getuid()) : 'this user');
+}
+
+/** The command line as typed, for a copyable `sudo -u …` hint. */
+function commandLine(): string {
+	return ['granary', ...process.argv.slice(2)].map((a) => (/^[\w@%+=:,./-]+$/.test(a) ? a : `'${a.replace(/'/g, `'\\''`)}'`)).join(' ');
+}
+
+/** True when the data dir holds anything `granary init` or `granary serve` creates. */
+export function isInitialised(dataDir: string): boolean {
+	return [DATA_DIR_LAYOUT.envFile, DATA_DIR_LAYOUT.masterKey, DATA_DIR_LAYOUT.database].some((f) => existsSync(join(dataDir, f)));
+}
+
+/**
+ * Guard for every command that reads or writes a data dir (ADR 0232): the
+ * dir must be accessible as the current user and — unless `allowUninitialised`
+ * (init, serve) — already initialised. Never falls back to another dir and
+ * never creates anything; fails with exit 4 naming the path and how it was
+ * chosen.
+ */
+export function requireDataDir(ctx: Context, opts: { allowMissing?: boolean; allowUninitialised?: boolean } = {}): void {
+	const where = `${ctx.dataDir} (${SOURCE_TEXT[ctx.dataDirSource]})`;
+	if (!existsSync(ctx.dataDir)) {
+		if (opts.allowMissing) return;
+		throw new CliError(
+			[
+				`data dir ${where} does not exist; nothing was created.`,
+				`Point the CLI at granary's data dir, e.g. \`--data ${SYSTEM_DATA_DIR}\` (or GRANARY_DATA_DIR), and run it as that dir's owner (\`sudo -u granary …\`),`,
+				`or create a new one with \`granary init --data <dir>\`.`
+			].join('\n'),
+			EXIT.dataDir
+		);
+	}
+	if (!accessible(ctx.dataDir)) {
+		let owner = 'its owner';
+		let mode = '';
+		try {
+			const st = statSync(ctx.dataDir);
+			owner = userName(st.uid);
+			mode = `, mode ${(st.mode & 0o777).toString(8)}`;
+		} catch {
+			/* keep the generic owner */
+		}
+		throw new CliError(
+			[
+				`cannot access data dir ${where} as ${currentUser()} (owned by ${owner}${mode}); nothing was written.`,
+				`Run as the data dir's owner:`,
+				`  sudo -u ${owner} ${commandLine()}`
+			].join('\n'),
+			EXIT.dataDir
+		);
+	}
+	if (!opts.allowUninitialised && !isInitialised(ctx.dataDir))
+		throw new CliError(
+			[
+				`data dir ${where} is not initialised (no ${DATA_DIR_LAYOUT.envFile}, ${DATA_DIR_LAYOUT.masterKey} or ${DATA_DIR_LAYOUT.database}); nothing was created.`,
+				`If granary lives elsewhere, pass \`--data <dir>\` (e.g. ${SYSTEM_DATA_DIR}); to set up this dir, run \`granary init --data ${ctx.dataDir}\`.`
+			].join('\n'),
+			EXIT.dataDir
+		);
 }
 
 /** The pid in `<data>/granary.pid` if that process is alive. */
