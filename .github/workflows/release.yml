@@ -39,19 +39,19 @@ env:
 
 jobs:
   pack:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
-      - uses: jdx/mise-action@v2
+      - uses: jdx/mise-action@v4
         with:
           install: false
       - run: bun tools/release/release.ts pack --channel "$CHANNEL"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package
           path: |
@@ -65,20 +65,20 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { runner: ubuntu-latest, platform: linux/amd64, arch: amd64 }
+          - { runner: ubuntu-24.04, platform: linux/amd64, arch: amd64 }
           - { runner: ubuntu-24.04-arm, platform: linux/arm64, arch: arm64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: package
           path: release
       - run: bun tools/release/release.ts verify --platform "${{ matrix.platform }}" --out "release/verify-${{ matrix.arch }}.json"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: verify-${{ matrix.arch }}
@@ -86,21 +86,21 @@ jobs:
 
   publish:
     needs: verify
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       id-token: write # npm provenance + trusted publishing
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # tags, for the latest channel's v<version> check
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: .bun-version
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24 # npm >= 11.5 for trusted publishing and provenance
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: release
           merge-multiple: true
