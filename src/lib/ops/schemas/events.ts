@@ -53,7 +53,11 @@ export const OPS_IO = {
 	otlp: 'otlp',
 	remediate: 'remediate',
 	/** Backups' persistence of run/upload/drill/plan state + config reconcile (ADR 0111). */
-	ledger: 'backup-ledger'
+	ledger: 'backup-ledger',
+	/** Health: one watchdog measurement pass (ADR 0123). */
+	sample: 'sample',
+	/** Health: persist condition rows + ops events (ADR 0123). */
+	journal: 'journal'
 } as const;
 
 /** Delayed-send ids (cancellable). */

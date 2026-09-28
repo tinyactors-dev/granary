@@ -44,6 +44,8 @@ export const OpsEnv = Type.Object(
 			])
 		),
 		OPS_SEED_OTLP_TOKEN: Type.Optional(NonEmpty),
+		/** Username for `OPS_SEED_OTLP_AUTH=basic` (ADR 0122); default `granary`. */
+		OPS_SEED_OTLP_USERNAME: Type.Optional(NonEmpty),
 		OTEL_EXPORTER_OTLP_ENDPOINT: Type.Optional(Type.String()),
 		OTEL_EXPORTER_OTLP_HEADERS: Type.Optional(Type.String()),
 		// test-only hooks (ADR 0103)
@@ -51,7 +53,9 @@ export const OpsEnv = Type.Object(
 		OPS_WATCHDOG_INTERVAL_MS: Type.Optional(Type.String({ pattern: '^[0-9]+$' })),
 		// backups test timings (agent A, ADR 0111)
 		OPS_TEST_RETRY_BASE_MS: Type.Optional(Type.String({ pattern: '^[0-9]+$' })),
-		OPS_TEST_RETENTION_INTERVAL_MS: Type.Optional(Type.String({ pattern: '^[0-9]+$' }))
+		OPS_TEST_RETENTION_INTERVAL_MS: Type.Optional(Type.String({ pattern: '^[0-9]+$' })),
+		/** Test hook: multiply condition grace/settle periods, e.g. 0.001 (ADR 0123). */
+		OPS_TEST_GRACE_SCALE: Type.Optional(Type.String({ pattern: '^[0-9]+(\\.[0-9]+)?$' }))
 	},
 	{ additionalProperties: true }
 );
