@@ -46,7 +46,7 @@
 				</dd>
 				<dt class="text-muted-foreground">Chart</dt>
 				<dd class="text-xs leading-5">
-					{snap.definition.stateCount} states · {snap.definition.datamodel} · {snap.definition.binding} binding ·
+					{snap.definition.stateCount} state{snap.definition.stateCount === 1 ? '' : 's'} · {snap.definition.datamodel} · {snap.definition.binding} binding ·
 					{snap.definition.actorCount} actor{snap.definition.actorCount === 1 ? '' : 's'}
 				</dd>
 				<dt class="text-muted-foreground">Active states</dt>
@@ -94,7 +94,8 @@
 		</Card.Content>
 	</Card.Root>
 
-	<div class="grid content-start gap-4">
+	<!-- sticky beside a long statechart, so the right column doesn't sit empty -->
+	<div class="grid content-start gap-4 {compact ? '' : 'xl:sticky xl:top-20 xl:self-start'}">
 		<!-- Data -->
 		<Card.Root>
 			<Card.Header>

@@ -56,9 +56,20 @@ export function computeStatus(deps: {
 		return w;
 	};
 
+	// Every database an enabled plan backs up (granary's and ops' own), not only the host's:
+	// /ops listed just `granary` while /ops/backups showed verified `ops` runs (design audit).
+	const databases = new Set(deps.databases);
+	for (const p of plans) {
+		try {
+			for (const db of (JSON.parse(p.config) as { databases?: string[] }).databases ?? []) databases.add(db);
+		} catch {
+			/* ignore */
+		}
+	}
+
 	const backups: OpsStatus['backups'] = [];
 	for (const d of destinations) {
-		for (const database of deps.databases) {
+		for (const database of databases) {
 			const last = safeAll<{ t: number | null; b: number | null }>(
 				db,
 				`SELECT u.updated_at AS t, u.uploaded_bytes AS b FROM uploads u JOIN backup_runs r ON r.id = u.run_id

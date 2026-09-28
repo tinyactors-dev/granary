@@ -56,6 +56,11 @@
 		 * a new value starts fresh from `expandDepth`.
 		 */
 		preserveState?: boolean;
+		/**
+		 * Optional muted hint after a primitive value in the structure view
+		 * (e.g. an epoch-ms number shown as a date). Return null for none.
+		 */
+		describeValue?: (key: string | number | null, value: unknown) => string | null;
 		class?: string;
 	}
 
@@ -70,6 +75,7 @@
 		height = '28rem',
 		theme = 'auto',
 		onselect,
+		describeValue,
 		preserveState = true,
 		class: className = ''
 	}: Props = $props();
@@ -738,6 +744,8 @@
 										class:hit={p.hit}>{p.text}</span
 									>{/each}{#if kind === 'string' && !t.more}"{/if}
 							</span>
+							{@const hint = describeValue?.(key ?? null, tree.values[n])}
+							{#if hint}<span class="jv-hint" data-testid="json-hint">{hint}</span>{/if}
 							{#if t.more || fullStrings.has(n)}
 								<button
 									type="button"
@@ -1036,6 +1044,11 @@
 		place-items: center;
 		border-radius: 4px;
 		color: var(--jv-muted-fg);
+	}
+	.jv-hint {
+		margin-left: 0.5rem;
+		color: var(--jv-muted-fg);
+		font-style: italic;
 	}
 	.jv-svg {
 		width: 0.95rem;

@@ -45,6 +45,18 @@ export function isFlatSmall(value: unknown): value is Record<string, unknown> {
 	return entries.length > 0 && entries.length <= 4 && entries.every(([, v]) => v === null || typeof v !== 'object');
 }
 
+/**
+ * Epoch-millisecond numbers under time-like keys (`…At`, `…_at`, `due`, `expires…`,
+ * `time`, `timestamp`) get a readable UTC date next to them (design audit: raw
+ * epochs in the actor inspector).
+ */
+export function epochHint(key: string | number | null, value: unknown): string | null {
+	if (typeof value !== 'number' || !Number.isInteger(value)) return null;
+	if (value < 1_000_000_000_000 || value > 4_000_000_000_000) return null;
+	if (typeof key !== 'string' || !(/(At|_at)$/.test(key) || /^(at|due|expires|time|timestamp)$/i.test(key))) return null;
+	return new Date(value).toISOString().replace('T', ' ').replace(/\.\d{3}Z$/, ' UTC');
+}
+
 export function oneLine(value: unknown): string {
 	if (value === undefined) return 'undefined';
 	if (typeof value === 'bigint') return `${value}n`;

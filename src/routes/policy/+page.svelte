@@ -9,7 +9,8 @@
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import { toast } from 'svelte-sonner';
-	import { addAllowedUser, listAllowedUsers, removeAllowedUser } from '$lib/remote/allowlist.remote';
+	import { addAllowedUser, listAllowedUsers, listBlockedUsers, removeAllowedUser } from '$lib/remote/allowlist.remote';
+	import { Badge } from '$lib/components/ui/badge/index.js';
 	import PageHeader from '$lib/components/app/PageHeader.svelte';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
@@ -20,6 +21,9 @@
 	import Blocklist from '$lib/components/policy/Blocklist.svelte';
 
 	const users = listAllowedUsers();
+	const blocked = listBlockedUsers();
+	/** An allowlisted login that is also actively blocked: the block wins (ADR 0260). */
+	const activeBlock = (login: string) => (blocked.current ?? []).find((b) => b.active && b.login.toLowerCase() === login.toLowerCase());
 	const admin = $derived(isAdmin());
 
 	/** Login pending removal (drives the confirm dialog). */
@@ -67,7 +71,14 @@
 				<Table.Body>
 					{#each list as u (u.login)}
 						<Table.Row data-testid="allowed-user">
-							<Table.Cell class="font-medium">{u.login}</Table.Cell>
+							<Table.Cell class="font-medium">
+								{u.login}
+								{#if activeBlock(u.login)}
+									<a href="#blocklist" title="The blocklist takes precedence: this login's issues and pull requests are closed while the block lasts."
+										><Badge variant="destructive" class="ml-2 align-middle" data-testid="allowed-but-blocked">Also blocked — block wins</Badge></a
+									>
+								{/if}
+							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{u.addedBy === 'seed' ? 'From environment' : (u.addedBy ?? '—')}</Table.Cell>
 							<Table.Cell class="text-muted-foreground"><RelativeTime ms={u.addedAt} /></Table.Cell>
 							<Table.Cell class="text-right">

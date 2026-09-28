@@ -72,7 +72,7 @@
 	}
 </script>
 
-<section class="grid gap-3" aria-labelledby="blocklist-title">
+<section id="blocklist" class="grid scroll-mt-20 gap-3" aria-labelledby="blocklist-title">
 	<div class="flex flex-wrap items-end justify-between gap-3">
 		<div>
 			<h2 id="blocklist-title" class="text-lg font-semibold tracking-tight">Blocklist</h2>

@@ -31,7 +31,8 @@
 </script>
 
 <ModeWatcher />
-<Toaster richColors closeButton />
+<!-- top-center below the sticky header: bottom-right toasts covered form buttons (design audit) -->
+<Toaster richColors closeButton position="top-center" offset="4.5rem" />
 <Tooltip.Provider delayDuration={200}>
 	{#if showApp}
 		<AppShell>

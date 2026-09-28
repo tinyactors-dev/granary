@@ -284,9 +284,9 @@
 			{#if result}
 				<TestResult {result} />
 			{:else if d0?.lastTest}
-				<p class="text-muted-foreground text-sm">Last test {d0.lastTest.ok ? 'passed' : 'failed'}{testedOk ? '' : ' (for an earlier version of these settings)'}.</p>
+				<p class="text-muted-foreground text-sm">Last connection test {d0.lastTest.ok ? 'passed' : 'failed'}{testedOk ? '' : ' (for an earlier version of these settings)'}.</p>
 			{:else}
-				<p class="text-muted-foreground text-sm">Not tested yet.</p>
+				<p class="text-muted-foreground text-sm">Connection not tested yet.</p>
 			{/if}
 		</Card.Content>
 	</Card.Root>

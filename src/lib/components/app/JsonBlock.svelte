@@ -10,7 +10,7 @@
 	import { JsonView, type ViewMode } from '$lib/components/json-view';
 	import { cn } from '$lib/utils';
 	import { jsonPrefs } from './json-prefs.svelte';
-	import { CHROME_PX, PRESETS, blockHeight, isFlatSmall, isTiny, oneLine, type JsonBlockPreset } from './json-block';
+	import { CHROME_PX, PRESETS, blockHeight, epochHint, isFlatSmall, isTiny, oneLine, type JsonBlockPreset } from './json-block';
 
 	let {
 		value,
@@ -76,7 +76,7 @@
 {:else}
 	<!-- contain:inline-size keeps the viewer from widening table cells / grid tracks -->
 	<div bind:this={host} class={cn('w-full min-w-0 [contain:inline-size]', className)} data-testid="json-block" data-preset={preset}>
-		<JsonView {value} bind:mode keymap={jsonPrefs.keymap} expandDepth={depth} {rootLabel} {height} />
+		<JsonView {value} bind:mode keymap={jsonPrefs.keymap} expandDepth={depth} {rootLabel} {height} describeValue={epochHint} />
 		<div class="text-muted-foreground mt-1 flex items-center justify-end gap-3 text-[11px]">
 			<button
 				type="button"

@@ -36,9 +36,11 @@ export function bytes(n: number | null | undefined): string {
 	return `${v >= 100 ? v.toFixed(0) : v.toFixed(1)} ${units[i]}`;
 }
 
-/** "1 h", "90 min", "7 days", "41 s". */
+/** "220 ms", "4.2 s", "41 s", "90 min", "1 h", "7 days". */
 export function duration(ms: number | null | undefined): string {
 	if (ms === null || ms === undefined) return '—';
+	if (ms < 1000) return `${Math.round(ms)} ms`;
+	if (ms < 10_000) return `${+(ms / 1000).toFixed(1)} s`;
 	if (ms < MINUTE) return `${Math.round(ms / 1000)} s`;
 	if (ms < 2 * HOUR && ms % HOUR !== 0) return `${Math.round(ms / MINUTE)} min`;
 	if (ms < 2 * DAY) return `${+(ms / HOUR).toFixed(1)} h`;
