@@ -443,6 +443,15 @@ export class RealBackend implements Backend {
 				probes[`dest:${d.id}`] = link.url;
 			}
 		}
+		for (const t of tools) {
+			if (!t.external) continue;
+			try {
+				const hint = c.devLoginHints[new URL(t.url).origin];
+				if (hint) t.login = hint;
+			} catch {
+				/* relative or odd URL: no hint */
+			}
+		}
 		// Reachability: any HTTP answer below 500 counts as up (logins redirect, SPAs 200).
 		await Promise.all(
 			tools.map(async (t) => {

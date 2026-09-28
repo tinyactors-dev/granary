@@ -37,6 +37,11 @@ export interface DevTool {
 	up: boolean | null;
 	/** Opens in a new tab (external UI). */
 	external: boolean;
+	/**
+	 * Dev-only login hint for local stand-ins (from `DEV_LOGIN_HINTS`, matched
+	 * by URL origin). Never set for real services.
+	 */
+	login?: { username: string; password: string };
 }
 
 // ---------------------------------------------------------------------------

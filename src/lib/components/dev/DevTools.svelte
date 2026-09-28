@@ -23,7 +23,7 @@
 				href={t.url}
 				target="_blank"
 				rel="noreferrer"
-				title={`${t.description} — ${title(t.up)}`}
+				title={`${t.description} — ${title(t.up)}${t.login ? ` — login ${t.login.username} / ${t.login.password}` : ''}`}
 				class="text-sidebar-foreground/75 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm font-medium transition-colors"
 				data-testid="dev-external-link"
 			>
@@ -53,6 +53,14 @@
 									<span class="text-muted-foreground block truncate text-xs">{t.external ? t.url : t.description}</span>
 								</span>
 							</a>
+							{#if t.login}
+								<div class="text-muted-foreground -mt-1 flex flex-wrap items-center gap-1.5 pl-6.5 text-xs" data-testid="dev-tool-login">
+									<span>login</span>
+									<button type="button" class="bg-muted hover:bg-accent rounded px-1.5 py-0.5 font-mono" title="Copy username" onclick={() => navigator.clipboard?.writeText(t.login!.username)}>{t.login.username}</button>
+									<span>/</span>
+									<button type="button" class="bg-muted hover:bg-accent rounded px-1.5 py-0.5 font-mono" title="Copy password" onclick={() => navigator.clipboard?.writeText(t.login!.password)}>{t.login.password}</button>
+								</div>
+							{/if}
 						{/each}
 					</div>
 				{/if}

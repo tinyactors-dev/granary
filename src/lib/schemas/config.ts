@@ -38,6 +38,8 @@ export const RawEnv = Type.Object(
 		LOADGEN_URL: Type.Optional(Url),
 		/** fake-infra base URL (ADR 0130): fake R2, OTLP receiver, exe.dev proxy. Dev only. */
 		FAKE_INFRA_URL: Type.Optional(Url),
+		/** Dev only: `origin=user:pass,…` login hints shown in the /__dev Tools card (ADR 0027). */
+		DEV_LOGIN_HINTS: Type.Optional(Type.String()),
 		NODE_ENV: Type.Optional(Type.String()),
 		/** Comma-separated logins inserted into allowed_users at boot (added_by 'seed') if absent. ADR 0040. */
 		ALLOWED_USERS_SEED: Type.Optional(Type.String()),
@@ -87,6 +89,8 @@ export interface Config {
 	loadgenUrl: string;
 	/** fake-infra base URL (ADR 0130), no trailing slash. */
 	fakeInfraUrl: string;
+	/** Dev-only login hints for local stand-in UIs, keyed by URL origin. */
+	devLoginHints: Record<string, { username: string; password: string }>;
 	nodeEnv: string;
 	/** `ALLOWED_USERS_SEED`, trimmed, empties removed (case kept). */
 	allowedUsersSeed: string[];
@@ -108,6 +112,21 @@ const trimSlash = (s: string) => s.replace(/\/+$/, '');
 export interface LoadConfigOptions {
 	/** Default true. Set false for the stub backend / tooling that never talks to GitHub. */
 	requireSecrets?: boolean;
+}
+
+/** `http://localhost:9001=user:pass,http://localhost:3300=admin:admin` → by origin. */
+function parseLoginHints(raw: string | undefined): Record<string, { username: string; password: string }> {
+	const out: Record<string, { username: string; password: string }> = {};
+	for (const part of (raw ?? '').split(',')) {
+		const m = /^\s*(https?:\/\/[^=\s]+)=([^:]+):(.*)$/.exec(part);
+		if (!m) continue;
+		try {
+			out[new URL(m[1]!).origin] = { username: m[2]!.trim(), password: m[3]!.trim() };
+		} catch {
+			/* ignore malformed entries */
+		}
+	}
+	return out;
 }
 
 export function loadConfig(
@@ -159,6 +178,7 @@ export function loadConfig(
 		fakeGithubWebhookUrl: raw.FAKE_GITHUB_WEBHOOK_URL ?? 'http://localhost:5173/webhook',
 		loadgenUrl: trimSlash(raw.LOADGEN_URL ?? 'http://localhost:4040'),
 		fakeInfraUrl: trimSlash(raw.FAKE_INFRA_URL ?? 'http://localhost:4090'),
+		devLoginHints: parseLoginHints(raw.DEV_LOGIN_HINTS),
 		nodeEnv: raw.NODE_ENV ?? 'development',
 		allowedUsersSeed: (raw.ALLOWED_USERS_SEED ?? '')
 			.split(',')
