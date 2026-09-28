@@ -103,3 +103,29 @@ describe('activity', () => {
 		expect(html).toContain('href="/admin"');
 	});
 });
+
+describe('deliveries that are not about an item', () => {
+	test('/admin/deliveries shows installation events by default and items only under "All"', async () => {
+		await openIssue(h(), 'mallory');
+		// Every delivery including the issue's, once the inbox has it.
+		const all = await h().waitFor(
+			async () => {
+				const html = await (await asAdmin('/admin/deliveries?show=all')).text();
+				return html.includes('data-event="issues"') ? html : null;
+			},
+			{ message: 'issues delivery listed under "All"', timeout: 20_000 }
+		);
+		expect(all).toContain('data-testid="delivery-row"');
+
+		// Default view: only deliveries without an issue or pull request (the harness's app installation).
+		const other = await (await asAdmin('/admin/deliveries')).text();
+		expect(other).toMatch(/data-event="installation(_repositories)?"/);
+		expect(other).not.toContain('data-event="issues"');
+		expect(other).toContain('href="/admin/deliveries"'); // in the admin sidebar
+	});
+
+	test('signed-out visitors do not get the deliveries page', async () => {
+		const html = await (await h().fetchApp('/admin/deliveries')).text();
+		expect(html).not.toContain('data-testid="delivery-row"');
+	});
+});

@@ -301,7 +301,7 @@ export class RealBackend implements Backend {
 
 	async listDeliveries(q: Resolved<ListDeliveriesInput>): Promise<Page<DeliverySummary>> {
 		const offset = cursorOffset(q.before);
-		const rows = this.#wal.listInbox(q.state, q.limit + 1, offset);
+		const rows = this.#wal.listInbox(q.state, q.limit + 1, offset, q.about);
 		return offsetPage(rows.map((r) => this.#delivery(r)), q.limit, offset);
 	}
 

@@ -106,7 +106,13 @@ export interface IssueSummary {
 }
 
 export const ListDeliveriesInput = Type.Object(
-	{ state: Type.Optional(InboxState), limit: Type.Optional(Limit), before: Type.Optional(Cursor) },
+	{
+		state: Type.Optional(InboxState),
+		/** `item`: about an issue or pull request; `other`: installation events, pings, ignored events… */
+		about: Type.Optional(Type.Union([Type.Literal('item'), Type.Literal('other')])),
+		limit: Type.Optional(Limit),
+		before: Type.Optional(Cursor)
+	},
 	closed
 );
 export type ListDeliveriesInput = Static<typeof ListDeliveriesInput>;

@@ -301,12 +301,15 @@ export class Wal {
 		);
 	}
 
-	listInbox(state: InboxState | undefined, limit: number, offset: number): InboxRow[] {
-		const sql = state
-			? `SELECT * FROM inbox WHERE state = $state ORDER BY received_at DESC, delivery_id DESC LIMIT $limit OFFSET $offset`
-			: `SELECT * FROM inbox ORDER BY received_at DESC, delivery_id DESC LIMIT $limit OFFSET $offset`;
-		const params = state ? { state, limit, offset } : { limit, offset };
-		return this.#q(sql).all(params).map(parseInboxRow);
+	listInbox(state: InboxState | undefined, limit: number, offset: number, about?: 'item' | 'other'): InboxRow[] {
+		const where: string[] = [];
+		if (state) where.push('state = $state');
+		if (about === 'item') where.push('issue_key IS NOT NULL');
+		if (about === 'other') where.push('issue_key IS NULL');
+		const sql = `SELECT * FROM inbox ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY received_at DESC, delivery_id DESC LIMIT $limit OFFSET $offset`;
+		return this.#q(sql)
+			.all(state ? { state, limit, offset } : { limit, offset })
+			.map(parseInboxRow);
 	}
 
 	inboxForIssue(issueKey: string): InboxRow[] {

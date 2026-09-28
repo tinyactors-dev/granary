@@ -346,7 +346,9 @@ export class StubBackend implements Backend {
 	}
 
 	async listDeliveries(q: Resolved<ListDeliveriesInput>): Promise<Page<DeliverySummary>> {
-		const rows = this.deliveries.filter((d) => !q.state || d.state === q.state);
+		const rows = this.deliveries.filter(
+			(d) => (!q.state || d.state === q.state) && (!q.about || (q.about === 'item') === (d.issueKey !== null))
+		);
 		return page(rows, q.limit, q.before);
 	}
 
