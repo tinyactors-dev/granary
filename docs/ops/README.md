@@ -1,72 +1,93 @@
 # Operations system
 
-> The purpose of this system is to let you sleep at night.
+> The purpose of this system is to let you sleep at night:
+> backups and telemetry keep flowing on their own, the system heals what it
+> can, and whatever it can't fix waits — explained — for your next visit.
+> **Nothing ever wakes you.**
 
-`src/lib/ops/` is a separate domain module inside the granary app process.
-It backs up the SQLite databases, ships the backups off-site, exports
-telemetry to Grafana (Loki / Tempo / Prometheus), watches everything that can
-go wrong, and wakes a human — or, if the whole box is gone, lets an external
-dead-man's switch do it. Everything is configured in the product (`/ops`);
-env vars only seed. **Status: planned** — see the ADRs below.
+`src/lib/ops/` is a separate domain module inside the granary app process on
+an **exe.dev VM**. It backs up the SQLite databases (always encrypted) to
+**Cloudflare R2** with a hard size bound, exports telemetry over OTLP to a
+**self-hosted Grafana (otel-lgtm) on a second exe.dev VM**, and runs a
+watchdog that is a control loop, not an alarm. Everything is configured in
+the product (`/ops`); env vars only seed. **Status: planned.**
 
 ## Topology
 
 ```
-                      granary process
- ┌───────────────────────────────────────────────────────────────────────────────┐
- │  granary System (issues)             │  ops System (service.name=granary-ops)  │
- │                                      │                                         │
- │  Tracer ── TelemetryBatch ───────────┼──▶ fan-out + redaction ──▶ telemetry-sink/<id> ──(otlp|loki)──▶ Grafana / Alloy / Loki
- │  WAL/relay/system ── health() ───────┼──▶ watchdog/main ──signal.sample──▶ alert/<rule>              │
- │  granary.sqlite ◀── VACUUM INTO ─────┼── snapshot Worker ◀─(snapshot)── backup-run/<run>           │  notifier/<ch> ──(notify)──▶ ntfy/Slack/webhook
- │                                      │        ▲                    │ invoke per dest             │  heartbeat/main ─(heartbeat)─▶ healthchecks.io
- │        OpsHost ports ────────────────┼▶ backup-plan/<plan> (tick) │                             │
- │        OpsModule.status()/backend ◀──┼── ops-config/main           ▼                             │
- │                                      │                     upload/<run>.<dest> ──(object-store)──▶ S3 / R2 / B2 / local-dir
- │  /ops UI ── ops.remote.ts ── OpsBackend (writes ops.sqlite, then config.changed)                  │
- │                                      │  retention/<dest>, restore-drill/<dest> ──(object-store)──▶ same │
- └───────────────────────────────────────────────────────────────────────────────┘
-      ops.sqlite: config, secrets (envelope-encrypted, KEK = OPS_MASTER_KEY from fnox),
-                  runs, uploads, drills, alert state, notification outbox
+ exe.dev VM "granary" (public proxy port = granary, for GitHub webhooks)
+ ┌──────────────────────────────────────────────────────────────────────────────────────┐
+ │ granary System (issues)            │ ops System (service.name=granary-ops)            │
+ │                                    │                                                  │
+ │ Tracer ── TelemetryBatch ──────────┼─▶ fan-out · redaction · sampling ─▶ telemetry-sink/<id>
+ │                                    │                                         │ OTLP/HTTP  │
+ │ WAL/relay/system ── health() ──────┼─▶ watchdog/main ─▶ condition/<id> ─remediate─▶ remediator/main
+ │                                    │                         │ attention → banner, /ops, Grafana
+ │ granary.sqlite ◀─ VACUUM INTO ─────┼── snapshot Worker ◀── backup-run/<run> ◀─tick─ backup-plan/<plan>
+ │   (raw snapshot in spool, ~1× DB)  │   └─ zstd → AES-256-GCM, streamed ─▶ upload/<run>.<dest> ─┐
+ │ OpsHost ports / OpsModule          │ ops-config/main · retention/<dest> · restore-drill/<dest>  │
+ │ /ops UI + banner ─ OpsBackend ─────┼─ ops.sqlite (config, envelope-encrypted secrets, runs,     │
+ │                                    │               conditions, ops_events, admin_visits)       │
+ └────────────────────────────────────┴───────────────────────────────────────────────────┼────┘
+        │ http://grafana-otlp.int.exe.xyz  (exe.dev peer integration: key injected        │ S3 API
+        │  at the edge, granary stores no credential)                                     ▼
+        ▼                                                         Cloudflare R2  (region auto,
+ exe.dev VM "granary-grafana": grafana/otel-lgtm                   bucket-scoped Object R&W token,
+   :4318 OTLP (private) → Loki · Tempo · Prometheus                 caps: ≤ 82 backups/db, ≤ 8 GiB)
+   :3000 Grafana UI (private, exe.dev login)
 ```
 
 ## A backup, step by step
-1. `backup-plan/<plan>` ticks → commits a `backup_runs` row → mails
-   `backup-run/<run>` (virtual actor, loader-backed).
-2. `snapshot` processor → Worker: `VACUUM INTO` spool → `integrity_check` →
-   row counts → zstd → AES-256-GCM (per-artifact DEK wrapped by the KEK) →
-   sha256s → manifest.
-3. One `upload/<run>.<dest>` per destination: PUT data (multipart via
-   `Bun.S3Client`) → `stat` → PUT `…manifest.json` (**the commit marker**)
-   → done. Crash anywhere resumes idempotently (ADR 0082).
-4. Weekly `restore-drill/<dest>` proves the newest backup restores.
+1. `backup-plan/<plan>` ticks (hourly, stretched automatically if the egress
+   budget would be exceeded) → commits a run row → `backup-run/<run>`.
+2. Snapshot Worker: `VACUUM INTO` the spool → `integrity_check` → row counts.
+3. `retention/<dest>` makes room first (caps always hold).
+4. `upload/<run>.<dest>`: stream zstd → AES-256-GCM (per-artifact key wrapped
+   by `OPS_MASTER_KEY`) straight into an R2 multipart upload; then PUT the
+   manifest with `If-None-Match: *` — the manifest is the create-once commit
+   marker. Crashes resume idempotently.
+5. Raw snapshot deleted; at most one local copy kept if the disk allows.
+6. Weekly `restore-drill/<dest>` proves the newest backup restores.
+
+## When something goes wrong
+The watchdog tries a fix first (clean spool, drop local copy, WAL
+checkpoint, postpone, retry, stretch interval, re-run drill, reset sink
+circuit). Only if the problem persists past its grace period does it become
+an **attention** item: a banner on your next visit to the admin UI, a line on
+`/ops`, and a metric/log in Grafana. No email, no push, no heartbeat.
 
 ## Restoring (runbook sketch)
-You need: `OPS_MASTER_KEY` (1Password item `granary`) and bucket credentials.
-`mise run ops:restore -- --dest <id|s3-url> --latest --out granary.sqlite`
-downloads the newest manifest+artifact, verifies, decrypts, decompresses and
-runs `integrity_check`. Full runbook: `docs/ops/runbook.md` (milestone M5).
+You need: `OPS_MASTER_KEY` (1Password item `granary`) and an R2 token.
+`mise run ops:restore -- --dest seed:r2 --latest --out granary.sqlite`.
+Full runbook: `docs/ops/runbook.md`; exe.dev setup: `docs/ops/exe-dev.md`
+(both milestone M5).
 
 ## Decisions
+Current:
 - [0080 Module boundary & contract](../adr/0080-ops-domain-module-boundary.md)
-- [0081 Process & System placement](../adr/0081-ops-process-and-system-placement.md)
-- [0082 Actor & I/O topology, crash semantics](../adr/0082-ops-actor-and-io-topology.md)
-- [0083 Backup method: VACUUM INTO in a Worker](../adr/0083-backup-method-vacuum-into-in-a-worker.md)
-- [0084 Object storage destinations](../adr/0084-object-storage-destinations.md)
-- [0085 Telemetry sinks: OTLP first](../adr/0085-telemetry-sinks-otlp-first.md)
-- [0086 Secret store](../adr/0086-ops-secret-store.md)
-- [0087 In-product configuration & seed env](../adr/0087-in-product-configuration-and-seed-env.md)
-- [0088 Watchdog signals & alerting](../adr/0088-watchdog-signals-and-alerting.md)
-- [0089 Ops durable state](../adr/0089-ops-durable-state.md)
-- [0090 fake-infra](../adr/0090-fake-infra.md)
-- [0091 Test strategy](../adr/0091-ops-test-strategy.md)
-- [0092 UI & OpsBackend seam](../adr/0092-ops-ui-and-backend-seam.md)
+- [0081 Process & System placement](../adr/0081-ops-process-and-system-placement.md) (heartbeat part superseded by 0100)
+- [0082 Actor & I/O topology, crash semantics](../adr/0082-ops-actor-and-io-topology.md) + [0101 revision: self-healing](../adr/0101-ops-topology-revision-self-healing.md)
+- [0083 Backup method: VACUUM INTO in a Worker](../adr/0083-backup-method-vacuum-into-in-a-worker.md) + [0098 exe.dev resources & staging](../adr/0098-production-on-exe-dev-resources-and-staging.md)
+- [0084 Object storage](../adr/0084-object-storage-destinations.md) + [0095 R2](../adr/0095-r2-backup-destination.md) + [0096 Bounded retention](../adr/0096-bounded-retention.md)
+- [0085 Telemetry: OTLP first](../adr/0085-telemetry-sinks-otlp-first.md) + [0099 Grafana on exe.dev](../adr/0099-telemetry-to-self-hosted-grafana-on-exe-dev.md)
+- [0086 Secret store](../adr/0086-ops-secret-store.md) + [0097 Encryption is mandatory](../adr/0097-backup-encryption-mandatory.md)
+- [0089 Durable state](../adr/0089-ops-durable-state.md) (tables revised in 0101)
+- [0090 fake-infra](../adr/0090-fake-infra.md) + [0091 Test strategy](../adr/0091-ops-test-strategy.md) + [0103 revision](../adr/0103-ops-tests-and-fake-infra-revision.md)
+- [0092 UI & OpsBackend seam](../adr/0092-ops-ui-and-backend-seam.md) + [0104 revision](../adr/0104-ops-ui-revision.md)
 - [0093 Feedback loops & redaction](../adr/0093-telemetry-feedback-loops-and-redaction.md)
-- [0094 Implementation plan](../adr/0094-ops-implementation-plan.md)
+- [0100 No paging: self-heal, wait until morning](../adr/0100-no-paging-problems-wait-until-morning.md)
+- [0102 Configuration & seeds](../adr/0102-ops-configuration-and-seeds-revision.md)
+- [0105 Implementation plan](../adr/0105-ops-implementation-plan-revision.md)
+
+Superseded: [0087](../adr/0087-in-product-configuration-and-seed-env.md) → 0102,
+[0088](../adr/0088-watchdog-signals-and-alerting.md) → 0100,
+[0094](../adr/0094-ops-implementation-plan.md) → 0105.
 
 ## Open questions
-- Which object store (R2 / B2 / S3 / Hetzner) and which Grafana (Cloud or self-hosted)?
-- Which phone-waking channel: ntfy, Pushover, Slack, Grafana OnCall?
-- RPO target (default hourly backups) and retention defaults — OK?
-- Should backup encryption be mandatory (proposed: yes)?
-- Where does granary run in production (volume size informs disk thresholds)?
+- Does exe.dev's proxy accept large protobuf POSTs to a private port and a
+  peer integration target on :4318? (Contract test; fallback: VM token.)
+- Does R2 honour an unsigned `If-None-Match: *` on a presigned PUT?
+  (Contract test; fallback: HEAD-then-PUT.)
+- Is VM→VM traffic via `*.int.exe.xyz` billed as outbound? (Assumed yes.)
+- Default 8 GiB / 82-backup caps and 20 GiB/month backup egress — OK?
+- Which exe.dev region for both VMs (FRA/LON vs US) — affects R2 latency only.

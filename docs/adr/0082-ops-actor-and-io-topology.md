@@ -1,6 +1,6 @@
 # 82. Ops actor and I/O processor topology
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 101
 
 ## Decision
 One file per actor in `src/lib/ops/actors/`. All side effects go through I/O

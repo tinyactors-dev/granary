@@ -1,6 +1,6 @@
 # 81. Ops runs in the app process, in its own tinyactors System
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 100 (external heartbeat)
 
 ## Context
 Ops needs the SQLite file (same host), granary's telemetry batches and health

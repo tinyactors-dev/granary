@@ -1,6 +1,6 @@
 # 85. Telemetry export: OTLP/HTTP first, native Loki push as a log sink
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 99
 
 ## Context
 Today `tracing.ts` POSTs traces/logs fire-and-forget to

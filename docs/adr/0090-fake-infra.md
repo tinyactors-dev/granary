@@ -1,6 +1,6 @@
 # 90. fake-infra: stand-ins for object storage, Loki, OTLP and notifications
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 103
 
 ## Decision
 `fake-infra/` is a separate Bun process (like `fake-github/`, ADR 0060) with

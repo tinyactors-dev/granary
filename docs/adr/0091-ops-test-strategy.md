@@ -1,6 +1,6 @@
 # 91. Ops tests: running systems, fakes, traces, restore drills
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 103
 
 ## Decision
 Consistent with ADR 0007: no unit tests; the harness (`tests/harness.ts`,

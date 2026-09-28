@@ -1,6 +1,6 @@
 # 92. Ops admin UI and its OpsBackend seam
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 104
 
 ## Decision
 - Pages under `/ops` (admins only; read-only for signed-in non-admins):

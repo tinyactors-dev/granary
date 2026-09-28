@@ -1,6 +1,6 @@
 # 88. The watchdog: what "sleep at night" means, and who wakes you
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: Superseded by 100
 
 ## Decision
 `watchdog/main` samples every 30 s; each rule is an `alert/<ruleId>` actor

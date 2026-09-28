@@ -1,6 +1,6 @@
 # 84. Object storage destinations via Bun.S3Client, committed by manifest
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 95, 96
 
 ## Decision
 - **Client**: Bun's built-in `S3Client` (prefer-Bun rule). Spike against

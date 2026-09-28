@@ -1,6 +1,6 @@
 # 94. Ops implementation plan and parallelisation
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: Superseded by 105
 
 ## Pin first (one agent, sequential)
 M0 — **Contract & schemas**: `src/lib/ops/contract.ts` (OpsHost, OpsModule,

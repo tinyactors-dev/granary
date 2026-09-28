@@ -1,6 +1,6 @@
 # 89. Ops keeps its own durable state in ops.sqlite
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 101
 
 ## Decision
 - A separate SQLite file `OPS_DATABASE_PATH` (default `<dataDir>/ops.sqlite`),

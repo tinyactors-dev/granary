@@ -1,6 +1,6 @@
 # 87. Ops configuration is in-product; env vars only seed
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: Superseded by 102
 
 ## Decision
 - All ops configuration lives in `ops.sqlite` and is edited in the admin UI

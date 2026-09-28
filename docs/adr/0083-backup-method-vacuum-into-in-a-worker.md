@@ -1,6 +1,6 @@
 # 83. Backups use `VACUUM INTO` in a Worker (no online backup API in bun:sqlite)
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 98
 
 ## Context
 The preferred tool is SQLite's online backup API (`sqlite3_backup_*`).
