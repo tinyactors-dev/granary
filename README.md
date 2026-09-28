@@ -68,3 +68,19 @@ docs/adr/                    # architecture decision records
 ```
 
 Adding UI components: `bunx shadcn-svelte@latest add <name>`.
+
+## Real local ops stack (RustFS + Grafana)
+
+`mise run up:real` runs the app against real ops targets instead of only the
+fakes (ADR 0027; needs docker via colima):
+
+| What | URL |
+|---|---|
+| granary (dev, `data/real/`) | http://localhost:5173 → `/ops` |
+| RustFS console (S3 backups) | http://localhost:9001/rustfs/console/ — `granary-dev` / `granary-dev-secret` |
+| Grafana (Loki, Tempo, Prometheus) | http://localhost:3300 — `admin` / `admin` |
+
+Backups run every 10 minutes to RustFS (and to fake-infra's R2 and a local
+copy); granary's and ops' traces, logs and metrics go to Grafana.
+`mise run up` switches back to the plain dev stack; `mise run down:real` stops
+everything; `mise run logs:real` tails the real-stack daemons.

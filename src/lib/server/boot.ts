@@ -9,6 +9,7 @@ import type { Backend } from './backend';
 import { RealBackend } from './backend.real';
 import { startDapServer, stopDapServer } from './dap';
 import { log } from './log';
+import { attachLogExport } from './log-export';
 import { getRuntime, onShutdown, startRuntime, type Runtime } from './system';
 import { dirname, resolve } from 'node:path';
 import { createOps } from '$lib/ops/index';
@@ -71,8 +72,10 @@ async function startOps(runtime: Runtime, config: Config, opts: { devMode: boole
 	}
 	g[OPS_KEY] = ops;
 	runtime.tracer.attachSink(ops.telemetrySink);
+	const detachLogs = attachLogExport(ops.telemetrySink);
 	if (!hasOpsBackend()) setOpsBackend(ops.backend);
 	onShutdown(async () => {
+		detachLogs();
 		hostHealth.stop();
 		await ops.stop();
 		if (g[OPS_KEY] === ops) delete g[OPS_KEY];

@@ -32,7 +32,34 @@ run = "bun loadgen/cli.ts"
 
 [tasks.up]
 description = "Start dev daemons via pitchfork (fake GitHub + app + loadgen + fake-infra); see pitchfork.toml"
-run = "pitchfork start -l"
+run = [
+  "pitchfork stop granary/app-real || true",
+  "pitchfork start granary/fake-github granary/loadgen granary/fake-infra granary/app",
+]
+
+[tasks."infra:rustfs"]
+description = "RustFS (S3-compatible) in docker: S3 :9000, console :9001/rustfs/console/ (real local stack, ADR 0027)"
+run = "docker run --rm --name granary-rustfs -p 9000:9000 -p 9001:9001 -e RUSTFS_ACCESS_KEY=granary-dev -e RUSTFS_SECRET_KEY=granary-dev-secret -e RUSTFS_CONSOLE_ENABLE=true -v granary-rustfs:/data rustfs/rustfs:latest"
+
+[tasks."infra:grafana"]
+description = "Grafana LGTM in docker: UI :3300, OTLP gRPC :4317 / HTTP :4318 (real local stack, ADR 0027)"
+run = "docker run --rm --name granary-lgtm -p 3300:3000 -p 4317:4317 -p 4318:4318 -v granary-lgtm:/data grafana/otel-lgtm:latest"
+
+[tasks."dev:real"]
+description = "Dev server wired to the real local stack (RustFS + Grafana) instead of fake-infra sinks"
+env = { _.file = ["config/dev.env", "config/real.env"] }
+run = ["bun tools/dev/s3-create-bucket.ts", "bun --bun vite dev --port 5173 --strictPort"]
+
+[tasks."up:real"]
+description = "Like `up`, but the app uses real RustFS + Grafana (stops granary/app, starts granary/app-real)"
+run = [
+  "pitchfork stop granary/app || true",
+  "pitchfork start granary/fake-github granary/loadgen granary/fake-infra granary/rustfs granary/grafana granary/app-real",
+]
+
+[tasks."down:real"]
+description = "Stop the real local stack (app-real, RustFS, Grafana) and the shared dev daemons"
+run = "pitchfork stop granary/app-real granary/rustfs granary/grafana granary/loadgen granary/fake-github granary/fake-infra"
 
 [tasks.down]
 description = "Stop dev daemons started from pitchfork.toml"
@@ -41,6 +68,10 @@ run = "pitchfork stop granary/app granary/loadgen granary/fake-github granary/fa
 [tasks.logs]
 description = "Tail logs of the dev daemons"
 run = "pitchfork logs -t granary/app granary/fake-github granary/loadgen granary/fake-infra"
+
+[tasks."logs:real"]
+description = "Tail logs of the real local stack"
+run = "pitchfork logs -t granary/app-real granary/rustfs granary/grafana"
 
 [tasks."dev:all"]
 description = "Alias for `up` (dev daemons via pitchfork)"

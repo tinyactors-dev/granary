@@ -1,5 +1,5 @@
 # Long-lived dev processes are pitchfork daemons wrapping mise tasks (ADR 0026).
-# Start: `pitchfork start -l` (or `mise run up`), stop: `pitchfork stop <id>`.
+# Start: `mise run up` (or `mise run up:real`), stop: `pitchfork stop <id>`.
 
 [daemons.fake-github]
 run = "mise run fake-github"
@@ -19,3 +19,20 @@ depends = ["fake-github"]
 [daemons.fake-infra]
 run = "mise run fake-infra"
 ready_port = 4090
+
+# --- real local stack (ADR 0027): `mise run up:real` -------------------------
+# app and app-real share port 5173; the up / up:real tasks stop one before
+# starting the other. Don't use `pitchfork start -l` (it would start both).
+
+[daemons.rustfs]
+run = "mise run infra:rustfs"
+ready_port = 9000
+
+[daemons.grafana]
+run = "mise run infra:grafana"
+ready_http = "http://localhost:3300/api/health"
+
+[daemons.app-real]
+run = "mise run dev:real"
+ready_http = "http://localhost:5173/"
+depends = ["fake-github", "fake-infra", "rustfs", "grafana"]
