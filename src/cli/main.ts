@@ -51,6 +51,15 @@ async function main(argv: string[]): Promise<number> {
 		case 'admin list':
 			await cmd.adminList(ctx);
 			return EXIT.ok;
+		case 'blocklist add':
+			await cmd.blocklistAdd(ctx, parsed);
+			return EXIT.ok;
+		case 'blocklist remove':
+			await cmd.blocklistRemove(ctx, parsed);
+			return EXIT.ok;
+		case 'blocklist list':
+			await cmd.blocklistList(ctx);
+			return EXIT.ok;
 		case 'login-link':
 			await cmd.loginLink(ctx, parsed);
 			return EXIT.ok;

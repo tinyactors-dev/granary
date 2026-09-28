@@ -79,6 +79,90 @@ export async function adminList(ctx: Context): Promise<void> {
 	print(ctx, r.result, () => adminTable(r.result));
 }
 
+// -- blocklist (ADR 0260) -------------------------------------------------------------------
+
+const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(\[bot\])?$/;
+
+type BlockedView = { login: string; note: string | null; expiresAt: number | null; addedBy: string | null; addedAt: number; active: boolean; isAdmin: boolean };
+
+/**
+ * Direct-mode blocklist access (no server running): granary.sqlite only.
+ * Safe without the socket because `allowlist/main` reads blocked_users at boot.
+ */
+function openDirectWal<T>(ctx: Context, fn: (wal: Wal, admins: AdminStore) => T): T {
+	const wal = new Wal(loadConfig(ctx.env).databasePath);
+	try {
+		return fn(wal, new AdminStore(wal.db));
+	} finally {
+		wal.close();
+	}
+}
+
+const blockedView = (r: { login: string; note: string | null; expires_at: number | null; added_by: string | null; added_at: number }, admins: AdminStore, now = Date.now()): BlockedView => ({
+	login: r.login,
+	note: r.note,
+	expiresAt: r.expires_at,
+	addedBy: r.added_by,
+	addedAt: r.added_at,
+	active: r.expires_at === null || r.expires_at > now,
+	isAdmin: admins.isAdmin(r.login)
+});
+
+function blockedTable(list: BlockedView[]): string {
+	if (!list.length) return 'nobody is blocked — block a login with `granary blocklist add <github-login> [--for 1h]`';
+	const w = Math.max(5, ...list.map((b) => b.login.length));
+	const until = (b: BlockedView) => (b.expiresAt === null ? 'until removed' : `${b.active ? 'until' : 'expired'} ${fmtTime(b.expiresAt)}`);
+	return [
+		`${'LOGIN'.padEnd(w)}  STATE    UNTIL                          NOTE`,
+		...list.map((b) => `${b.login.padEnd(w)}  ${(b.active ? 'blocked' : 'expired').padEnd(7)}  ${until(b).padEnd(29)}  ${b.note ?? ''}${b.isAdmin && b.active ? '  (admin: their own issues are closed)' : ''}`)
+	].join('\n');
+}
+
+export async function blocklistAdd(ctx: Context, p: Parsed): Promise<void> {
+	const login = p.args[0]!;
+	if (!GITHUB_LOGIN.test(login)) throw new CliError(`not a valid GitHub login: ${login}`, EXIT.usage);
+	const forMs = typeof p.options.for === 'string' ? parseDuration(p.options.for) : null;
+	const noteText = typeof p.options.note === 'string' && p.options.note.trim() ? p.options.note.trim() : undefined;
+	const r = await viaSocketOrDirect(ctx, 'blocklist/add', { login, forMs, ...(noteText ? { note: noteText } : {}) }, () =>
+		openDirectWal(ctx, (wal, admins) => {
+			const now = Date.now();
+			const expiresAt = forMs === null ? null : now + forMs;
+			const { row, added } = wal.blockUser(login, { note: noteText ?? null, expiresAt, addedBy: ACTOR }, now);
+			admins.audit(ACTOR, 'blocklist.add', row.login, { expiresAt, note: noteText ?? null });
+			return { user: blockedView(row, admins, now), added };
+		})
+	);
+	note(ctx, r.via);
+	const u = r.result.user;
+	print(ctx, r.result, () =>
+		[
+			`${u.login} is ${r.result.added ? 'now' : 'still'} blocked ${u.expiresAt === null ? 'until removed' : `until ${fmtTime(u.expiresAt)}`}`,
+			...(u.isAdmin ? [`note: ${u.login} is an admin — issues they open will be closed while the block lasts`] : [])
+		].join('\n')
+	);
+}
+
+export async function blocklistRemove(ctx: Context, p: Parsed): Promise<void> {
+	const login = p.args[0]!;
+	const r = await viaSocketOrDirect(ctx, 'blocklist/remove', { login }, () =>
+		openDirectWal(ctx, (wal, admins) => {
+			const existing = wal.getBlockedUser(login);
+			const removed = wal.unblockUser(login);
+			if (removed) admins.audit(ACTOR, 'blocklist.remove', existing?.login ?? login, null);
+			return { login: existing?.login ?? login, removed };
+		})
+	);
+	note(ctx, r.via);
+	print(ctx, r.result, () => (r.result.removed ? `${r.result.login} is no longer blocked` : `${r.result.login} was not blocked`));
+}
+
+export async function blocklistList(ctx: Context): Promise<void> {
+	const r = await viaSocketOrDirect(ctx, 'blocklist/list', {}, () =>
+		openDirectWal(ctx, (wal, admins) => wal.listBlockedUsers().map((row) => blockedView(row, admins)))
+	);
+	print(ctx, r.result, () => blockedTable(r.result));
+}
+
 export async function loginLink(ctx: Context, p: Parsed): Promise<void> {
 	const login = p.args[0]!;
 	const ttlMs = parseDuration(String(p.options.ttl ?? '15m'));

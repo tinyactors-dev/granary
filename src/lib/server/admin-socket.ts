@@ -73,6 +73,10 @@ export function adminHandlers(d: AdminSocketDeps): { [K in AdminCommandPath]: Ha
 		'admin/add': (b: { login: string }) => d.backend.addAdmin(b.login, actor, 'cli'),
 		'admin/remove': (b: { login: string }) => d.backend.removeAdmin(b.login, actor),
 		'admin/list': () => d.backend.listAdmins(),
+		'blocklist/add': (b: { login: string; forMs?: number | null; note?: string }) =>
+			d.backend.blockUser({ login: b.login, forMs: b.forMs ?? null, note: b.note ?? null }, actor),
+		'blocklist/remove': (b: { login: string }) => d.backend.unblockUser(b.login, actor),
+		'blocklist/list': () => d.backend.listBlockedUsers(),
 		'login-link': (b: { login: string; ttlMs?: number }) => d.backend.createLoginLink({ login: b.login, ttlMs: b.ttlMs }, actor),
 		'github/status': () => d.backend.getGitHubStatus(),
 		'github/setup-url': async (b: { login?: string }) => {

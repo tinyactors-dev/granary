@@ -404,6 +404,73 @@ export interface RemoveAllowedUserResult {
 }
 
 // ---------------------------------------------------------------------------
+// Blocklist (ADR 0260): beats the allowlist and maintainer associations
+// ---------------------------------------------------------------------------
+
+export interface BlockedUser {
+	login: string;
+	note: string | null;
+	/** Epoch ms; null = blocked until removed. */
+	expiresAt: number | null;
+	addedBy: string | null;
+	addedAt: number;
+	/** false once `expiresAt` has passed (kept in the list, no longer enforced). */
+	active: boolean;
+	/** The login is a granary admin: their own issues/PRs will be closed while active. */
+	isAdmin: boolean;
+}
+
+/** Block durations offered in the UI; `forever` = until removed. */
+export const BlockDuration = Type.Union([
+	Type.Literal('1h'),
+	Type.Literal('1d'),
+	Type.Literal('7d'),
+	Type.Literal('forever')
+]);
+export type BlockDuration = Static<typeof BlockDuration>;
+
+export const BLOCK_DURATION_MS: Record<BlockDuration, number | null> = {
+	'1h': 3_600_000,
+	'1d': 86_400_000,
+	'7d': 7 * 86_400_000,
+	forever: null
+};
+
+/** `blockUser` form fields. */
+export const BlockUserInput = Type.Object(
+	{
+		login: Login,
+		duration: BlockDuration,
+		note: Type.Optional(Type.String({ maxLength: 200 }))
+	},
+	closed
+);
+export type BlockUserInput = Static<typeof BlockUserInput>;
+
+export const UnblockUserInput = Type.Object({ login: Type.String({ minLength: 1 }) }, closed);
+export type UnblockUserInput = Static<typeof UnblockUserInput>;
+
+/** The Backend call behind the form, the CLI and the admin socket. */
+export interface BlockUserRequest {
+	login: string;
+	note: string | null;
+	/** Milliseconds from now; null = until removed. */
+	forMs: number | null;
+}
+
+export interface BlockUserResult {
+	user: BlockedUser;
+	/** false when the login was already blocked (its note/expiry were replaced). */
+	added: boolean;
+}
+
+export interface UnblockUserResult {
+	login: string;
+	/** false when the login was not blocked. */
+	removed: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // Effects
 // ---------------------------------------------------------------------------
 

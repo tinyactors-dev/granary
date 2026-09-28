@@ -17,6 +17,7 @@
 	import AdminOnly from '$lib/components/app/AdminOnly.svelte';
 	import { describeError } from '$lib/components/app/format';
 	import { isAdmin } from '$lib/components/app/session';
+	import Blocklist from '$lib/components/policy/Blocklist.svelte';
 
 	const users = listAllowedUsers();
 	const admin = $derived(isAdmin());
@@ -47,7 +48,7 @@
 
 <PageHeader
 	title="Allowlist"
-	description="Logins that may open issues. OWNER, MEMBER and COLLABORATOR authors are always allowed."
+	description="Logins that may open issues. OWNER, MEMBER and COLLABORATOR authors are allowed too — unless they are on the blocklist below."
 />
 
 <div class="grid items-start gap-4 lg:grid-cols-[1fr_22rem]">
@@ -151,6 +152,10 @@
 			</form>
 		</Card.Content>
 	</Card.Root>
+</div>
+
+<div class="mt-10">
+	<Blocklist />
 </div>
 
 <AlertDialog.Root open={removing !== null} onOpenChange={(open) => { if (!open && !removeBusy) removing = null; }}>

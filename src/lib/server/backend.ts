@@ -21,6 +21,9 @@ import type {
 	ActorSummary,
 	AddAllowedUserResult,
 	AllowedUser,
+	BlockedUser,
+	BlockUserRequest,
+	BlockUserResult,
 	CreateSessionInput,
 	CreatedSession,
 	DeliverySummary,
@@ -34,6 +37,7 @@ import type {
 	RemoveAllowedUserResult,
 	Resolved,
 	SessionUser,
+	UnblockUserResult,
 	VerdictSummary
 } from '$lib/schemas/api';
 import type { ActorAddress } from '$lib/schemas/actors';
@@ -128,6 +132,14 @@ export interface Backend {
 	addAllowedUser(login: string, addedBy: string): Promise<AddAllowedUserResult>;
 	/** Delete from allowed_users, then post `allowlist.replace`. */
 	removeAllowedUser(login: string, removedBy: string): Promise<RemoveAllowedUserResult>;
+
+	// -- blocklist (ADR 0260) ---------------------------------------------------
+	/** All blocked_users entries, expired ones included (`active: false`). */
+	listBlockedUsers(): Promise<BlockedUser[]>;
+	/** Upsert into blocked_users, audit, then post `blocklist.replace`. */
+	blockUser(input: BlockUserRequest, actor: string): Promise<BlockUserResult>;
+	/** Delete from blocked_users, audit, then post `blocklist.replace`. */
+	unblockUser(login: string, actor: string): Promise<UnblockUserResult>;
 
 	// -- effects -----------------------------------------------------------------
 

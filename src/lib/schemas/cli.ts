@@ -68,6 +68,15 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 	{ name: 'admin add', args: ['login'], transport: 'socket-or-direct', description: 'Make a GitHub login an admin', options: [DATA, JSON_OUT] },
 	{ name: 'admin remove', args: ['login'], transport: 'socket-or-direct', description: 'Remove an admin (not the last one)', options: [DATA, JSON_OUT] },
 	{ name: 'admin list', args: [], transport: 'socket-or-direct', description: 'List admins', options: [DATA, JSON_OUT] },
+	{
+		name: 'blocklist add',
+		args: ['login'],
+		transport: 'socket-or-direct',
+		description: 'Block a GitHub login: their issues are closed, even if allowlisted or an owner (ADR 0260)',
+		options: [DATA, JSON_OUT, { name: 'for', type: 'string', description: 'Block only for this long, e.g. 1h, 30m, 7d (default: until removed)' }, { name: 'note', type: 'string', description: 'Why (shown in the UI)' }]
+	},
+	{ name: 'blocklist remove', args: ['login'], transport: 'socket-or-direct', description: 'Unblock a GitHub login', options: [DATA, JSON_OUT] },
+	{ name: 'blocklist list', args: [], transport: 'socket-or-direct', description: 'List blocked logins (expired entries marked)', options: [DATA, JSON_OUT] },
 	{ name: 'login-link', args: ['login'], transport: 'socket-or-direct', description: 'Print a one-time sign-in URL for an admin', options: [DATA, JSON_OUT, { name: 'ttl', type: 'string', description: 'Validity, e.g. 15m, 2h (max 24h)', default: '15m' }] },
 	{ name: 'github status', args: [], transport: 'socket', description: 'Show the GitHub connection, installations and catch-up', options: [DATA, JSON_OUT] },
 	{ name: 'github setup-url', args: [], transport: 'socket', description: 'Print the URL of the GitHub setup page', options: [DATA, JSON_OUT, { name: 'login', type: 'string', description: 'Also create a login link for this admin' }] },

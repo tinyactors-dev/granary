@@ -39,7 +39,7 @@ import {
 
 export type { IssueActorData, IssueDoneData };
 
-export const ISSUE_REVISION = 'v1';
+export const ISSUE_REVISION = 'v2';
 
 /** State names; tests observe them through traces (ADR 0042). */
 export const ISSUE_STATES = {
@@ -153,7 +153,9 @@ export function issueChart(): DefinitionBuilder<IssueActorData> {
 							.assign('phase', literal('closing'))
 							.send(EVENTS.githubClose, (b) => b.via(GITHUB_IO_TYPE).data(closeRequest))
 					)
-					.on(EVENTS.githubClosed, (t) => t.target(S.closed).assign('reason', literal(OUTCOME_REASONS.notAllowed)))
+					// Keep the verdict's reason (`not-allowed` or `blocklist`); a closing issue restored
+					// from the outbox after a restart has none, so it reports `not-allowed`.
+					.on(EVENTS.githubClosed, (t) => t.target(S.closed).assign('reason', ({ data }: Ctx) => data.reason ?? OUTCOME_REASONS.notAllowed))
 					.on(EVENTS.githubGaveUp, (t) =>
 						t
 							.target(S.failed)

@@ -39,6 +39,20 @@ export type DoctorCheck = Static<typeof DoctorCheck>;
 
 export const BackupRunRef = Type.Object({ planId: Type.String(), runId: Type.String() }, closed);
 
+/** A blocklist entry on the wire (ADR 0260); mirrors `BlockedUser` in api.ts. */
+export const BlockedUserWire = Type.Object(
+	{
+		login: Type.String(),
+		note: Type.Union([Type.String(), Type.Null()]),
+		expiresAt: Type.Union([Type.Number(), Type.Null()]),
+		addedBy: Type.Union([Type.String(), Type.Null()]),
+		addedAt: Type.Number(),
+		active: Type.Boolean(),
+		isAdmin: Type.Boolean()
+	},
+	closed
+);
+
 /**
  * Command → { request, response } schemas. Keys are the URL path after
  * `/v1/` (the CLI name with spaces replaced by `/`).
@@ -47,6 +61,20 @@ export const ADMIN_COMMANDS = {
 	'admin/add': { request: Type.Object({ login: Login }, closed), response: AddAdminResult },
 	'admin/remove': { request: Type.Object({ login: Login }, closed), response: RemoveAdminResult },
 	'admin/list': { request: Type.Object({}, closed), response: Type.Array(Admin) },
+	'blocklist/add': {
+		request: Type.Object(
+			{
+				login: Login,
+				/** Milliseconds from now; null or absent = until removed. */
+				forMs: Type.Optional(Type.Union([Type.Integer({ minimum: 1000 }), Type.Null()])),
+				note: Type.Optional(Type.String({ maxLength: 200 }))
+			},
+			closed
+		),
+		response: Type.Object({ user: BlockedUserWire, added: Type.Boolean() }, closed)
+	},
+	'blocklist/remove': { request: Type.Object({ login: Login }, closed), response: Type.Object({ login: Type.String(), removed: Type.Boolean() }, closed) },
+	'blocklist/list': { request: Type.Object({}, closed), response: Type.Array(BlockedUserWire) },
 	'login-link': {
 		request: Type.Object({ login: Login, ttlMs: Type.Optional(Type.Integer({ minimum: 60_000, maximum: 24 * 3_600_000 })) }, closed),
 		response: CreatedLoginLink

@@ -55,6 +55,8 @@ export interface Runtime {
 	postIssueOpened(data: IssueOpenedData, traceparent?: string): boolean;
 	/** Post `allowlist.replace` with the current `allowed_users`. */
 	publishAllowlist(): void;
+	/** Post `blocklist.replace` with the current (unexpired) `blocked_users` (ADR 0260). */
+	publishBlocklist(): void;
 	/** Monotonic counters since process start (ops health, ADR 0124). */
 	stats: { deadLetters: number };
 	shutdown(reason?: string): Promise<void>;
@@ -190,7 +192,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	// 3. allowlist/main
 	const allowlist = system.spawn(allowlistDefinition, {
 		address: ALLOWLIST_ADDRESS,
-		binding: { logins: wal.allowedLogins() }
+		binding: { logins: wal.allowedLogins(), blocked: wal.blocklistEntries() }
 	});
 	tracer.noteActor(allowlist.inspect());
 
@@ -284,6 +286,9 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		stats,
 		publishAllowlist() {
 			system.post(ALLOWLIST_ADDRESS, EVENTS.allowlistReplace, { logins: wal.allowedLogins() });
+		},
+		publishBlocklist() {
+			system.post(ALLOWLIST_ADDRESS, EVENTS.blocklistReplace, { entries: wal.blocklistEntries() });
 		},
 		closed: false,
 		async shutdown(reason) {

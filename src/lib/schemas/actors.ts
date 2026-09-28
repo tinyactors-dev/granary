@@ -76,6 +76,8 @@ export const EVENTS = {
 	allowlistVerdict: 'allowlist.verdict',
 	/** backend (after writing allowed_users) → allowlist/main */
 	allowlistReplace: 'allowlist.replace',
+	/** backend (after writing blocked_users) → allowlist/main (ADR 0260) */
+	blocklistReplace: 'blocklist.replace',
 	/** issue/<key> → `github` I/O processor (`<send type="github">`) */
 	githubClose: 'github.close',
 	/** github I/O processor (already done) or outbox relay → reply_to (issue/<key>) */
@@ -130,10 +132,13 @@ export const AllowlistCheckData = Type.Object(
 export type AllowlistCheckData = Static<typeof AllowlistCheckData>;
 
 /**
- * Why a login was allowed or not. `allowlist`: login is in allowed_users;
- * `association`: OWNER/MEMBER/COLLABORATOR; `not-allowed`: neither.
+ * Why a login was allowed or not (precedence in this order, ADR 0260):
+ * `blocklist`: an active blocked_users entry (beats everything);
+ * `allowlist`: login is in allowed_users; `association`:
+ * OWNER/MEMBER/COLLABORATOR; `not-allowed`: none of these.
  */
 export const AllowlistReason = Type.Union([
+	Type.Literal('blocklist'),
 	Type.Literal('allowlist'),
 	Type.Literal('association'),
 	Type.Literal('not-allowed')
@@ -153,6 +158,20 @@ export const AllowlistReplaceData = Type.Object(
 	{ ...closed, title: 'allowlist.replace' }
 );
 export type AllowlistReplaceData = Static<typeof AllowlistReplaceData>;
+
+/** One blocklist entry as the policy sees it: lower-cased login, expiry (epoch ms) or null = until removed. */
+export const BlockEntry = Type.Object(
+	{ login: Type.String(), expiresAt: Nullable(Type.Integer({ minimum: 0 })) },
+	{ ...closed, title: 'BlockEntry' }
+);
+export type BlockEntry = Static<typeof BlockEntry>;
+
+/** `blocklist.replace` — the full current blocklist (as stored in blocked_users). */
+export const BlocklistReplaceData = Type.Object(
+	{ entries: Type.Array(BlockEntry) },
+	{ ...closed, title: 'blocklist.replace' }
+);
+export type BlocklistReplaceData = Static<typeof BlocklistReplaceData>;
 
 /**
  * `github.close` — sent by the issue actor to the `github` I/O processor.
@@ -200,6 +219,7 @@ export const EVENT_DATA = {
 	[EVENTS.allowlistCheck]: AllowlistCheckData,
 	[EVENTS.allowlistVerdict]: AllowlistVerdictData,
 	[EVENTS.allowlistReplace]: AllowlistReplaceData,
+	[EVENTS.blocklistReplace]: BlocklistReplaceData,
 	[EVENTS.githubClose]: GitHubCloseData,
 	[EVENTS.githubClosed]: GitHubClosedData,
 	[EVENTS.githubGaveUp]: GitHubGaveUpData,
@@ -211,6 +231,7 @@ export interface EventDataMap {
 	'allowlist.check': AllowlistCheckData;
 	'allowlist.verdict': AllowlistVerdictData;
 	'allowlist.replace': AllowlistReplaceData;
+	'blocklist.replace': BlocklistReplaceData;
 	'github.close': GitHubCloseData;
 	'github.closed': GitHubClosedData;
 	'github.gave-up': GitHubGaveUpData;
@@ -256,7 +277,7 @@ export type IssueOutcome = Static<typeof IssueOutcome>;
 /**
  * Reason strings in done-data / verdicts.reason:
  * - allowed: `allowlist` | `association`
- * - closed:  `not-allowed`
+ * - closed:  `not-allowed` | `blocklist`
  * - failed:  `github-gave-up: <lastError>` | `check-timeout`
  * - settled: `already-settled`
  */
@@ -264,6 +285,7 @@ export const OUTCOME_REASONS = {
 	allowlist: 'allowlist',
 	association: 'association',
 	notAllowed: 'not-allowed',
+	blocklist: 'blocklist',
 	checkTimeout: 'check-timeout',
 	alreadySettled: 'already-settled',
 	gaveUp: (lastError: string) => `github-gave-up: ${lastError}`
@@ -307,9 +329,12 @@ export const parseIssueDoneData = (value: unknown): IssueDoneData => parse(Issue
 // Allowlist actor
 // ---------------------------------------------------------------------------
 
-/** `allowlist/main` data; binding at spawn = logins from allowed_users, lower-cased. */
+/**
+ * `allowlist/main` data; binding at spawn = logins from allowed_users
+ * (lower-cased) and the blocklist from blocked_users (ADR 0260).
+ */
 export const AllowlistActorData = Type.Object(
-	{ logins: Type.Array(Type.String()) },
+	{ logins: Type.Array(Type.String()), blocked: Type.Array(BlockEntry) },
 	{ ...closed, title: 'AllowlistActorData' }
 );
 export type AllowlistActorData = Static<typeof AllowlistActorData>;

@@ -15,12 +15,16 @@ import type {
 	ActorSummary,
 	AddAllowedUserResult,
 	AllowedUser,
+	BlockedUser,
+	BlockUserRequest,
+	BlockUserResult,
 	CreateSessionInput,
 	CreatedSession,
 	DeliverySummary,
 	EffectSummary,
 	IssueDetail,
 	IssueSummary,
+	UnblockUserResult,
 	ListDeliveriesInput,
 	ListEffectsInput,
 	ListVerdictsInput,
@@ -73,6 +77,7 @@ import {
 	SESSION_TTL_MS,
 	parseOutboxPayload,
 	parseReplyTo,
+	type BlockedUserRow,
 	type InboxRow,
 	type OutboxRow,
 	type VerdictRow
@@ -332,6 +337,51 @@ export class RealBackend implements Backend {
 			log.info(`allowlist: ${login} removed by ${removedBy}`, { 'audit.action': 'allowlist.remove', 'audit.subject': login, 'audit.actor': removedBy });
 		}
 		return { login, removed };
+	}
+
+	// -- blocklist (ADR 0260) -------------------------------------------------------------
+
+	#blocked(r: BlockedUserRow, now = Date.now()): BlockedUser {
+		return {
+			login: r.login,
+			note: r.note,
+			expiresAt: r.expires_at,
+			addedBy: r.added_by,
+			addedAt: r.added_at,
+			active: r.expires_at === null || r.expires_at > now,
+			isAdmin: this.#admins.isAdmin(r.login)
+		};
+	}
+
+	async listBlockedUsers(): Promise<BlockedUser[]> {
+		const now = Date.now();
+		return this.#wal.listBlockedUsers().map((r) => this.#blocked(r, now));
+	}
+
+	async blockUser(input: BlockUserRequest, actor: string): Promise<BlockUserResult> {
+		if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}(\[bot\])?$/.test(input.login))
+			throw new BackendError('invalid', `Not a valid GitHub login: ${input.login}`);
+		if (input.forMs !== null && (!Number.isInteger(input.forMs) || input.forMs < 1000))
+			throw new BackendError('invalid', 'A block must last at least one second');
+		const now = Date.now();
+		const expiresAt = input.forMs === null ? null : now + input.forMs;
+		const note = input.note?.trim() ? input.note.trim() : null;
+		const { row, added } = this.#wal.blockUser(input.login, { note, expiresAt, addedBy: actor }, now);
+		this.#admins.audit(actor, 'blocklist.add', row.login, { expiresAt, note });
+		this.#rt.publishBlocklist();
+		log.info(`blocklist: ${actor} blocked ${row.login}${expiresAt ? ` until ${new Date(expiresAt).toISOString()}` : ' until removed'}`);
+		return { user: this.#blocked(row, now), added };
+	}
+
+	async unblockUser(login: string, actor: string): Promise<UnblockUserResult> {
+		const existing = this.#wal.getBlockedUser(login);
+		const removed = this.#wal.unblockUser(login);
+		if (removed) {
+			this.#admins.audit(actor, 'blocklist.remove', existing?.login ?? login, null);
+			this.#rt.publishBlocklist();
+			log.info(`blocklist: ${actor} unblocked ${existing?.login ?? login}`);
+		}
+		return { login: existing?.login ?? login, removed };
 	}
 
 	// -- effects ------------------------------------------------------------------------

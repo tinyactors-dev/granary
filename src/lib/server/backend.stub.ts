@@ -19,6 +19,9 @@ import type {
 	ActorSummary,
 	AddAllowedUserResult,
 	AllowedUser,
+	BlockedUser,
+	BlockUserRequest,
+	BlockUserResult,
 	CreateSessionInput,
 	CreatedSession,
 	DeliverySummary,
@@ -33,6 +36,7 @@ import type {
 	RemoveAllowedUserResult,
 	Resolved,
 	SessionUser,
+	UnblockUserResult,
 	VerdictSummary
 } from '$lib/schemas/api';
 import { closeEffectKey, formatAddress, issueKey, parseIssueKey, type ActorAddress } from '$lib/schemas/actors';
@@ -379,6 +383,35 @@ export class StubBackend implements Backend {
 		const existing = [...this.allowed.keys()].find((k) => k.toLowerCase() === login.toLowerCase());
 		if (existing) this.allowed.delete(existing);
 		return { login, removed: existing !== undefined };
+	}
+
+	// -- blocklist (ADR 0260) ----------------------------------------------------------
+
+	/** Seeded with one active and one expired entry. */
+	private blocked = new Map<string, Omit<BlockedUser, 'active' | 'isAdmin'>>([
+		['mallory', { login: 'mallory', note: 'spam', expiresAt: null, addedBy: 'admin', addedAt: Date.now() - 3 * 86_400_000 }],
+		['eve', { login: 'eve', note: null, expiresAt: Date.now() - 3_600_000, addedBy: 'admin', addedAt: Date.now() - 7_200_000 }]
+	]);
+
+	#blockedView(b: Omit<BlockedUser, 'active' | 'isAdmin'>): BlockedUser {
+		return { ...b, active: b.expiresAt === null || b.expiresAt > Date.now(), isAdmin: this.admins.includes(b.login.toLowerCase()) || this.settings.isAdmin(b.login) };
+	}
+
+	async listBlockedUsers(): Promise<BlockedUser[]> {
+		return [...this.blocked.values()].sort((a, b) => a.login.localeCompare(b.login)).map((b) => this.#blockedView(b));
+	}
+
+	async blockUser(input: BlockUserRequest, actor: string): Promise<BlockUserResult> {
+		const key = input.login.toLowerCase();
+		const added = !this.blocked.has(key);
+		const entry = { login: input.login, note: input.note, expiresAt: input.forMs === null ? null : Date.now() + input.forMs, addedBy: actor, addedAt: Date.now() };
+		this.blocked.set(key, entry);
+		return { user: this.#blockedView(entry), added };
+	}
+
+	async unblockUser(login: string): Promise<UnblockUserResult> {
+		const removed = this.blocked.delete(login.toLowerCase());
+		return { login, removed };
 	}
 
 	// -- effects ---------------------------------------------------------------------

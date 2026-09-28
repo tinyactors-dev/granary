@@ -14,11 +14,13 @@ import {
 	encodeOutboxPayload,
 	encodeReplyTo,
 	parseAllowedUserRow,
+	parseBlockedUserRow,
 	parseInboxRow,
 	parseOutboxRow,
 	parseSessionRow,
 	parseVerdictRow,
 	type AllowedUserRow,
+	type BlockedUserRow,
 	type InboxRow,
 	type InboxState,
 	type OutboxPayload,
@@ -158,6 +160,14 @@ const MIGRATIONS: string[] = [
 		created_at INTEGER NOT NULL,
 		expires_at INTEGER NOT NULL,
 		used_at INTEGER
+	);`,
+	/* 2: blocklist (ADR 0260) */
+	`CREATE TABLE IF NOT EXISTS blocked_users (
+		login TEXT PRIMARY KEY COLLATE NOCASE,
+		note TEXT,
+		expires_at INTEGER,
+		added_by TEXT,
+		added_at INTEGER NOT NULL
 	);`
 ];
 
@@ -529,6 +539,51 @@ export class Wal {
 
 	allowedCount(): number {
 		return (this.#q('SELECT COUNT(*) AS n FROM allowed_users').get() as { n: number }).n;
+	}
+
+	// -------------------------------------------------------------------------
+	// blocked_users (ADR 0260)
+	// -------------------------------------------------------------------------
+
+	/** All entries, expired ones included (the UI shows them as expired). */
+	listBlockedUsers(): BlockedUserRow[] {
+		return this.#q('SELECT * FROM blocked_users ORDER BY login COLLATE NOCASE').all().map(parseBlockedUserRow);
+	}
+
+	getBlockedUser(login: string): BlockedUserRow | null {
+		const r = this.#q('SELECT * FROM blocked_users WHERE login = $login').get({ login });
+		return r ? parseBlockedUserRow(r) : null;
+	}
+
+	/** The allowlist actor's view (`blocklist.replace` data): lower-cased logins, expired entries dropped. */
+	blocklistEntries(now = Date.now()): { login: string; expiresAt: number | null }[] {
+		return this.listBlockedUsers()
+			.filter((r) => r.expires_at === null || r.expires_at > now)
+			.map((r) => ({ login: r.login.toLowerCase(), expiresAt: r.expires_at }));
+	}
+
+	/**
+	 * Upsert, case-insensitive: blocking an already blocked login replaces its
+	 * note and expiry (e.g. extending "block me for 1 hour"). Returns the row and
+	 * whether it was newly added.
+	 */
+	blockUser(
+		login: string,
+		opts: { note: string | null; expiresAt: number | null; addedBy: string | null },
+		now = Date.now()
+	): { row: BlockedUserRow; added: boolean } {
+		return this.tx(() => {
+			const existed = this.getBlockedUser(login) !== null;
+			this.#q(
+				`INSERT INTO blocked_users (login, note, expires_at, added_by, added_at) VALUES ($login, $note, $expires, $by, $now)
+				 ON CONFLICT(login) DO UPDATE SET note = excluded.note, expires_at = excluded.expires_at, added_by = excluded.added_by, added_at = excluded.added_at`
+			).run({ login, note: opts.note, expires: opts.expiresAt, by: opts.addedBy, now });
+			return { row: this.getBlockedUser(login)!, added: !existed };
+		});
+	}
+
+	unblockUser(login: string): boolean {
+		return this.#q('DELETE FROM blocked_users WHERE login = $login').run({ login }).changes === 1;
 	}
 
 	// -------------------------------------------------------------------------

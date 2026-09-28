@@ -122,6 +122,13 @@ export const AllowedUserRow = Type.Object(
 );
 export type AllowedUserRow = Static<typeof AllowedUserRow>;
 
+/** `blocked_users` (ADR 0260): `expires_at` null = blocked until removed. */
+export const BlockedUserRow = Type.Object(
+	{ login: Type.String(), note: Nullable(Type.String()), expires_at: Nullable(EpochMs), added_by: Nullable(Type.String()), added_at: EpochMs },
+	{ ...closed, title: 'BlockedUserRow' }
+);
+export type BlockedUserRow = Static<typeof BlockedUserRow>;
+
 export const SessionRow = Type.Object(
 	{
 		/** Opaque random id (≥ 32 bytes, base64url) — the `granary_session` cookie value. */
@@ -139,6 +146,7 @@ export const parseInboxRow = (v: unknown): InboxRow => parse(InboxRow, v, 'inbox
 export const parseOutboxRow = (v: unknown): OutboxRow => parse(OutboxRow, v, 'outbox row');
 export const parseVerdictRow = (v: unknown): VerdictRow => parse(VerdictRow, v, 'verdict row');
 export const parseAllowedUserRow = (v: unknown): AllowedUserRow => parse(AllowedUserRow, v, 'allowed_users row');
+export const parseBlockedUserRow = (v: unknown): BlockedUserRow => parse(BlockedUserRow, v, 'blocked_users row');
 export const parseSessionRow = (v: unknown): SessionRow => parse(SessionRow, v, 'session row');
 
 /** Session lifetime (ADR 0034): 30 days. */
