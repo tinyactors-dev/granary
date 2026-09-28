@@ -29,8 +29,8 @@ import {
 	unb64,
 	unwrapKey,
 	wrapKey
-} from '../secrets/crypto';
-import type { Kek, MasterKeys } from '../secrets/keys';
+} from '../../platform/secrets/crypto';
+import type { Kek, MasterKeys } from '../../platform/secrets/keys';
 
 export const SEAL_CHUNK_BYTES = 4 * 1024 * 1024;
 export const RAW_BLOCK_BYTES = 4 * 1024 * 1024;

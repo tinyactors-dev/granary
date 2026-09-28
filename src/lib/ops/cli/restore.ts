@@ -22,7 +22,7 @@ import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { openOpsDb } from '../db/open';
 import { BackupsRepo, newId } from '../backups/repo';
-import { loadMasterKeys } from '../secrets/keys';
+import { loadMasterKeys } from '../../platform/secrets/keys';
 import { SecretStore } from '../secrets/store';
 import { openStore, type BackupStore } from '../backups/stores';
 import { RestoreFailure, fetchBackup, listBackups, readManifest } from '../backups/restore';
@@ -65,8 +65,8 @@ if (a.help) {
 }
 
 const env = process.env as Record<string, string | undefined>;
-const keys = await loadMasterKeys({ env, dataDir: '.', devMode: false });
-if (!keys.current && !keys.previous) die('OPS_MASTER_KEY is not set (run under `fnox exec -P prod --`)');
+const keys = await loadMasterKeys({ env, dataDir: env.GRANARY_DATA_DIR ?? '.', devMode: false });
+if (!keys.current && !keys.previous) die('no master key: set GRANARY_MASTER_KEY (alias OPS_MASTER_KEY) or pass --data with a master.key');
 
 let store: BackupStore;
 if (a['ops-db']) {

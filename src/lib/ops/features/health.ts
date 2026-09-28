@@ -26,6 +26,7 @@ import type { Measurements, SinkState } from '../health/signals';
 import { computeStatus } from '../health/status';
 import { HealthBackend } from '../backend/health';
 import { seedSinks } from '../telemetry/seeds';
+import { masterKeyConfigured } from '../../platform/secrets/keys';
 
 export const METRICS_INTERVAL_MS = 60_000;
 const STATE_VALUE: Record<ConditionState, number> = { ok: 0, suspect: 1, healing: 2, attention: 3, acknowledged: 4 };
@@ -273,7 +274,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 						journal,
 						now: ctx.now(),
 						databases: ctx.host.databases.map((d) => d.id),
-						masterKeyMissing: !ctx.host.env.OPS_MASTER_KEY && !ctx.host.devMode,
+						masterKeyMissing: !ctx.host.devMode && !masterKeyConfigured(ctx.host.env, ctx.host.dataDir),
 						sinks: rt!.sinkStates()
 					})
 			};

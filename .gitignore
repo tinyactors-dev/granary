@@ -46,3 +46,6 @@ mise.local.toml
 
 # Finder (MacOS) folder config
 .DS_Store
+
+# release artefacts (ADR 0180)
+release/

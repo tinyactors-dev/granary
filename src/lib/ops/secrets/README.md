@@ -1,7 +1,10 @@
-# ops secret store (ADR 0086, 0097) — owner: A (backups, M2)
+# ops secret store (ADR 0086, 0097, 0158)
 
-Envelope encryption in ops.sqlite (`secrets` table), KEK from `OPS_MASTER_KEY`
-(fnox `prod` profile), rotation via `OPS_MASTER_KEY_PREVIOUS`. Implements
-`SecretReader` (`../feature.ts`) for I/O processors. No API returns plaintext.
-
-`crypto.ts` (AES-GCM, key wrap, chunk nonces/AAD), `keys.ts` (KEK loading, dev key file, rotation), `store.ts` (SecretStore: set/list/delete/reveal, candidates overlay, boot re-wrap). Details: ADR 0117.
+The envelope-encryption implementation lives in the platform layer
+(`src/lib/platform/secrets/`: `crypto.ts`, `keys.ts`, `store.ts`). `store.ts`
+here is the ops adapter over ops.sqlite's `secrets` table: `usedBy`
+(destinations/sinks referencing a secret), `ops_audit` entries and
+`OpsBackendError`s. It implements `SecretReader` (`../feature.ts`) for I/O
+processors. No API returns plaintext. Master key: `GRANARY_MASTER_KEY`
+(alias `OPS_MASTER_KEY`) or `<data>/master.key`; rotation via
+`GRANARY_MASTER_KEY_PREVIOUS` (alias `OPS_MASTER_KEY_PREVIOUS`).

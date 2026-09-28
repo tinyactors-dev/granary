@@ -6,7 +6,7 @@
 import { parseJson } from '../../schemas/standard';
 import { BackupManifest } from '../schemas/manifest';
 import type { DrillResult } from '../schemas/runs';
-import type { MasterKeys } from '../secrets/keys';
+import type { MasterKeys } from '../../platform/secrets/keys';
 import { parseListing, type ListedBackup } from './retention-plan';
 import { IntegrityError, assertEncrypted, unsealToFile } from './seal';
 import type { BackupStore } from './stores';

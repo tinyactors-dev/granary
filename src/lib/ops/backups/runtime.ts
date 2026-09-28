@@ -20,7 +20,7 @@ import { BackupsRepo } from './repo';
 import { openStore, type BackupStore } from './stores';
 import { SnapshotWorker } from './worker';
 import type { SecretStore } from '../secrets/store';
-import type { MasterKeys } from '../secrets/keys';
+import type { MasterKeys } from '../../platform/secrets/keys';
 
 export interface BackupsOptions {
 	/** First upload retry delay; doubles per attempt, capped at 30 min (ADR 0082). */

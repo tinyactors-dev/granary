@@ -5,6 +5,7 @@
  * reports at runtime (ADR 0098), never hard-coded disk sizes.
  */
 import { statfsSync, statSync } from 'node:fs';
+import { masterKeyConfigured } from '../../platform/secrets/keys';
 import type { Database } from 'bun:sqlite';
 import type { HostHealthSnapshot, OpsHost } from '../contract';
 import { conditionId, type ConditionKind } from '../schemas/conditions';
@@ -149,7 +150,7 @@ export function measure(deps: SamplerDeps): Measurements {
 	}
 
 	// --- key material
-	const keyMissing = !host.env.OPS_MASTER_KEY && !host.devMode;
+	const keyMissing = !host.devMode && !masterKeyConfigured(host.env, host.dataDir);
 	out.push(s('master-key', null, keyMissing, null, {}));
 
 	// --- destinations & plans (tables owned by the backups feature)

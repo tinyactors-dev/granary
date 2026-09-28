@@ -26,7 +26,7 @@ import { backupLedgerProcessor } from '../io/backup-ledger';
 import { backupsBackend } from '../backend/backups';
 import { BackupsRepo, newId } from '../backups/repo';
 import { BackupsRuntime, type BackupsOptions } from '../backups/runtime';
-import { loadMasterKeys, type MasterKeys } from '../secrets/keys';
+import { loadMasterKeys, type MasterKeys } from '../../platform/secrets/keys';
 import { SecretStore } from '../secrets/store';
 import { runSeeds } from '../seeds';
 import { backupsRemediations } from '../backups/remediations';

@@ -130,7 +130,7 @@ export const POLICIES: Record<ConditionKind, ConditionPolicy> = {
 		settleMs: 0,
 		confirm: false,
 		title: () => 'Ops master key missing',
-		explain: () => 'OPS_MASTER_KEY is not set, so secrets cannot be read and encrypted backups cannot run. Add it to the fnox prod profile and restart.'
+		explain: () => 'No master key (GRANARY_MASTER_KEY or <data>/master.key), so secrets cannot be read and encrypted backups cannot run. Run `granary init` or set GRANARY_MASTER_KEY, then restart.'
 	},
 	'no-offsite-destination': {
 		ladder: [],
