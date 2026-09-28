@@ -124,6 +124,17 @@ export const POLICIES: Record<ConditionKind, ConditionPolicy> = {
 		title: () => 'No webhook received for 7 days',
 		explain: () => "granary hasn't received a GitHub webhook in a week. Check the webhook's recent deliveries in the repository settings."
 	},
+	'catchup-stale': {
+		ladder: [],
+		graceMs: HOUR,
+		settleMs: 0,
+		confirm: true,
+		title: (_s, f) => (f.lastError ? 'Missed-webhook catch-up is failing' : 'Missed-webhook catch-up has not run recently'),
+		explain: (_s, f) =>
+			f.lastError
+				? `The last catch-up pass failed: ${String(f.lastError)}. Webhooks GitHub could not deliver are not being re-sent. Check the GitHub App on /settings/github.`
+				: "granary hasn't checked the GitHub App's delivery log for a while, so webhooks missed during downtime may not be re-sent. Check /settings/github."
+	},
 	'master-key': {
 		ladder: [],
 		graceMs: 0,

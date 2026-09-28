@@ -232,6 +232,12 @@ export function measure(deps: SamplerDeps): Measurements {
 		out.push(s('outbox-pending-old', null, age !== null && age > HOUR, age, { oldestPendingAgeMs: age }));
 		const lastWebhook = health.lastWebhookAt ?? deps.firstSeenAt;
 		out.push(s('webhooks-silent', null, now - lastWebhook > 7 * DAY, now - lastWebhook, { lastWebhookAt: health.lastWebhookAt }));
+		const cu = health.catchup;
+		if (cu) {
+			const age = now - (cu.lastPassAt ?? deps.firstSeenAt);
+			const stale = cu.enabled && (cu.lastError !== null || age > Math.max(3 * cu.intervalMs, 30 * 60_000));
+			out.push(s('catchup-stale', null, stale, age, { lastPassAt: cu.lastPassAt, lastError: cu.lastError, intervalMs: cu.intervalMs }));
+		}
 	}
 
 	return { at: now, host: health, disk, samples: out };

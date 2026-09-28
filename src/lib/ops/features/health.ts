@@ -358,6 +358,13 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			g('granary_quarantined_actors', m.host.quarantinedActors);
 			g('granary_event_loop_lag_p99', m.host.process.eventLoopLagP99Ms, undefined, 'ms');
 			g('granary_rss_bytes', m.host.process.rssBytes, undefined, 'By');
+			const cu = m.host.catchup;
+			if (cu?.enabled) {
+				g('granary_catchup_redelivered_total', cu.totalRedelivered);
+				g('granary_catchup_last_pass_redelivered', cu.lastPassRedelivered);
+				if (cu.lastPassAt !== null) g('granary_catchup_last_pass_age_seconds', Math.round((now - cu.lastPassAt) / 1000), undefined, 's');
+				g('granary_catchup_failing', cu.lastError ? 1 : 0);
+			}
 		}
 		try {
 			r.fanout.write(opsMetricsBatch(p, startedAt, now, version()));

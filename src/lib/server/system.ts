@@ -22,7 +22,7 @@ import { check } from '../schemas/standard';
 import { parseOutboxPayload } from '../schemas/wal';
 import { allowlistChart } from './actors/allowlist';
 import { issueChart } from './actors/issue';
-import { deliveryCatchupChart, type DeliveryCatchupData } from './actors/delivery-catchup';
+import { CATCHUP_INTERVAL_MS, deliveryCatchupChart, type DeliveryCatchupData } from './actors/delivery-catchup';
 import { CATCHUP_ADDRESS, CATCHUP_EVENTS, CATCHUP_IO_TYPE, catchupProcessor } from './github/catchup';
 import { GitHubConnection } from './github/connection';
 import { GitHubStore } from './github/store';
@@ -318,6 +318,11 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 			`traces=${config.otlpTracesUrl ?? 'off'} dev=${opts.devMode}`
 	);
 	return runtime;
+}
+
+/** The catch-up interval in effect (ADR 0194, 0220). */
+export function catchupIntervalMs(): number {
+	return catchupTimingFromEnv().intervalMs ?? CATCHUP_INTERVAL_MS;
 }
 
 /** Test/ops knobs for the catch-up cadence (ADR 0194); defaults 30 s / 10 min. */

@@ -18,6 +18,7 @@ export const ConditionKind = Type.Union([
 	Type.Literal('actors-quarantined'),
 	Type.Literal('outbox-pending-old'),
 	Type.Literal('webhooks-silent'),
+	Type.Literal('catchup-stale'),
 	Type.Literal('master-key'),
 	Type.Literal('no-offsite-destination')
 ]);

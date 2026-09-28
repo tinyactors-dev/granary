@@ -22,7 +22,21 @@ export const HostHealthSnapshot = Type.Object({
 	quarantinedActors: Type.Integer({ minimum: 0 }),
 	relayLastSuccessAt: Type.Union([Timestamp, Type.Null()]),
 	lastWebhookAt: Type.Union([Timestamp, Type.Null()]),
-	process: Type.Object({ eventLoopLagP99Ms: Type.Number({ minimum: 0 }), rssBytes: Bytes })
+	process: Type.Object({ eventLoopLagP99Ms: Type.Number({ minimum: 0 }), rssBytes: Bytes }),
+	/**
+	 * Missed-webhook catch-up (ADR 0162, 0220); absent when the host has
+	 * none. `enabled` only in GitHub App mode.
+	 */
+	catchup: Type.Optional(
+		Type.Object({
+			enabled: Type.Boolean(),
+			intervalMs: Type.Integer({ minimum: 1 }),
+			lastPassAt: Type.Union([Timestamp, Type.Null()]),
+			lastPassRedelivered: Type.Integer({ minimum: 0 }),
+			totalRedelivered: Type.Integer({ minimum: 0 }),
+			lastError: Type.Union([Type.String(), Type.Null()])
+		})
+	)
 });
 export type HostHealthSnapshot = Static<typeof HostHealthSnapshot>;
 

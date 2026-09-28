@@ -4,7 +4,7 @@
  * (quarantined actors) and process numbers (event-loop lag, RSS).
  */
 import type { HostHealthSnapshot } from '$lib/ops/contract';
-import type { Runtime } from './system';
+import { catchupIntervalMs, type Runtime } from './system';
 
 /** Event-loop lag sampler: a 500 ms timer measuring its own drift. */
 export class LoopLag {
@@ -67,6 +67,22 @@ export function createHostHealth(rt: Runtime): { health(): HostHealthSnapshot; s
 		return n;
 	};
 
+	const catchupHealth = (): HostHealthSnapshot['catchup'] => {
+		try {
+			const st = rt.github.catchupStatus();
+			return {
+				enabled: rt.github.mode() === 'app',
+				intervalMs: catchupIntervalMs(),
+				lastPassAt: st?.lastPassAt ?? null,
+				lastPassRedelivered: st?.lastPassRedelivered ?? 0,
+				totalRedelivered: st?.totalRedelivered ?? 0,
+				lastError: st?.lastError ?? null
+			};
+		} catch {
+			return undefined;
+		}
+	};
+
 	return {
 		health(): HostHealthSnapshot {
 			const at = Date.now();
@@ -96,7 +112,8 @@ export function createHostHealth(rt: Runtime): { health(): HostHealthSnapshot; s
 				quarantinedActors: countQuarantined(),
 				relayLastSuccessAt,
 				lastWebhookAt,
-				process: { eventLoopLagP99Ms: lag.p99(), rssBytes: process.memoryUsage().rss }
+				process: { eventLoopLagP99Ms: lag.p99(), rssBytes: process.memoryUsage().rss },
+				catchup: catchupHealth()
 			};
 		},
 		stop() {
