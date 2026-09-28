@@ -176,4 +176,5 @@ superseded by N`) and the newer ADR says what changed.
 | [0232](0232-cli-never-writes-to-an-unexpected-data-dir.md) | The CLI never writes to an unexpected data dir | active |
 | [0233](0233-deploy-task-and-operations-handbook.md) | `mise run deploy` and the operations handbook | active |
 | [0234](0234-structured-logs-access-log-and-trace-correlation.md) | Structured logs, an HTTP access log, and log ↔ trace correlation | active |
+| [0240](0240-setup-checklist-from-real-state.md) | The setup checklist is computed on the server from the real state | active |
 | [0270](0270-brand-wheat-logo-and-favicons.md) | Brand: colored wheat logo, favicons and app icons from one source | active |

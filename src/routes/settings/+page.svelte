@@ -8,6 +8,7 @@
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import CheckCircleIcon from '@lucide/svelte/icons/circle-check';
 	import CircleDashedIcon from '@lucide/svelte/icons/circle-dashed';
+	import CircleAlertIcon from '@lucide/svelte/icons/circle-alert';
 	import PageHeader from '$lib/components/app/PageHeader.svelte';
 	import CopyButton from '$lib/components/app/CopyButton.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
@@ -58,29 +59,37 @@
 			</Card.Content>
 		</Card.Root>
 
-		<Card.Root>
+		{@const steps = s?.steps ?? []}
+		{@const open = steps.filter((st) => !st.optional && st.status !== 'done')}
+		<Card.Root data-testid="settings-setup">
 			<Card.Header>
 				<Card.Title>Setup</Card.Title>
 				<Card.Description>
-					{#if s?.state === 'ready'}granary is set up.{:else}One step left: connect GitHub.{/if}
+					{#if open.length === 0}granary is set up.{:else if open.length === 1}One step left: {open[0]!.title.toLowerCase()}.{:else}{open.length} steps left.{/if}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-3 text-sm">
-				<ol class="grid gap-2">
-					<li class="flex items-center gap-2">
-						<CheckCircleIcon class="size-4 text-emerald-600 dark:text-emerald-400" />
-						<span>Admins: <a class="underline-offset-2 hover:underline" href="/settings/admins">{a.length} {a.length === 1 ? 'admin' : 'admins'}</a></span>
-					</li>
-					<li class="flex items-center gap-2">
-						{#if g.mode !== 'none'}<CheckCircleIcon class="size-4 text-emerald-600 dark:text-emerald-400" />{:else}<CircleDashedIcon class="text-muted-foreground size-4" />{/if}
-						<span>GitHub: <a class="underline-offset-2 hover:underline" href="/settings/github">{MODE_LABEL[g.mode]}</a></span>
-						{#if g.mode === 'app'}<Badge variant="secondary">{g.installations.reduce((n, i) => n + i.repos.filter((r) => r.enabled).length, 0)} repos guarded</Badge>{/if}
-					</li>
-					<li class="flex items-center gap-2">
-						<CircleDashedIcon class="text-muted-foreground size-4" />
-						<span>Backups and telemetry (optional): <a class="underline-offset-2 hover:underline" href="/ops">Ops</a></span>
-					</li>
+				<ol class="grid gap-3">
+					{#each steps as st (st.id)}
+						<li class="flex items-start gap-2" data-testid="setup-step" data-step={st.id} data-status={st.status}>
+							{#if st.status === 'done'}
+								<CheckCircleIcon class="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400" />
+							{:else if st.status === 'attention'}
+								<CircleAlertIcon class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+							{:else}
+								<CircleDashedIcon class="text-muted-foreground mt-0.5 size-4 shrink-0" />
+							{/if}
+							<span class="grid gap-0.5">
+								<span>
+									<a class="font-medium underline-offset-2 hover:underline" href={st.href}>{st.title}</a>
+									{#if st.optional}<Badge variant="secondary" class="ml-1">optional</Badge>{/if}
+								</span>
+								<span class="text-muted-foreground text-xs">{st.detail}</span>
+							</span>
+						</li>
+					{/each}
 				</ol>
+				{#if g.mode === 'app'}<p class="text-muted-foreground text-xs">Connected as <a class="underline-offset-2 hover:underline" href="/settings/github">{MODE_LABEL[g.mode]}</a>; {a.length} {a.length === 1 ? 'admin' : 'admins'}.</p>{/if}
 			</Card.Content>
 		</Card.Root>
 

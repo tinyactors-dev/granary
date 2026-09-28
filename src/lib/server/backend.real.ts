@@ -102,7 +102,8 @@ import { DAP_HOST } from './dap';
 import type { Runtime } from './system';
 import { addressOfInspection } from './tracing';
 import { snapshotOf } from './inspect/snapshot';
-import { destinationConsoleLink, getOpsBackend, hasOpsBackend } from '$lib/ops/contract';
+import { destinationConsoleLink, getOpsBackend, hasOpsBackend, type OpsStatus } from '$lib/ops/contract';
+import { setupSteps } from './setup-steps';
 
 function offsetPage<T>(rows: T[], limit: number, offset: number): Page<T> {
 	// rows were fetched with limit + 1 to know whether there is a next page
@@ -647,11 +648,23 @@ export class RealBackend implements Backend {
 	}
 	async getSetupStatus(): Promise<SetupStatus> {
 		const c = this.#rt.config;
+		const adminCount = this.#admins.adminCount();
+		const github = await this.#rt.github.status();
+		let ops: OpsStatus | null = null;
+		let opsError: string | null = null;
+		if (hasOpsBackend()) {
+			try {
+				ops = await getOpsBackend().getStatus();
+			} catch (e) {
+				opsError = e instanceof Error ? e.message : String(e);
+			}
+		}
 		return {
 			state: this.#admins.setupState(),
 			origin: c.origin,
 			masterKey: masterKeyStatus(),
-			adminCount: this.#admins.adminCount()
+			adminCount,
+			steps: setupSteps({ adminCount, github, ops, opsError })
 		};
 	}
 	async listAdmins(): Promise<Admin[]> {

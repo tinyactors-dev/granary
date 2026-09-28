@@ -6,6 +6,8 @@
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { BackendError } from './backend';
+import { setupSteps } from './setup-steps';
+import { getOpsBackend, hasOpsBackend, type OpsStatus } from '$lib/ops/contract';
 import type {
 	AddAdminResult,
 	Admin,
@@ -89,7 +91,22 @@ export class StubSettings {
 	}
 
 	async getSetupStatus(): Promise<SetupStatus> {
-		return { state: this.#mode === 'none' ? 'needs-github' : 'ready', origin: this.#origin, masterKey: 'ok', adminCount: this.#admins.size };
+		let ops: OpsStatus | null = null;
+		let opsError: string | null = null;
+		if (hasOpsBackend())
+			try {
+				ops = await getOpsBackend().getStatus();
+			} catch (e) {
+				opsError = e instanceof Error ? e.message : String(e);
+			}
+		const github = await this.getGitHubStatus();
+		return {
+			state: this.#mode === 'none' ? 'needs-github' : 'ready',
+			origin: this.#origin,
+			masterKey: 'ok',
+			adminCount: this.#admins.size,
+			steps: setupSteps({ adminCount: this.#admins.size, github, ops, opsError })
+		};
 	}
 	async listAdmins(): Promise<Admin[]> {
 		return [...this.#admins.values()].sort((a, b) => a.login.toLowerCase().localeCompare(b.login.toLowerCase()));

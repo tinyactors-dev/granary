@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import type { DoctorCheck } from '../lib/schemas/admin-socket';
-import type { Admin } from '../lib/schemas/admins';
+import type { Admin, SetupStatus } from '../lib/schemas/admins';
 import { DATA_DIR_LAYOUT, EXIT, SYSTEM_DATA_DIR } from '../lib/schemas/cli';
 import { loadConfig } from '../lib/schemas/config';
 import { AdminStore, AdminStoreError } from '../lib/server/admins';
@@ -149,6 +149,15 @@ function renderChecks(checks: DoctorCheck[]): string {
 	return checks.map((c) => `${mark[c.status]} ${c.name.padEnd(w)}  ${c.detail}`).join('\n');
 }
 
+/** The setup checklist (ADR 0240), as on /settings. */
+function renderSetup(setup: SetupStatus | null): string {
+	if (!setup?.steps?.length) return '';
+	const mark = { done: '✔', attention: '!', todo: '○' } as const;
+	const w = Math.max(...setup.steps.map((s) => s.title.length));
+	const lines = setup.steps.map((s) => `${mark[s.status]} ${s.title.padEnd(w)}  ${s.detail}${s.optional ? ' (optional)' : ''}`);
+	return `\n\nsetup\n${lines.join('\n')}`;
+}
+
 export async function doctor(ctx: Context): Promise<number> {
 	const origin = ctx.env.ORIGIN ?? null;
 	const offline = offlineChecks({ dataDir: ctx.dataDir, env: ctx.env, origin });
@@ -166,7 +175,8 @@ export async function doctor(ctx: Context): Promise<number> {
 	for (const c of [...offline, serverNote, ...(server?.checks ?? [])]) merged.set(c.name, c);
 	const checks = [...merged.values()];
 	// JSON adds `ok` (status !== 'fail') for scripts; the socket schema stays {name, status, detail}.
-	print(ctx, { checks: checks.map((c) => ({ ...c, ok: c.status !== 'fail' })), setup: server?.setup ?? null }, () => renderChecks(checks));
+	const setup = (server?.setup ?? null) as SetupStatus | null;
+	print(ctx, { checks: checks.map((c) => ({ ...c, ok: c.status !== 'fail' })), setup }, () => renderChecks(checks) + renderSetup(setup));
 	return checks.some((c) => c.status === 'fail') ? EXIT.error : EXIT.ok;
 }
 

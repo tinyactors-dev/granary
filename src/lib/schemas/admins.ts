@@ -104,13 +104,44 @@ export type CreatedLoginLink = Static<typeof CreatedLoginLink>;
 export const SetupState = Type.Union([Type.Literal('needs-github'), Type.Literal('ready')]);
 export type SetupState = Static<typeof SetupState>;
 
+/**
+ * One item of the setup checklist on /settings (ADR 0240). Computed on the
+ * server from the real state (admins, GitHub, ops status), never by the page.
+ */
+export const SetupStepId = Type.Union([
+	Type.Literal('admins'),
+	Type.Literal('github'),
+	Type.Literal('repos'),
+	Type.Literal('backups'),
+	Type.Literal('telemetry')
+]);
+export type SetupStepId = Static<typeof SetupStepId>;
+
+export const SetupStep = Type.Object(
+	{
+		id: SetupStepId,
+		title: Type.String(),
+		/** `done`; `todo` (not set up yet); `attention` (set up, but not working right now). */
+		status: Type.Union([Type.Literal('done'), Type.Literal('todo'), Type.Literal('attention')]),
+		/** Recommended rather than required for granary to do its job. */
+		optional: Type.Boolean(),
+		/** One line: what is there, or what is missing. */
+		detail: Type.String(),
+		href: Type.String()
+	},
+	closed
+);
+export type SetupStep = Static<typeof SetupStep>;
+
 export const SetupStatus = Type.Object(
 	{
 		state: SetupState,
 		/** Public URL granary believes it has (ORIGIN); the webhook is `${origin}/webhook`. */
 		origin: Nullable(Type.String()),
 		masterKey: Type.Union([Type.Literal('ok'), Type.Literal('missing')]),
-		adminCount: Type.Integer({ minimum: 0 })
+		adminCount: Type.Integer({ minimum: 0 }),
+		/** The checklist, in order (ADR 0240). */
+		steps: Type.Array(SetupStep)
 	},
 	closed
 );
