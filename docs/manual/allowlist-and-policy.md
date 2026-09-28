@@ -15,15 +15,49 @@ granary decides by the first rule that matches:
 
 **Verdicts** shows which rule decided (`blocklist`, `allowlist`,
 `association` or `not-allowed`). A closed issue gets one comment and is
-closed as *not planned*:
+closed as *not planned*. By default the comment says:
 
 > Thanks for the report! Issues in this repository can only be opened by
 > approved contributors, so this one was closed automatically.
+
+You can change it — see [The closing message](#the-closing-message).
 
 Only `issues` / `opened` is acted on. Reopened, edited or transferred issues
 are left alone, so a maintainer reopening an issue is final. Everything else
 GitHub sends is stored as *ignored*, with the reason visible on
 **Deliveries**.
+
+## The closing message
+
+**Settings → Closing message** (admins edit, everyone else can read) sets
+the comment's text: one template for issues, one for pull requests, and
+optional overrides per repository. Templates are Markdown with variables in
+double braces; the page shows a live preview with sample data.
+
+| Variable | Meaning |
+|---|---|
+| `{{author}}` | Login of the person who opened it (without `@`; write `@{{author}}` to mention them) |
+| `{{title}}` | The title, escaped: it can't mention anyone, add links or HTML |
+| `{{number}}` | Issue or pull request number |
+| `{{kind}}` | `issue` or `pull request` |
+| `{{owner}}`, `{{repo}}`, `{{repository}}` | Owner, name, and `owner/repo` |
+| `{{url}}` | Link to the issue or pull request |
+| `{{association}}` | The author's association, e.g. `NONE` |
+
+Unknown variables are rejected when you save. granary always appends a
+hidden marker (`<!-- granary:… -->`) so it never comments twice; a template
+can't remove it, and an empty template posts only the marker. The text is
+fixed when granary decides to close: editing the template doesn't change a
+close that is already being retried.
+
+From the command line (same validation):
+
+```sh
+sudo -u granary granary config set messages.closing \
+  '{"issue":"Thanks @{{author}}! This repository only takes issues from maintainers.","pullRequest":null,"repos":{}}'
+```
+
+`null` means "use the default"; `repos` is keyed by `owner/repo`.
 
 ## Managing the allowlist
 
