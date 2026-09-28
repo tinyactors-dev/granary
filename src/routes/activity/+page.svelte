@@ -17,6 +17,7 @@
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import IssueRef from '$lib/components/app/IssueRef.svelte';
+	import KindBadge from '$lib/components/app/KindBadge.svelte';
 	import { ACTION_LABELS, KIND_LABELS, OUTCOME_LABELS, reasonLabel } from '$lib/components/app/glossary';
 
 	const KINDS: readonly ItemKind[] = ['issue', 'pull_request'];
@@ -69,7 +70,7 @@
 			<Table.Row data-testid="activity-row">
 				<Table.Cell class="max-w-[28rem]">
 					<div class="flex items-start gap-2">
-						<span class="text-muted-foreground bg-muted mt-0.5 shrink-0 rounded px-1.5 text-[11px] font-medium" data-testid="item-kind">{a.kind === 'pull_request' ? 'PR' : 'Issue'}</span>
+						<KindBadge kind={a.kind} />
 						<div class="min-w-0"><IssueRef issueKey={a.issueKey} issue={a.issue} /></div>
 					</div>
 				</Table.Cell>

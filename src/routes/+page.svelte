@@ -17,6 +17,7 @@
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import IssueRef from '$lib/components/app/IssueRef.svelte';
+	import KindBadge from '$lib/components/app/KindBadge.svelte';
 	import { VERDICT_VALUES } from '$lib/components/app/format';
 	import { OUTCOME_LABELS } from '$lib/components/app/glossary';
 
@@ -46,7 +47,7 @@
 			<Card.Header>
 				<Card.Description class="flex items-center gap-2"><GavelIcon class="size-4" /> Decisions</Card.Description>
 				<Card.Title class="text-3xl tabular-nums">{sum(o.verdicts)}</Card.Title>
-				<Card.Action><Button href="/activity" variant="ghost" size="xs">Activity</Button></Card.Action>
+				<Card.Action><Button href="/activity" variant="ghost" size="xs">View all →</Button></Card.Action>
 			</Card.Header>
 			<Card.Content class="flex flex-wrap gap-x-3 gap-y-1.5">
 				{#each VERDICT_VALUES as v (v)}
@@ -61,7 +62,7 @@
 			<Card.Header>
 				<Card.Description class="flex items-center gap-2"><SendIcon class="size-4" /> GitHub actions</Card.Description>
 				<Card.Title class="text-3xl tabular-nums">{waiting}</Card.Title>
-				<Card.Action><Button href="/activity?outcome=closing" variant="ghost" size="xs">Activity</Button></Card.Action>
+				<Card.Action><Button href="/activity?outcome=closing" variant="ghost" size="xs">View all →</Button></Card.Action>
 			</Card.Header>
 			<Card.Content class="text-muted-foreground space-y-1 text-sm">
 				<p>{waiting === 0 ? 'Nothing waiting: GitHub is up to date.' : `${waiting} comment-and-close ${waiting === 1 ? 'action is' : 'actions are'} still under way.`}</p>
@@ -76,7 +77,7 @@
 			<Card.Header>
 				<Card.Description class="flex items-center gap-2"><ShieldCheckIcon class="size-4" /> Policy</Card.Description>
 				<Card.Title class="text-3xl tabular-nums">{o.allowlistSize}</Card.Title>
-				<Card.Action><Button href="/policy" variant="ghost" size="xs">Policy</Button></Card.Action>
+				<Card.Action><Button href="/policy" variant="ghost" size="xs">View all →</Button></Card.Action>
 			</Card.Header>
 			<Card.Content class="text-muted-foreground text-sm">
 				logins on the allowlist. Repository owners, members and collaborators are always allowed unless blocked.
@@ -93,7 +94,7 @@
 	<Card.Header>
 		<Card.Title>Recent activity</Card.Title>
 		<Card.Description>The latest issues and pull requests granary has seen.</Card.Description>
-		<Card.Action><Button href="/activity" variant="ghost" size="sm">All activity</Button></Card.Action>
+		<Card.Action><Button href="/activity" variant="ghost" size="xs">View all →</Button></Card.Action>
 	</Card.Header>
 	<Card.Content class="px-0">
 		<svelte:boundary>
@@ -105,7 +106,7 @@
 						<Table.Row>
 							<Table.Cell class="max-w-[28rem] pl-6">
 								<div class="flex items-start gap-2">
-									<span class="text-muted-foreground bg-muted mt-0.5 shrink-0 rounded px-1.5 text-[11px] font-medium">{a.kind === 'pull_request' ? 'PR' : 'Issue'}</span>
+									<KindBadge kind={a.kind} />
 									<div class="min-w-0"><IssueRef issueKey={a.issueKey} issue={a.issue} /></div>
 								</div>
 							</Table.Cell>

@@ -53,7 +53,7 @@ describe('ops secrets never leak', () => {
 			expect(res.status, path).toBe(200);
 			const html = await res.text();
 			// Signed in for real: the secrets page lists the seeded secret by name (never by value).
-			if (path === '/ops/secrets') expect(html).toContain('R2 secret access key (seed)');
+			if (path === '/ops/secrets') expect(html).toContain('R2 secret access key');
 			leaks.push(...findLeaks(`page ${path}`, html));
 		}
 		await Bun.sleep(2500); // let the sinks flush

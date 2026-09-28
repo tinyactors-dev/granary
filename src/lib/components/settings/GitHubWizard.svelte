@@ -87,9 +87,9 @@
 		</Card.Header>
 		<Card.Content class="grid gap-4 text-sm">
 			<ul class="text-muted-foreground grid gap-1">
-				<li><span class="text-foreground font-medium">Issues: read &amp; write</span> — to comment on and close issues</li>
+				<li><span class="text-foreground font-medium">Issues and pull requests: read &amp; write</span> — to comment on and close them</li>
 				<li><span class="text-foreground font-medium">Metadata: read</span> — required by GitHub for every app</li>
-				<li><span class="text-foreground font-medium">Webhook events: issues</span> — granary learns about new issues</li>
+				<li><span class="text-foreground font-medium">Webhook events: issues and pull requests</span> — granary learns about new ones</li>
 			</ul>
 			<fieldset class="grid gap-2" disabled={busy}>
 				<legend class="mb-1 font-medium">Who should own the app?</legend>

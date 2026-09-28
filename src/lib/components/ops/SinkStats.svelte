@@ -2,6 +2,7 @@
 <script lang="ts">
 	import type { OpsStatus, TelemetryStats } from '$lib/ops/contract';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
+	import { SINK_STATE_LABELS } from '$lib/components/app/glossary';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import Meter from './Meter.svelte';
 	import { bytes, duration, percent } from './format';
@@ -17,8 +18,8 @@
 
 <div class="grid gap-4" data-testid="sink-stats">
 	<div class="flex flex-wrap items-center gap-2 text-sm">
-		<span class="text-muted-foreground">Circuit</span>
-		<StateBadge state={state?.state ?? 'unknown'} tone={state?.state === 'open' ? 'warning' : state?.state === 'disabled' ? 'muted' : 'success'} />
+		<span class="text-muted-foreground">Connection</span>
+		<StateBadge state={state?.state ?? 'unknown'} label={SINK_STATE_LABELS[state?.state ?? 'unknown']} tone={state?.state === 'open' ? 'warning' : state?.state === 'disabled' ? 'muted' : 'success'} />
 		<span class="text-muted-foreground">last export <RelativeTime ms={state?.lastSuccessAt} /> · window {duration(stats.windowMs)}</span>
 	</div>
 	<dl class="grid grid-cols-2 gap-3 sm:grid-cols-4">

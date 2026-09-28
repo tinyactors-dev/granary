@@ -48,7 +48,7 @@
 		<PageHeader title="Unknown destination" description={id} />
 		<a class="text-sm underline" href="/ops/destinations">Back to destinations</a>
 	{:else}
-		<PageHeader title={d.name} description="Version {d.version} · {d.origin === 'seed' ? 'seeded from env — editing makes it yours' : 'configured in the UI'}">
+		<PageHeader title={d.name} description="Version {d.version} · {d.origin === 'seed' ? 'set up from the environment at startup — editing makes it yours' : 'configured here'}">
 			{#snippet actions()}
 				{@const link = destinationConsoleLink(d)}
 				{#if link}<Button variant="outline" href={link.url} target="_blank" rel="noreferrer" data-testid="external-link">{link.label} ↗</Button>{/if}

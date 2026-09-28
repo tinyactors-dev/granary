@@ -85,7 +85,7 @@ export function seedSinks(deps: { repo: SinksRepo; env: Record<string, string | 
 		repo.upsert({ id: SEED_SINK_ID, name: existing.name, enabled, origin: 'seed', body, now: deps.now });
 		return [`seed sink ${SEED_SINK_ID} updated → ${endpoint}${why}`];
 	}
-	repo.upsert({ id: SEED_SINK_ID, name: 'OTLP (seeded)', enabled, origin: 'seed', body, now: deps.now });
+	repo.upsert({ id: SEED_SINK_ID, name: 'Telemetry', enabled, origin: 'seed', body, now: deps.now });
 	// With GRANARY_SEED_OTLP_TOKEN set the token is seeded by the backups feature right
 	// after this and the sink is re-seeded enabled (ADR 0150): no warning then.
 	if (why && !env.GRANARY_SEED_OTLP_TOKEN) deps.log.warn(`ops telemetry: seed sink ${SEED_SINK_ID}${why}`);

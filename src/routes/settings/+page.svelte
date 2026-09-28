@@ -19,7 +19,7 @@
 	const github = getGitHubStatus();
 	const admins = listAdmins();
 
-	const MODE_LABEL = { none: 'Not connected', app: 'GitHub App', token: 'Token (seeded)' } as const;
+	const MODE_LABEL = { none: 'Not connected', app: 'GitHub App', token: 'Personal access token' } as const;
 </script>
 
 <PageHeader title="Settings" description="Where granary lives, how it is connected, and who may change things." />

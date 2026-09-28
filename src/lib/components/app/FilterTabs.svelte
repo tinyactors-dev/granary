@@ -5,13 +5,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { cn } from '$lib/utils';
+	import { stateLabel } from './glossary';
 
 	let {
 		param = 'state',
 		values,
 		current,
 		labels = {},
-		allLabel = 'all'
+		allLabel = 'All'
 	}: { param?: string; values: readonly string[]; current: string | null; labels?: Record<string, string>; allLabel?: string } = $props();
 
 	function href(value: string | null) {
@@ -37,7 +38,7 @@
 				current === value
 					? 'bg-background text-foreground shadow-sm dark:bg-input/30'
 					: 'hover:text-foreground'
-			)}>{value === null ? allLabel : (labels[value] ?? value)}</a
+			)}>{value === null ? allLabel : (labels[value] ?? stateLabel(value))}</a
 		>
 	{/each}
 </nav>

@@ -6,6 +6,7 @@
 	import PageHeader from '$lib/components/app/PageHeader.svelte';
 	import PagedTable from '$lib/components/app/PagedTable.svelte';
 	import FilterTabs from '$lib/components/app/FilterTabs.svelte';
+	import { runTriggerLabel } from '$lib/components/app/glossary';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
@@ -18,7 +19,7 @@
 	const state = $derived((RUN_STATES as string[]).includes(page.url.searchParams.get('state') ?? '') ? (page.url.searchParams.get('state') as RunState) : null);
 </script>
 
-<PageHeader title="Backups" description="Every run: snapshot with VACUUM INTO, compress, encrypt (always), upload, verify." />
+<PageHeader title="Backups" description="Each run copies a database, compresses and encrypts it, uploads it to every destination and checks the upload." />
 
 <svelte:boundary>
 	{@const planList = await plans}
@@ -60,8 +61,7 @@
 			{/snippet}
 			{#snippet row(r: BackupRunSummary)}
 				<Table.Row data-testid="ops-run-row">
-					<Table.Cell><a class="font-mono text-xs hover:underline" href="/ops/backups/{r.id}">{r.id}</a>
-						{#if r.trigger !== 'schedule'}<span class="text-muted-foreground text-xs"> · {r.trigger}</span>{/if}</Table.Cell>
+					<Table.Cell><a class="font-medium hover:underline" href="/ops/backups/{r.id}" title={r.id}>{runTriggerLabel(r.trigger)}</a></Table.Cell>
 					<Table.Cell>{r.database}</Table.Cell>
 					<Table.Cell><StateBadge state={r.state} tone={runTone(r.state)} /></Table.Cell>
 					<Table.Cell>

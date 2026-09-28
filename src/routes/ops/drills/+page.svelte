@@ -49,8 +49,8 @@
 				<Table.Head>Destination</Table.Head>
 				<Table.Head>Database</Table.Head>
 				<Table.Head>Result</Table.Head>
-				<Table.Head>Backup age (RPO)</Table.Head>
-				<Table.Head>Restore time (RTO)</Table.Head>
+				<Table.Head title="How old the restored backup was: the most data a restore could lose">Backup age</Table.Head>
+				<Table.Head title="How long downloading, decrypting and checking took">Restore took</Table.Head>
 			{/snippet}
 			{#snippet row(d: RestoreDrillSummary)}
 				<Table.Row data-testid="ops-drill">

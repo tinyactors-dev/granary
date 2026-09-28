@@ -1,3 +1,4 @@
+import type { AuditAction } from '$lib/schemas/admins';
 /** Sub-navigation of the /settings section (ADR 0210). */
 export interface SettingsNavItem {
 	href: string;
@@ -27,16 +28,20 @@ export const LOGIN_LINK_TTL_CHOICES: { minutes: number; label: string }[] = [
 ];
 
 /** Human labels for audit actions (ADR 0161). */
-export const AUDIT_LABELS: Record<string, string> = {
+export const AUDIT_LABELS: Record<AuditAction, string> = {
 	'admin.add': 'Admin added',
 	'admin.remove': 'Admin removed',
-	'login-link.create': 'Login link created',
-	'login-link.use': 'Login link used',
+	'login-link.create': 'Sign-in link created',
+	'login-link.use': 'Sign-in link used',
+	'login-link.revoke': 'Sign-in link revoked',
 	'github.app.create': 'GitHub App created',
-	'github.mode.set': 'GitHub mode changed',
+	'github.mode.set': 'GitHub connection changed',
 	'github.disconnect': 'GitHub disconnected',
+	'github.logo.dismiss': 'App logo reminder dismissed',
 	'github.repo.enable': 'Repository guarded',
 	'github.repo.disable': 'Repository no longer guarded',
 	'config.set': 'Setting changed',
+	'blocklist.add': 'Login blocked',
+	'blocklist.remove': 'Login unblocked',
 	'closing-message.set': 'Closing message changed'
 };

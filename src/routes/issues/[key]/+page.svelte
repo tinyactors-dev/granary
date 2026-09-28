@@ -22,7 +22,7 @@
 	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import RetryEffectButton from '$lib/components/app/RetryEffectButton.svelte';
 	import { ISSUE_KEY_RE, issueLabel } from '$lib/components/app/format';
-	import { ACTION_LABELS, DELIVERY_LABELS, KIND_LABELS, OUTCOME_LABELS, reasonLabel } from '$lib/components/app/glossary';
+	import { ACTION_LABELS, DELIVERY_LABELS, KIND_LABELS, OUTCOME_LABELS, deliveryLabel, reasonLabel } from '$lib/components/app/glossary';
 	import { canSeeAdmin } from '$lib/components/app/session';
 	import { actorHref } from '$lib/components/actors/inspect';
 
@@ -175,7 +175,7 @@
 						<Table.Body>
 							{#each d.deliveries as del (del.deliveryId)}
 								<Table.Row>
-									<Table.Cell class="pl-6 font-mono text-xs">{del.event}{del.action ? `.${del.action}` : ''}</Table.Cell>
+									<Table.Cell class="pl-6 text-sm" title="{del.event}{del.action ? `.${del.action}` : ''}">{deliveryLabel(del.event, del.action ?? null)}</Table.Cell>
 									<Table.Cell>
 										<StateBadge state={del.state} label={DELIVERY_LABELS[del.state]} />
 										{#if del.ignoreReason}<span class="text-muted-foreground mt-0.5 block text-xs">{del.ignoreReason}</span>{/if}
@@ -196,7 +196,7 @@
 				<Card.Root>
 					<Card.Header>
 						<Card.Title>Stored action data</Card.Title>
-						<Card.Description>The outbox row's payload, for debugging.</Card.Description>
+						<Card.Description>The stored action data, for debugging.</Card.Description>
 					</Card.Header>
 					<Card.Content><JsonBlock value={d.effect.payload} preset="compact" rootLabel="payload" title="Action payload" alwaysTree /></Card.Content>
 				</Card.Root>

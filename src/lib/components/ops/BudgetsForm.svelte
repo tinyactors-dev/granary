@@ -48,7 +48,7 @@
 	}
 
 	const FIELDS = [
-		{ id: 'egress', key: 'r2EgressBytesPerMonth', label: 'R2 upload budget per month (GiB)', hint: 'Billed exe.dev egress. When uploads would exceed it, the backup interval stretches (up to 6 h) instead.', min: 1, max: 2048, step: 1 },
+		{ id: 'egress', key: 'r2EgressBytesPerMonth', label: 'R2 upload budget per month (GiB)', hint: 'Counts uploads to off-site storage, which most hosts bill as outbound traffic. When uploads would exceed it, the backup interval stretches (up to 6 h) instead.', min: 1, max: 2048, step: 1 },
 		{ id: 'minfree', key: 'disk.minFreeBytes', label: 'Keep free after a snapshot (GiB)', hint: 'A backup starts only if free space minus the database size stays above this…', min: 0, max: 1024, step: 0.5 },
 		{ id: 'minfreepct', key: 'disk.minFreeRatio', label: '…and above this share of the disk (%)', hint: 'Whichever is larger wins.', min: 0, max: 50, step: 1 },
 		{ id: 'attn', key: 'disk.attentionFreeRatio', label: 'Mention low disk below (%)', hint: 'After self-healing and a 24 h grace period.', min: 0, max: 90, step: 1 },

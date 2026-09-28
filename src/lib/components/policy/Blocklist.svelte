@@ -62,7 +62,7 @@
 		try {
 			const r = await blockMe();
 			toast.success(`You (${r.user.login}) are blocked for 1 hour`, {
-				description: 'Open an issue in a guarded repository: granary will close it. Unblock yourself here when done.'
+				description: 'Open an issue or pull request in a guarded repository: granary will close it. Unblock yourself here when done.'
 			});
 		} catch (e) {
 			toast.error('Could not block you', { description: describeError(e).message });
@@ -77,8 +77,9 @@
 		<div>
 			<h2 id="blocklist-title" class="text-lg font-semibold tracking-tight">Blocklist</h2>
 			<p class="text-muted-foreground text-sm">
-				Issues opened by these logins are always closed — even if they are on the allowlist or an OWNER,
-				MEMBER or COLLABORATOR. Precedence: blocklist, then allowlist, then association.
+				Issues and pull requests opened by these logins are always closed — even if they are on the
+				allowlist or a repository owner, member or collaborator. The blocklist wins over the allowlist,
+				and the allowlist over repository roles.
 			</p>
 		</div>
 		<AdminOnly reason="Only admins can change the blocklist">
@@ -110,7 +111,7 @@
 							<Table.Row data-testid="blocked-user" class={b.active ? '' : 'opacity-60'}>
 								<Table.Cell class="font-medium">
 									{b.login}
-									{#if b.isAdmin && b.active}<span class="text-muted-foreground block text-xs">admin — their own issues are closed</span>{/if}
+									{#if b.isAdmin && b.active}<span class="text-muted-foreground block text-xs">An admin: their own issues and pull requests are closed too</span>{/if}
 								</Table.Cell>
 								<Table.Cell><StateBadge state={b.active ? 'blocked' : 'expired'} tone={b.active ? 'danger' : 'muted'} /></Table.Cell>
 								<Table.Cell class="text-muted-foreground">
@@ -144,7 +145,7 @@
 			<Card.Header>
 				<Card.Title>Block a login</Card.Title>
 				<Card.Description>
-					{#if admin}Their issues will be closed with the usual comment.{:else}Only admins can change the blocklist.{/if}
+					{#if admin}Their issues and pull requests will be closed with the usual comment.{:else}Only admins can change the blocklist.{/if}
 				</Card.Description>
 			</Card.Header>
 			<Card.Content>
@@ -193,7 +194,7 @@
 						<Alert.Root variant="destructive" data-testid="block-self-warning">
 							<TriangleAlertIcon />
 							<Alert.Title>This is you</Alert.Title>
-							<Alert.Description>Issues you open will be closed while the block lasts — useful for testing, easy to forget.</Alert.Description>
+							<Alert.Description>Issues and pull requests you open will be closed while the block lasts — useful for testing, easy to forget.</Alert.Description>
 						</Alert.Root>
 					{/if}
 					{#each formIssues ?? [] as issue, i (i)}<p class="text-destructive text-sm">{issue.message}</p>{/each}
@@ -216,8 +217,8 @@
 		<AlertDialog.Header>
 			<AlertDialog.Title>Unblock {removing}?</AlertDialog.Title>
 			<AlertDialog.Description>
-				New issues by <strong>{removing}</strong> are decided by the allowlist and their association again.
-				Issues already closed stay closed.
+				New issues and pull requests by <strong>{removing}</strong> are decided by the allowlist and their
+				repository role again. Items already closed stay closed.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>

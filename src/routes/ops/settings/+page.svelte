@@ -14,7 +14,7 @@
 <Card.Root>
 	<Card.Header>
 		<Card.Title>Budgets</Card.Title>
-		<Card.Description>Thresholds are relative to what the VM reports at runtime (exe.dev disks start at 25 GB and only grow).</Card.Description>
+		<Card.Description>Disk thresholds are relative to the disk size the host reports, so they keep working when the disk grows.</Card.Description>
 	</Card.Header>
 	<Card.Content>
 		<svelte:boundary>

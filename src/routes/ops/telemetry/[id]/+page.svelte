@@ -39,7 +39,7 @@
 	{#if !sink}
 		<PageHeader title="Unknown sink" description={id} />
 	{:else}
-		<PageHeader title={sink.name} description="Version {sink.version} · {sink.origin === 'seed' ? 'seeded from env' : 'configured in the UI'}">
+		<PageHeader title={sink.name} description="Version {sink.version} · {sink.origin === 'seed' ? 'set up from the environment at startup' : 'configured here'}">
 			{#snippet actions()}
 				<AdminOnly reason="Only admins can delete sinks">
 					{#snippet children({ disabled })}<Button variant="outline" {disabled} onclick={() => (confirming = true)}><TrashIcon /> Delete</Button>{/snippet}

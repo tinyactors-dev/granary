@@ -190,3 +190,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0283](0283-pull-request-tests.md) | Pull request scenarios | active |
 | [0290](0290-admin-section-and-capabilities.md) | An admin section in every environment, gated by capability | active |
 | [0291](0291-structure-activity-policy-and-glossary.md) | Structure: Activity, Policy, one glossary, one header, one banner | active |
+| [0292](0292-readable-labels-and-production-copy.md) | Readable labels everywhere, no tooling talk in production copy | active |

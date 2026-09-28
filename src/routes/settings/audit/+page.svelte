@@ -13,7 +13,7 @@
 	const admin = $derived(isAdmin());
 </script>
 
-<PageHeader title="Audit log" description="Changes to admins, login links and the GitHub connection. Newest first." />
+<PageHeader title="Audit log" description="Who changed admins, sign-in links, the GitHub connection, the policy or settings. Newest first." />
 
 {#if !admin}
 	<p class="text-muted-foreground text-sm">Only admins can see the audit log.</p>

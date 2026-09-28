@@ -54,7 +54,7 @@ export function r2Endpoint(accountId: string, jurisdiction: R2Jurisdiction): str
 }
 
 export const JURISDICTIONS: { value: R2Jurisdiction; label: string; hint: string }[] = [
-	{ value: 'eu', label: 'EU', hint: 'Data stays in the EU. Must match how the bucket was created (ADR 0106).' },
+	{ value: 'eu', label: 'EU', hint: 'Data stays in the EU. Must match how the bucket was created.' },
 	{ value: 'default', label: 'Default (global)', hint: 'Cloudflare picks the location.' },
 	{ value: 'fedramp', label: 'FedRAMP', hint: 'US government jurisdiction; unusual for granary.' }
 ];
@@ -104,18 +104,18 @@ export const AUTH_SECRET_KIND: Partial<Record<SinkAuth['mode'], SecretKind>> = {
 
 /** Condition states in calm language: nothing here pages (ADR 0100). */
 export const CONDITION_STATE: Record<ConditionState, { label: string; tone: Tone }> = {
-	ok: { label: 'ok', tone: 'success' },
-	suspect: { label: 'watching', tone: 'info' },
-	healing: { label: 'fixing itself', tone: 'info' },
-	attention: { label: 'needs you', tone: 'warning' },
-	acknowledged: { label: 'acknowledged', tone: 'muted' }
+	ok: { label: 'OK', tone: 'success' },
+	suspect: { label: 'Watching', tone: 'info' },
+	healing: { label: 'Fixing itself', tone: 'info' },
+	attention: { label: 'Needs you', tone: 'warning' },
+	acknowledged: { label: 'Acknowledged', tone: 'muted' }
 };
 
 export const EVENT_KIND: Record<OpsEventKind, { label: string; tone: Tone }> = {
-	info: { label: 'info', tone: 'muted' },
-	handled: { label: 'handled', tone: 'success' },
-	attention: { label: 'needs you', tone: 'warning' },
-	ack: { label: 'acknowledged', tone: 'muted' }
+	info: { label: 'Info', tone: 'muted' },
+	handled: { label: 'Handled', tone: 'success' },
+	attention: { label: 'Needs you', tone: 'warning' },
+	ack: { label: 'Acknowledged', tone: 'muted' }
 };
 
 const RUN_TONE: Record<RunState, Tone> = {

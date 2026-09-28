@@ -16,7 +16,7 @@
 	const status = getOpsStatus();
 </script>
 
-<PageHeader title="Telemetry" description="granary's traces, logs and metrics, exported to your self-hosted Grafana over OTLP/HTTP.">
+<PageHeader title="Telemetry" description="Where granary sends its traces, logs and metrics: any OpenTelemetry endpoint, such as Grafana.">
 	{#snippet actions()}
 		{#if isAdmin()}<Button href="/ops/telemetry/new"><PlusIcon /> Add sink</Button>{/if}
 	{/snippet}

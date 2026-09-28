@@ -50,7 +50,7 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 		if (has(SEED_IDS.r2)) out.skipped.push(SEED_IDS.r2);
 		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.r2} (no master key)`);
 		else {
-			await seedSecret(SEED_IDS.r2Secret, 'R2 secret access key (seed)', 'r2-secret-access-key', env.GRANARY_SEED_R2_SECRET_ACCESS_KEY);
+			await seedSecret(SEED_IDS.r2Secret, 'R2 secret access key', 'r2-secret-access-key', env.GRANARY_SEED_R2_SECRET_ACCESS_KEY);
 			const config: DestinationConfig = {
 				settings: {
 					kind: 'r2',
@@ -66,7 +66,7 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 				caps,
 				...(env.GRANARY_SEED_R2_CONSOLE_URL ? { consoleUrl: env.GRANARY_SEED_R2_CONSOLE_URL } : {})
 			};
-			repo.insertDestination({ id: SEED_IDS.r2, name: 'Cloudflare R2 (seed)', enabled: true, origin: 'seed', config });
+			repo.insertDestination({ id: SEED_IDS.r2, name: 'Cloudflare R2', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.r2);
 		}
 	}
@@ -76,7 +76,7 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 		if (has(SEED_IDS.s3)) out.skipped.push(SEED_IDS.s3);
 		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.s3} (no master key)`);
 		else {
-			await seedSecret(SEED_IDS.s3Secret, 'S3 secret access key (seed)', 's3-secret-access-key', env.GRANARY_SEED_S3_SECRET_ACCESS_KEY);
+			await seedSecret(SEED_IDS.s3Secret, 'S3 secret access key', 's3-secret-access-key', env.GRANARY_SEED_S3_SECRET_ACCESS_KEY);
 			const config: DestinationConfig = {
 				settings: {
 					kind: 's3',
@@ -92,7 +92,7 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 				caps,
 				...(env.GRANARY_SEED_S3_CONSOLE_URL ? { consoleUrl: env.GRANARY_SEED_S3_CONSOLE_URL } : {})
 			};
-			repo.insertDestination({ id: SEED_IDS.s3, name: 'S3-compatible (seed)', enabled: true, origin: 'seed', config });
+			repo.insertDestination({ id: SEED_IDS.s3, name: 'S3-compatible storage', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.s3);
 		}
 	}
@@ -113,7 +113,7 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.otlpToken} (no master key)`);
 		else if (secrets.exists(SEED_IDS.otlpToken)) out.skipped.push(SEED_IDS.otlpToken);
 		else {
-			await secrets.set({ name: 'OTLP token (seed)', kind, value: env.GRANARY_SEED_OTLP_TOKEN }, 'seed', { createId: SEED_IDS.otlpToken });
+			await secrets.set({ name: 'Telemetry token', kind, value: env.GRANARY_SEED_OTLP_TOKEN }, 'seed', { createId: SEED_IDS.otlpToken });
 			out.created.push(SEED_IDS.otlpToken);
 		}
 	}
@@ -137,7 +137,7 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 	else {
 		repo.insertPlan({
 			id: SEED_IDS.plan,
-			name: 'All databases (seed)',
+			name: 'All databases',
 			enabled: true,
 			origin: 'seed',
 			config: { databases: opts.databases, destinationIds, intervalMs: parseInterval(env.GRANARY_SEED_BACKUP_INTERVAL), drillIntervalMs: DEFAULT_DRILL_INTERVAL_MS }

@@ -68,7 +68,7 @@
 					{#each list as u (u.login)}
 						<Table.Row data-testid="allowed-user">
 							<Table.Cell class="font-medium">{u.login}</Table.Cell>
-							<Table.Cell class="text-muted-foreground">{u.addedBy ?? '—'}</Table.Cell>
+							<Table.Cell class="text-muted-foreground">{u.addedBy === 'seed' ? 'From environment' : (u.addedBy ?? '—')}</Table.Cell>
 							<Table.Cell class="text-muted-foreground"><RelativeTime ms={u.addedAt} /></Table.Cell>
 							<Table.Cell class="text-right">
 								<AdminOnly reason="Only admins can change the allowlist">
@@ -105,7 +105,7 @@
 		<Card.Header>
 			<Card.Title>Add a login</Card.Title>
 			<Card.Description>
-				{#if admin}Issues opened by this GitHub user will stay open.{:else}Only admins can change the allowlist.{/if}
+				{#if admin}Issues and pull requests opened by this GitHub user will stay open.{:else}Only admins can change the allowlist.{/if}
 			</Card.Description>
 		</Card.Header>
 		<Card.Content>
@@ -163,8 +163,8 @@
 		<AlertDialog.Header>
 			<AlertDialog.Title>Remove {removing} from the allowlist?</AlertDialog.Title>
 			<AlertDialog.Description>
-				New issues opened by <strong>{removing}</strong> will be closed automatically unless they are an
-				OWNER, MEMBER or COLLABORATOR. Existing issues are not touched.
+				New issues and pull requests opened by <strong>{removing}</strong> will be closed automatically unless
+				they are a repository owner, member or collaborator. Existing items are not touched.
 			</AlertDialog.Description>
 		</AlertDialog.Header>
 		<AlertDialog.Footer>

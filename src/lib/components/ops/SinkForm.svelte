@@ -27,17 +27,17 @@
 	const s0 = untrack(() => $state.snapshot(sink));
 	const a0 = s0?.auth;
 
-	let name = $state(s0?.name ?? 'Grafana on exe.dev (FRA)');
+	let name = $state(s0?.name ?? 'Grafana');
 	let enabled = $state(s0?.enabled ?? false);
-	let endpoint = $state(s0?.endpoint ?? 'https://grafana-otlp.int.exe.xyz');
-	let mode = $state<SinkAuth['mode']>(a0?.mode ?? 'exe-peer');
+	let endpoint = $state(s0?.endpoint ?? '');
+	let mode = $state<SinkAuth['mode']>(a0?.mode ?? 'none');
 	let secretRef = $state<string | null>(a0 && 'token' in a0 ? a0.token.secretRef : a0 && 'password' in a0 ? a0.password.secretRef : a0 && 'value' in a0 ? a0.value.secretRef : null);
 	let secretValue = $state('');
 	let username = $state(a0?.mode === 'basic' ? a0.username : '');
 	let header = $state(a0?.mode === 'header' ? a0.header : 'X-Api-Key');
 	let signals = $state<TelemetrySignal[]>(s0?.signals ?? ['traces', 'logs', 'metrics']);
 	let budgetGiB = $state((s0?.volumeBudgetBytesPerMonth ?? 5 * GiB) / GiB);
-	let grafanaUrl = $state(s0?.grafanaUrl ?? 'https://granary-grafana.exe.xyz/explore');
+	let grafanaUrl = $state(s0?.grafanaUrl ?? '');
 
 	let issues = $state<Record<string, string>>({});
 	let testing = $state(false);
@@ -153,7 +153,7 @@
 				{/if}
 				<div class="grid content-start gap-1.5 sm:col-span-2">
 					<Label for="s-endpoint">Endpoint</Label>
-					<Input id="s-endpoint" bind:value={endpoint} spellcheck={false} disabled={!admin} aria-invalid={issues.endpoint ? true : undefined} />
+					<Input id="s-endpoint" bind:value={endpoint} placeholder="https://otlp.example.com" spellcheck={false} disabled={!admin} aria-invalid={issues.endpoint ? true : undefined} />
 					{@render err('endpoint')}
 				</div>
 				{#if mode === 'basic'}
@@ -192,7 +192,7 @@
 				</div>
 				<div class="grid content-start gap-1.5 sm:col-span-2">
 					<Label for="s-grafana">Grafana link (optional)</Label>
-					<Input id="s-grafana" bind:value={grafanaUrl} spellcheck={false} disabled={!admin} />
+					<Input id="s-grafana" bind:value={grafanaUrl} placeholder="https://grafana.example.com/explore" spellcheck={false} disabled={!admin} />
 					{@render err('grafanaUrl')}
 				</div>
 			</Card.Content>

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { UploadSummary } from '$lib/ops/contract';
 	import { page } from '$app/state';
+	import { runTriggerLabel } from '$lib/components/app/glossary';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import DownloadIcon from '@lucide/svelte/icons/download';
@@ -49,7 +50,7 @@
 		<p class="text-muted-foreground text-sm"><a class="underline" href="/ops/backups">Back to backups</a></p>
 	{:else}
 		{@const r = d.run}
-		<PageHeader title="Backup {r.database}" description="{r.id} · {r.trigger} · attempt {r.attempt}">
+		<PageHeader title="Backup of the {r.database} database" description="{runTriggerLabel(r.trigger)} · attempt {r.attempt} · run {r.id}">
 			{#snippet actions()}<StateBadge state={r.state} tone={runTone(r.state)} />{/snippet}
 		</PageHeader>
 
@@ -111,11 +112,11 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>Restore this backup</Card.Title>
-				<Card.Description>Backups are always encrypted; the restore tool needs GRANARY_MASTER_KEY (from fnox) and the destination's credentials.</Card.Description>
+				<Card.Description>Run this on the granary host as the service user (for example with <code>sudo -u granary</code>). It uses the master key and the destination's stored credentials, and refuses while granary is running.</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-2">
 				{#each d.uploads.filter((u) => u.state === 'done') as u (u.destinationId)}
-					{@const cmd = `mise run ops:restore -- --dest ${u.destinationId} --run ${r.id} --out ${r.database}.sqlite`}
+					{@const cmd = `granary restore --dest ${u.destinationId} --database ${r.database} --run ${r.id} --out ${r.database}-restored.sqlite`}
 					<div class="bg-muted flex items-center gap-2 rounded-md px-3 py-2">
 						<code class="min-w-0 flex-1 overflow-x-auto text-xs whitespace-nowrap">{cmd}</code>
 						<CopyButton text={cmd} />

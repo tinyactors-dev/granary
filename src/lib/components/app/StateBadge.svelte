@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { toneOf, type Tone } from './format';
+	import { stateLabel } from './glossary';
 
 	let { state, tone, label, class: className = '' }: { state: string; tone?: Tone; label?: string; class?: string } = $props();
 
@@ -23,5 +24,5 @@
 	)}
 >
 	<span class="size-1.5 rounded-full bg-current opacity-80"></span>
-	{label ?? state}
+	{label ?? stateLabel(state)}
 </span>

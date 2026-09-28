@@ -7,7 +7,7 @@
 	const secrets = listOpsSecrets();
 </script>
 
-<PageHeader title="New telemetry sink" description="The exe.dev VM-to-VM integration is recommended: no credential to store or rotate." />
+<PageHeader title="New telemetry sink" description="Send traces, logs and metrics to any OpenTelemetry (OTLP/HTTP) endpoint, such as Grafana. Test the connection, then save." />
 <svelte:boundary>
 	<SinkForm sink={null} secrets={await secrets} />
 	{#snippet failed(error)}<ErrorAlert {error} />{/snippet}

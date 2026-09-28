@@ -32,7 +32,7 @@
 	}
 </script>
 
-<AdminOnly reason="Only admins can retry effects">
+<AdminOnly reason="Only admins can retry GitHub actions">
 	{#snippet children({ disabled })}
 		<Button variant="outline" {size} disabled={disabled || busy} onclick={retry}>
 			<RotateCcwIcon class={busy ? 'animate-spin' : ''} /> Retry

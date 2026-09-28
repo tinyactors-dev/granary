@@ -5,6 +5,7 @@
 	import PageHeader from '$lib/components/app/PageHeader.svelte';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
+	import { SINK_STATE_LABELS } from '$lib/components/app/glossary';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import SleepHero from '$lib/components/ops/SleepHero.svelte';
 	import ConditionCard from '$lib/components/ops/ConditionCard.svelte';
@@ -108,7 +109,7 @@
 						{@const grafana = sinkList.find((x) => x.id === t.sinkId)?.grafanaUrl}
 						<div class="flex flex-wrap items-center gap-2" data-testid="ops-telemetry-row">
 							<a class="font-medium hover:underline" href="/ops/telemetry/{t.sinkId}">{sinkList.find((x) => x.id === t.sinkId)?.name ?? t.sinkId}</a>
-							<StateBadge state={t.state} tone={t.state === 'open' ? 'warning' : t.state === 'disabled' ? 'muted' : 'success'} />
+							<StateBadge state={t.state} label={SINK_STATE_LABELS[t.state] ?? undefined} tone={t.state === 'open' ? 'warning' : t.state === 'disabled' ? 'muted' : 'success'} />
 							<span class="text-muted-foreground text-xs">last export <RelativeTime ms={t.lastSuccessAt} />{t.droppedLast24h ? ` · ${t.droppedLast24h} dropped in 24 h` : ''}</span>
 							{#if grafana}<ExternalLink href={grafana} label="Open Grafana" class="ml-auto text-xs" />{/if}
 						</div>
