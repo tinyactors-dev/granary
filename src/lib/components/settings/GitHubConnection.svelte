@@ -25,6 +25,7 @@
 	import AdminOnly from '$lib/components/app/AdminOnly.svelte';
 	import { describeError } from '$lib/components/app/format';
 	import GitHubLogoCard from './GitHubLogoCard.svelte';
+	import { isAdmin } from '$lib/components/app/session';
 	import { disconnectGitHub, refreshGitHubInstallations, setRepoEnabled } from '$lib/remote/settings.remote';
 	import type { GitHubStatus, RepoSummary, RepoSwitch } from '$lib/schemas/github-app';
 
@@ -120,7 +121,7 @@
 				</Card.Content>
 			</Card.Root>
 		{/if}
-		{#if status.app && !status.app.logoHintDismissed}
+		{#if status.app && !status.app.logoHintDismissed && isAdmin()}
 			<GitHubLogoCard settingsUrl={status.app.settingsUrl} highlight={justCreated} />
 		{/if}
 		<Card.Root data-testid="github-installations">
@@ -255,8 +256,11 @@
 					<Card.Description>GitHub does not retry failed webhooks. granary checks the app’s delivery log every few minutes and asks GitHub to send missed ones again.</Card.Description>
 				</Card.Header>
 				<Card.Content class="grid gap-1 text-sm">
-					<p>Last check: {#if status.catchup.lastPassAt}<RelativeTime ms={status.catchup.lastPassAt} /> · {status.catchup.lastPassRedelivered} re-sent{:else}not yet{/if}</p>
-					<p class="text-muted-foreground">{status.catchup.totalRedelivered} re-sent in total</p>
+					<p>
+						Last check: {#if status.catchup.lastPassAt}<RelativeTime ms={status.catchup.lastPassAt} /> ·
+							{status.catchup.lastPassRedelivered === 0 ? 'nothing missed' : `${status.catchup.lastPassRedelivered} re-sent`}{:else}not yet{/if}
+					</p>
+					{#if status.catchup.totalRedelivered > 0}<p class="text-muted-foreground">{status.catchup.totalRedelivered} re-sent in total</p>{/if}
 					{#if status.catchup.lastError}<p class="text-amber-700 dark:text-amber-400">Last problem: {status.catchup.lastError}</p>{/if}
 				</Card.Content>
 			</Card.Root>

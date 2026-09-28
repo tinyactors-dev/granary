@@ -92,6 +92,7 @@ import {
 	CONTROL_PATHS,
 	ControlOk,
 	CreateIssueResponse,
+	CreatePullRequestResponse,
 	EnsureRepoResponse,
 	InjectFaultResponse,
 	RedeliverResponse,
@@ -631,8 +632,13 @@ export class RealBackend implements Backend {
 			owner: input.owner,
 			name: input.repo
 		});
-		const created = await this.#control('POST', CONTROL_PATHS.issues, CreateIssueResponse, input);
+		const { kind = 'issue', draft, ...fields } = input;
+		const created =
+			kind === 'pull_request'
+				? await this.#control('POST', CONTROL_PATHS.pulls, CreatePullRequestResponse, { ...fields, ...(draft ? { draft } : {}) })
+				: await this.#control('POST', CONTROL_PATHS.issues, CreateIssueResponse, fields);
 		return {
+			kind,
 			number: created.number,
 			deliveryId: created.deliveryId,
 			repoId: repo.id,

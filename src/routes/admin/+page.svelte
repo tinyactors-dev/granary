@@ -158,10 +158,10 @@
 
 	<Card.Root>
 		<Card.Header>
-			<Card.Title>Tools</Card.Title>
-			<Card.Description>Grafana, storage consoles and the simulation services, with links taken from configuration.</Card.Description>
+			<Card.Title>Ops targets</Card.Title>
+			<Card.Description>Grafana and the storage consoles, with links taken from the ops configuration. The simulation services are the cards above.</Card.Description>
 		</Card.Header>
-		<Card.Content><DevTools /></Card.Content>
+		<Card.Content><DevTools groups={['ops targets']} /></Card.Content>
 	</Card.Root>
 	{#snippet failed(error, reset)}
 		<ErrorAlert {error} retry={() => { void info.refresh(); reset(); }} />

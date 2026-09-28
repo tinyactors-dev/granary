@@ -13,13 +13,9 @@
 	import CopyButton from '$lib/components/app/CopyButton.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton/index.js';
-	import { getGitHubStatus, getSetupStatus, listAdmins } from '$lib/remote/settings.remote';
+	import { getSetupStatus } from '$lib/remote/settings.remote';
 
 	const setup = getSetupStatus();
-	const github = getGitHubStatus();
-	const admins = listAdmins();
-
-	const MODE_LABEL = { none: 'Not connected', app: 'GitHub App', token: 'Personal access token' } as const;
 </script>
 
 <PageHeader title="Settings" description="Where granary lives, how it is connected, and who may change things." />
@@ -27,8 +23,6 @@
 <div class="grid items-start gap-4 lg:grid-cols-2">
 	<svelte:boundary>
 		{@const s = await setup}
-		{@const g = await github}
-		{@const a = await admins}
 		<Card.Root data-testid="settings-general">
 			<Card.Header>
 				<Card.Title>This installation</Card.Title>
@@ -42,11 +36,6 @@
 					{:else}
 						<p class="text-muted-foreground">Not set. Set <code>ORIGIN</code> to the URL people and GitHub use to reach granary.</p>
 					{/if}
-				</div>
-				<div class="grid gap-1">
-					<div class="text-muted-foreground text-xs font-medium uppercase tracking-wide">Webhook URL</div>
-					<div class="flex flex-wrap items-center gap-2"><code class="bg-muted rounded px-1.5 py-0.5 break-all">{g.webhookUrl}</code><CopyButton text={g.webhookUrl} /></div>
-					<p class="text-muted-foreground text-xs">Set up automatically when you create the GitHub App.</p>
 				</div>
 				<div class="grid gap-1">
 					<div class="text-muted-foreground text-xs font-medium uppercase tracking-wide">Master key</div>
@@ -89,7 +78,6 @@
 						</li>
 					{/each}
 				</ol>
-				{#if g.mode === 'app'}<p class="text-muted-foreground text-xs">Connected as <a class="underline-offset-2 hover:underline" href="/settings/github">{MODE_LABEL[g.mode]}</a>; {a.length} {a.length === 1 ? 'admin' : 'admins'}.</p>{/if}
 			</Card.Content>
 		</Card.Root>
 
@@ -113,7 +101,7 @@
 			<Skeleton class="h-56 rounded-xl" /><Skeleton class="h-56 rounded-xl" />
 		{/snippet}
 		{#snippet failed(error, reset)}
-			<div class="lg:col-span-2"><ErrorAlert {error} retry={() => { void setup.refresh(); void github.refresh(); void admins.refresh(); reset(); }} /></div>
+			<div class="lg:col-span-2"><ErrorAlert {error} retry={() => { void setup.refresh(); reset(); }} /></div>
 		{/snippet}
 	</svelte:boundary>
 </div>

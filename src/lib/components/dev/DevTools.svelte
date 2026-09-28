@@ -9,9 +9,9 @@
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
 	import { getDevTools } from '$lib/remote/dev.remote';
 
-	let { compact = false }: { compact?: boolean } = $props();
+	let { compact = false, groups }: { compact?: boolean; groups?: DevTool['group'][] } = $props();
 	const tools = getDevTools();
-	const GROUPS: DevTool['group'][] = ['granary', 'ops targets', 'fakes'];
+	const GROUPS = $derived<DevTool['group'][]>(groups ?? ['granary', 'ops targets', 'fakes']);
 	const dot = (up: boolean | null) => (up === null ? 'bg-muted-foreground/40' : up ? 'bg-emerald-500' : 'bg-red-500');
 	const title = (up: boolean | null) => (up === null ? 'not probed' : up ? 'reachable' : 'not reachable');
 </script>
@@ -33,7 +33,7 @@
 			</a>
 		{/each}
 	{:else}
-		<div class="grid gap-4 md:grid-cols-3" data-testid="dev-tools">
+		<div class="grid gap-4 {GROUPS.length > 1 ? 'md:grid-cols-3' : ''}" data-testid="dev-tools">
 			{#each GROUPS as group (group)}
 				{@const items = list.filter((t) => t.group === group)}
 				{#if items.length}

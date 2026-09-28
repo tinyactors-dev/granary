@@ -305,7 +305,15 @@ export class StubBackend implements Backend {
 
 	// -- dashboard -------------------------------------------------------------------
 
+	/** Seeded retries stay in the future ("next retry in 30 s", never "… ago"). */
+	#keepRetriesAhead(): void {
+		const now = Date.now();
+		for (const e of this.effects)
+			if ((e.state === 'pending' || e.state === 'inflight') && e.nextAttemptAt !== null && e.nextAttemptAt <= now) e.nextAttemptAt = now + 30_000;
+	}
+
 	async getOverview(): Promise<Overview> {
+		this.#keepRetriesAhead();
 		const inbox: Record<InboxState, number> = { pending: 0, done: 0, failed: 0, ignored: 0 };
 		for (const d of this.deliveries) inbox[d.state]++;
 		const outbox: Record<OutboxState, number> = { pending: 0, inflight: 0, done: 0, dead: 0 };
@@ -343,6 +351,7 @@ export class StubBackend implements Backend {
 	}
 
 	async listEffects(q: Resolved<ListEffectsInput>): Promise<Page<EffectSummary>> {
+		this.#keepRetriesAhead();
 		const rows = [...this.effects]
 			.filter((e) => !q.state || e.state === q.state)
 			.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -357,6 +366,7 @@ export class StubBackend implements Backend {
 	}
 
 	async listActivity(q: Resolved<ListActivityInput>): Promise<Page<ActivityItem>> {
+		this.#keepRetriesAhead();
 		const keys = new Set<string>([
 			...this.deliveries.map((d) => d.issueKey).filter((k): k is string => k !== null),
 			...this.effects.map((e) => e.issueKey),
@@ -388,6 +398,7 @@ export class StubBackend implements Backend {
 	}
 
 	async getIssue(key: string): Promise<IssueDetail | null> {
+		this.#keepRetriesAhead();
 		const { repoId, number } = parseIssueKey(key);
 		const deliveries = this.deliveries.filter((d) => d.issueKey === key);
 		const effect = this.effects.find((e) => e.issueKey === key) ?? null;
@@ -616,7 +627,7 @@ export class StubBackend implements Backend {
 			this.fake.repos.push({ id: REPO_ID, owner: input.owner, name: input.repo, fullName: `${input.owner}/${input.repo}` });
 		}
 		const i = this.addIssue(input.owner, input.repo, input.author, input.association ?? 'NONE', input.title, Date.now());
-		return { number: i.number, deliveryId: i.deliveryId, repoId: i.repoId, issueKey: issueKey(i.repoId, i.number) };
+		return { kind: input.kind ?? 'issue', number: i.number, deliveryId: i.deliveryId, repoId: i.repoId, issueKey: issueKey(i.repoId, i.number) };
 	}
 
 	async devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult> {

@@ -109,16 +109,26 @@
 					try {
 						if (await submit()) {
 							const r = devOpenIssue.result;
-							if (r) toast.success(`Opened issue #${r.number}`, { description: `Key ${r.issueKey}, ${r.deliveryId ? `delivery ${r.deliveryId.slice(0, 8)}…` : 'not delivered (no GitHub App covers the repo)'}`, action: { label: 'View', onClick: () => (location.href = issueHref(r.issueKey)) } });
+							if (r) toast.success(`Opened ${r.kind === 'pull_request' ? 'pull request' : 'issue'} #${r.number}`, { description: `Key ${r.issueKey}, ${r.deliveryId ? `delivery ${r.deliveryId.slice(0, 8)}…` : 'not delivered (no GitHub App covers the repo)'}`, action: { label: 'View', onClick: () => (location.href = issueHref(r.issueKey)) } });
 						}
 					} catch (e) {
-						toast.error('Could not open the issue', { description: describeError(e).message });
+						toast.error('Could not open it', { description: describeError(e).message });
 					}
 				})}
 				class="space-y-3 rounded-lg border p-4"
 				data-testid="open-issue-form"
 			>
-				<h3 class="flex items-center gap-2 text-sm font-semibold"><SendIcon class="size-4" /> Open an issue as…</h3>
+				<h3 class="flex items-center gap-2 text-sm font-semibold"><SendIcon class="size-4" /> Open an issue or pull request as…</h3>
+				<div class="flex flex-wrap items-end gap-4">
+					<div class="grid gap-1.5">
+						<Label for="oi-kind">Kind</Label>
+						<NativeSelect id="oi-kind" {...devOpenIssue.fields.kind.as('select', 'issue')} data-testid="open-kind">
+							<option value="issue">Issue</option>
+							<option value="pull_request">Pull request</option>
+						</NativeSelect>
+					</div>
+					<label class="flex items-center gap-2 pb-2 text-sm"><input {...devOpenIssue.fields.draft.as("checkbox")} /> Draft (pull requests)</label>
+				</div>
 				<div class="grid grid-cols-2 gap-3">
 					<div class="grid gap-1.5">
 						<Label for="oi-owner">Owner</Label>
@@ -156,7 +166,7 @@
 				</div>
 				<FieldIssues issues={devOpenIssue.fields.issues()} />
 				<Button type="submit" disabled={devOpenIssue.pending > 0}>
-					{#if devOpenIssue.pending}<LoaderCircleIcon class="animate-spin" />{:else}<SendIcon />{/if} Open issue
+					{#if devOpenIssue.pending}<LoaderCircleIcon class="animate-spin" />{:else}<SendIcon />{/if} Open
 				</Button>
 			</form>
 

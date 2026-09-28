@@ -84,11 +84,22 @@ export type DevLoginAsInput = Static<typeof DevLoginAsInput>;
 // Fake GitHub actions
 // ---------------------------------------------------------------------------
 
-/** `devOpenIssue` form fields — the fake's `POST /__control/issues` body. */
-export const DevOpenIssueInput = CreateIssueRequest;
+/**
+ * `devOpenIssue` form fields — the fake's `POST /__control/issues` body, plus
+ * `kind` (open a pull request instead, via `POST /__control/pulls`) and `draft`.
+ */
+export const DevOpenIssueInput = Type.Object(
+	{
+		...CreateIssueRequest.properties,
+		kind: Type.Optional(Type.Union([Type.Literal('issue'), Type.Literal('pull_request')])),
+		draft: Type.Optional(Type.Boolean())
+	},
+	closed
+);
 export type DevOpenIssueInput = Static<typeof DevOpenIssueInput>;
 
 export interface DevOpenIssueResult {
+	kind: 'issue' | 'pull_request';
 	number: number;
 	/** Null when no installed GitHub App covers the repo on the fake (nothing delivered). */
 	deliveryId: string | null;
