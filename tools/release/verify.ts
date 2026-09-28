@@ -34,6 +34,7 @@ const opt = (f: string) => {
 	return i >= 0 ? args[i + 1] : undefined;
 };
 const allowMissing = args.includes('--allow-missing');
+const tryEmulated = args.includes('--emulated');
 const timeoutS = Number(opt('--timeout') ?? 600);
 const platforms = opt('--platform') ? [opt('--platform')!] : [...RELEASE_DEFAULTS.platforms];
 const image = `oven/bun:${RELEASE_DEFAULTS.bunEngine.replace(/^>=\s*/, '')}`;
@@ -80,6 +81,12 @@ for (const platform of platforms) {
 	await cp(tarball, join(dir, 'granary.tgz'));
 
 	const emulatedX64 = arch === 'amd64' && hostArch !== 'amd64';
+	if (emulatedX64 && !tryEmulated) {
+		const why = 'emulated x86-64 (qemu) on an arm64 docker host: Bun 1.4.1 crashes here (`bun add` exits 139, even with the baseline build). Verify natively (x86-64 host or CI runner, ADR 0183), use colima with --vz-rosetta, or pass --emulated to try anyway.';
+		console.log(`\n== ${platform} — SKIPPED\n  ${why}`);
+		results.push({ platform, ok: false, skipped: why, steps: [] });
+		continue;
+	}
 	const bunMount = emulatedX64 ? ['-v', `${await baselineBun()}:/usr/local/bin/bun:ro`] : [];
 	console.log(`\n== ${platform} (${image}${emulatedX64 ? ', emulated: baseline Bun' : ''}) — daemon ${id}`);
 	await sh(['docker', 'pull', '-q', '--platform', platform, image], { quiet: true });
@@ -98,7 +105,14 @@ for (const platform of platforms) {
 	// Wait for result.json (the container exits right after writing it).
 	const resultFile = join(dir, 'out', 'result.json');
 	const until = Date.now() + timeoutS * 1000;
-	while (Date.now() < until && !(await Bun.file(resultFile).exists())) await Bun.sleep(2000);
+	const containerUp = async () => (await sh(['docker', 'ps', '-q', '--filter', `name=^${id}$`], { quiet: true })).out.trim() !== '';
+	let sawContainer = false;
+	while (Date.now() < until && !(await Bun.file(resultFile).exists())) {
+		await Bun.sleep(2000);
+		const up = await containerUp();
+		if (up) sawContainer = true;
+		else if (sawContainer || Date.now() > until - timeoutS * 1000 + 60_000) break; // died (or never came up) without a result
+	}
 	await pitchfork('stop', id); // no-op when it already exited; stops the container otherwise
 	// Belt and braces: remove this run's container by its exact name.
 	await sh(['docker', 'rm', '-f', id], { quiet: true });
@@ -106,8 +120,10 @@ for (const platform of platforms) {
 
 	const r = await readJson<{ ok: boolean; steps: VerifyResult['steps'] }>(resultFile);
 	if (!r) {
-		results.push({ platform, ok: false, steps: [{ name: 'container run', ok: false, detail: `no result within ${timeoutS} s\n${logs.slice(-1500)}` }] });
-		console.log(`  FAIL: no result within ${timeoutS} s`);
+		const crashed = /panic|Segmentation fault|has crashed/.test(logs);
+		const detail = `${crashed ? 'the verifier crashed' : 'no result'} (container ended or ${timeoutS} s passed)\n${logs.slice(-1500)}`;
+		results.push({ platform, ok: false, steps: [{ name: 'container run', ok: false, detail }] });
+		console.log(`  FAIL: ${detail.split('\n')[0]} — see \`pitchfork logs ${id}\``);
 		continue;
 	}
 	for (const s of r.steps) console.log(`  ${s.ok ? 'ok     ' : s.missing ? 'MISSING' : 'FAIL   '} ${s.name} — ${s.detail.split('\n')[0]}`);
@@ -119,14 +135,16 @@ const report: VerifyReport = {
 	sha256: meta.sha256,
 	gitSha: meta.gitSha,
 	at: new Date().toISOString(),
-	ok: results.every((r) => r.ok) && !meta.cliPlaceholder,
+	ok: results.every((r) => r.ok || r.skipped) && results.some((r) => r.ok) && !meta.cliPlaceholder,
 	results
 };
 await Bun.write(VERIFY_FILE, JSON.stringify(report, null, '\t') + '\n');
 
 const failed = results.flatMap((r) => r.steps.filter((s) => !s.ok && !s.missing).map((s) => `${r.platform}: ${s.name}`));
+const skipped = results.filter((r) => r.skipped).map((r) => r.platform);
 const missing = results.flatMap((r) => r.steps.filter((s) => s.missing).map((s) => `${r.platform}: ${s.name}`));
 console.log(`\nrelease:verify ${report.ok ? 'PASSED' : 'NOT PASSED'} for ${meta.name}@${meta.version} (${meta.gitSha.slice(0, 12)})`);
 if (missing.length) console.log(`  missing in this build (not failures): \n    ${missing.join('\n    ')}`);
+if (skipped.length) console.log(`  skipped (unverified — release:publish needs --accept-unverified ${skipped.join(',')}): ${skipped.join(', ')}`);
 if (failed.length) console.log(`  failed:\n    ${failed.join('\n    ')}`);
 process.exit(report.ok ? 0 : failed.length === 0 && allowMissing ? 2 : 1);

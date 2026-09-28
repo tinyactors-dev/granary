@@ -19,6 +19,8 @@ import { META_FILE, RELEASE_DEFAULTS, ROOT, VERIFY_FILE, die, readJson, rootVers
 
 const args = process.argv.slice(2);
 const really = args.includes('--yes');
+const acceptIdx = args.indexOf('--accept-unverified');
+const acceptUnverified = new Set(acceptIdx >= 0 ? (args[acceptIdx + 1] ?? '').split(',').filter(Boolean) : []);
 const problems: string[] = [];
 const check = (cond: unknown, msg: string) => {
 	if (!cond) problems.push(msg);
@@ -53,7 +55,15 @@ check(verify, 'no release/verify.json — run `mise run release:verify`');
 if (verify && meta) {
 	check(verify.sha256 === meta.sha256, 'release/verify.json is for a different tarball — run release:verify again');
 	check(verify.ok, 'release:verify did not pass for this tarball');
-	for (const p of RELEASE_DEFAULTS.platforms) check(verify.results.some((r) => r.platform === p && r.ok), `release:verify has no passing run for ${p}`);
+	for (const p of RELEASE_DEFAULTS.platforms) {
+		const r = verify.results.find((x) => x.platform === p);
+		if (r?.ok) continue;
+		if (r?.skipped && acceptUnverified.has(p)) {
+			console.warn(`WARNING: publishing without verification on ${p} (--accept-unverified): ${r.skipped}`);
+			continue;
+		}
+		check(false, r?.skipped ? `${p} was not verified (${r.skipped.split(':')[0]}) — verify it natively, or pass --accept-unverified ${p}` : `release:verify has no passing run for ${p}`);
+	}
 }
 const view = await sh(['bunx', 'npm@latest', 'view', `${RELEASE_DEFAULTS.name}@${version}`, 'version', '--registry', RELEASE_DEFAULTS.registry], { quiet: true });
 check(!(view.code === 0 && view.out.trim() === version), `${RELEASE_DEFAULTS.name}@${version} is already published — bump the version`);

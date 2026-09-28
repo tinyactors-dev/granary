@@ -44,6 +44,8 @@ export interface PackMeta {
 export interface VerifyResult {
 	platform: string;
 	ok: boolean;
+	/** Not run on this host (e.g. emulated x86-64, ADR 0184); publish needs --accept-unverified. */
+	skipped?: string;
 	steps: { name: string; ok: boolean; missing?: boolean; detail: string }[];
 }
 export interface VerifyReport {
