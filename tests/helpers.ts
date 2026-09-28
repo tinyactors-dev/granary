@@ -54,6 +54,42 @@ export async function openIssue(
 	};
 }
 
+/** Like `openIssue`, for a pull request (ADR 0280, 0282): same number sequence, same actor key. */
+export async function openPullRequest(
+	h: Harness,
+	author: string,
+	options: { association?: AuthorAssociation; repo?: string; draft?: boolean; expectDelivered?: boolean } = {}
+): Promise<OpenedIssue & { delivered: boolean }> {
+	const repo = options.repo ?? uniqueName();
+	const { id: repoId } = await h.fakeGithub.ensureRepo({ owner: OWNER, name: repo });
+	const { number, deliveryId } = await h.fakeGithub.createPullRequest({
+		owner: OWNER,
+		repo,
+		author,
+		title: `Pull request by ${author}`,
+		association: options.association,
+		draft: options.draft
+	});
+	if (options.expectDelivered !== false) {
+		if (!deliveryId) throw new Error(`no GitHub App with pull request access covers ${OWNER}/${repo}: nothing was delivered`);
+		const d = await h.fakeGithub.delivery(deliveryId);
+		expect(d?.responseCode).toBe(202);
+	}
+	const effectKey = `close:${repoId}:${number}`;
+	return {
+		owner: OWNER,
+		repo,
+		repoId,
+		number,
+		deliveryId: deliveryId ?? '',
+		delivered: deliveryId !== null,
+		address: issueAddress(repoId, number),
+		issueKey: `${repoId}-${number}`,
+		effectKey,
+		marker: `<!-- granary:${effectKey} -->`
+	};
+}
+
 export async function fakeIssue(h: Harness, i: OpenedIssue): Promise<FakeIssue> {
 	const issue = await h.fakeGithub.issue(i.owner, i.repo, i.number);
 	if (!issue) throw new Error(`issue ${i.owner}/${i.repo}#${i.number} missing from fake GitHub`);

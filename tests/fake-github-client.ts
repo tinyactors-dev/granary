@@ -5,8 +5,10 @@
  */
 import type { TSchema, Static } from '@sinclair/typebox';
 import {
+	AcceptPermissionsResponse,
 	CONTROL_PATHS,
 	CreateIssueResponse,
+	CreatePullRequestResponse,
 	EnsureRepoResponse,
 	EnsureUserResponse,
 	InjectFaultResponse,
@@ -16,6 +18,8 @@ import {
 	ResetResponse,
 	parseFakeState,
 	type CreateIssueRequest,
+	type CreatePullRequestRequest,
+	type SetAppPermissionsRequest,
 	type EnsureRepoRequest,
 	type EnsureUserRequest,
 	type FakeIssue,
@@ -25,6 +29,7 @@ import {
 	type ReopenIssueRequest
 } from '../fake-github/schemas';
 import { parse } from '../src/lib/schemas/standard';
+import { Type } from '@sinclair/typebox';
 
 export class FakeGithubError extends Error {
 	constructor(
@@ -63,6 +68,18 @@ export class FakeGithubClient {
 	/** Creates the issue and delivers `issues.opened`; resolves after the delivery attempt. */
 	createIssue(body: CreateIssueRequest) {
 		return this.call(CreateIssueResponse, 'POST', CONTROL_PATHS.issues, body);
+	}
+	/** ADR 0282: opens a pull request and delivers `pull_request.opened` to apps that accepted the event. */
+	createPullRequest(body: CreatePullRequestRequest) {
+		return this.call(CreatePullRequestResponse, 'POST', CONTROL_PATHS.pulls, body);
+	}
+	/** ADR 0282: change what the app asks for; installations keep theirs until they accept. */
+	setAppPermissions(appId: number, body: SetAppPermissionsRequest) {
+		return this.call(Type.Object({ id: Type.Integer() }, { additionalProperties: true }), 'POST', CONTROL_PATHS.appPermissions(appId), body);
+	}
+	/** ADR 0282: the account accepts the app's current permissions (`installation.new_permissions_accepted`). */
+	acceptPermissions(installationId: number) {
+		return this.call(AcceptPermissionsResponse, 'POST', CONTROL_PATHS.acceptPermissions(installationId));
 	}
 	reopen(body: ReopenIssueRequest) {
 		return this.call(ReopenIssueResponse, 'POST', CONTROL_PATHS.reopen, body);
