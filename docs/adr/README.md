@@ -155,6 +155,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0186](0186-single-release-script-and-github-actions.md) | One release script, run from the laptop or a manual GitHub Action | active |
 | [0187](0187-package-identity.md) | Package identity: MIT, `@tinyactors/granary`, repo `tinyactors-dev/granary` | active |
 | [0188](0188-prereleases-never-latest.md) | A prerelease never becomes `latest`; `release:promote` moves `latest` | active |
+| [0189](0189-release-build-outside-the-repository.md) | Build the release outside the repository | active |
 | [0190](0190-github-connection-storage.md) | GitHub connection storage: own tables and schema steps | partly superseded |
 | [0191](0191-github-app-auth.md) | GitHub App auth: JWT via node:crypto, cached installation tokens, per-repo clients | active |
 | [0192](0192-webhook-repo-policy-and-lifecycle.md) | Webhooks: secret by mode, per-repo policy, installation sync | active |

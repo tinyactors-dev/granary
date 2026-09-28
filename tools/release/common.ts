@@ -4,10 +4,17 @@
  */
 import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 
 export const ROOT = resolve(import.meta.dir, '../..');
 export const RELEASE_DIR = join(ROOT, 'release');
-export const WORK_DIR = join(RELEASE_DIR, 'work');
+/**
+ * The exported source is built OUTSIDE the repository: nested inside the
+ * checkout, the build's tsconfig resolution reached the outer checkout's
+ * generated `.svelte-kit/`, so packs passed on a dev machine and failed on a
+ * fresh clone / CI (ADR 0189).
+ */
+export const WORK_DIR = join(tmpdir(), 'granary-release-work');
 export const STAGE_DIR = join(RELEASE_DIR, 'package');
 export const META_FILE = join(RELEASE_DIR, 'meta.json');
 export const VERIFY_FILE = join(RELEASE_DIR, 'verify.json');
