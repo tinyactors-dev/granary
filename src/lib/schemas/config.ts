@@ -34,6 +34,8 @@ export const RawEnv = Type.Object(
 		FAKE_GITHUB_PORT: Type.Optional(Port),
 		FAKE_GITHUB_URL: Type.Optional(Url),
 		FAKE_GITHUB_WEBHOOK_URL: Type.Optional(Url),
+		/** Load generator base URL (ADR 0070). */
+		LOADGEN_URL: Type.Optional(Url),
 		NODE_ENV: Type.Optional(Type.String()),
 		/** Comma-separated logins inserted into allowed_users at boot (added_by 'seed') if absent. ADR 0040. */
 		ALLOWED_USERS_SEED: Type.Optional(Type.String()),
@@ -79,6 +81,8 @@ export interface Config {
 	fakeGithubUrl: string;
 	fakeGithubPort: number;
 	fakeGithubWebhookUrl: string;
+	/** Load generator base URL, no trailing slash (ADR 0070). */
+	loadgenUrl: string;
 	nodeEnv: string;
 	/** `ALLOWED_USERS_SEED`, trimmed, empties removed (case kept). */
 	allowedUsersSeed: string[];
@@ -149,6 +153,7 @@ export function loadConfig(
 		fakeGithubUrl: trimSlash(raw.FAKE_GITHUB_URL ?? `http://localhost:${fakeGithubPort}`),
 		fakeGithubPort,
 		fakeGithubWebhookUrl: raw.FAKE_GITHUB_WEBHOOK_URL ?? 'http://localhost:5173/webhook',
+		loadgenUrl: trimSlash(raw.LOADGEN_URL ?? 'http://localhost:4040'),
 		nodeEnv: raw.NODE_ENV ?? 'development',
 		allowedUsersSeed: (raw.ALLOWED_USERS_SEED ?? '')
 			.split(',')

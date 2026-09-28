@@ -31,10 +31,11 @@ Mechanics shared by all kinds (`loadgen/personas/common.ts`, not an actor):
   `timeScale`; `after(function () { return this.wait })` with a per-state
   send id, cancelled on exit.
 - **Acting** is `<send type="github">` to loadgen's `github` I/O processor
-  (`gh.open`, `gh.reopen`, `gh.comment`, `gh.user`, `gh.fault`,
-  `gh.redeliver`, `gh.raw`); results come back as events (`gh.opened`,
-  `gh.reopened`, `gh.commented`, `gh.user.ok`, `gh.faulted`,
-  `gh.redelivered`, `gh.raw.result`, or `gh.error`).
+  (`gh.user`, `gh.open`, `gh.reopen`, `gh.comment`, and the compound
+  `gh.chaos {strike, count, retryAfter, pick}` / `gh.fuzz {case}` whose
+  mechanics live in the engine so the charts stay readable); results come
+  back as events (`gh.user.ok`, `gh.opened`, `gh.reopened`, `gh.commented`,
+  `gh.chaos.done`, `gh.fuzz.done`, or `gh.error`).
 - **Being notified**: the engine routes fake-GitHub events about a
   persona's own issues to it as `notify.closed`, `notify.comment` (comments
   by others) and `notify.reopened`.
@@ -43,7 +44,12 @@ Mechanics shared by all kinds (`loadgen/personas/common.ts`, not an actor):
   goes into the persona's timeline next to its actions and granary's
   reactions. This is what the portal shows to explain behaviour.
 - Personas finish in a final state and are **retained** (not destroyed) so
-  they stay inspectable until the scenario is deleted.
+  they stay inspectable; personas still alive when a scenario is stopped
+  (or its drain times out) are snapshotted and destroyed, and the portal
+  shows the frozen snapshot.
+- Notifications about an issue that arrive before the persona learned the
+  issue number (granary can close within milliseconds) are queued in the
+  ledger and delivered right after `gh.opened`.
 
 ## Consequences
 New behaviour = new file + registration in `loadgen/personas/index.ts`

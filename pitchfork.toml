@@ -10,3 +10,8 @@ run = "mise run dev"
 # vite binds [::1] only, so a TCP port probe never sees it; poll HTTP instead
 ready_http = "http://localhost:5173/"
 depends = ["fake-github"]
+
+[daemons.loadgen]
+run = "mise run loadgen"
+ready_port = 4040
+depends = ["fake-github"]

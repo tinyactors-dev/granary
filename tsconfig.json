@@ -29,7 +29,8 @@
     "src/**/*.ts",
     "src/**/*.svelte",
     "tests/**/*.ts",
-    "fake-github/**/*.ts"
+    "fake-github/**/*.ts",
+    "loadgen/**/*.ts"
   ],
   "exclude": [
     "node_modules/**",

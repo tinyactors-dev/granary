@@ -15,17 +15,27 @@ description = "Fake GitHub server (http://localhost:4010)"
 env = { _.file = "config/dev.env" }
 run = "bun --hot fake-github/server.ts"
 
+[tasks.loadgen]
+description = "Load generator / persona simulator (http://localhost:4040), ADR 0070"
+env = { _.file = "config/dev.env" }
+run = "bun --hot loadgen/server.ts"
+
+[tasks."load:run"]
+description = "Headless load scenario against the running dev stack; exit 1 on invariant violations (e.g. -- --preset chaos --seed 7)"
+env = { _.file = "config/dev.env" }
+run = "bun loadgen/cli.ts"
+
 [tasks.up]
-description = "Start dev daemons via pitchfork (fake GitHub + app); see pitchfork.toml"
+description = "Start dev daemons via pitchfork (fake GitHub + app + loadgen); see pitchfork.toml"
 run = "pitchfork start -l"
 
 [tasks.down]
 description = "Stop dev daemons started from pitchfork.toml"
-run = "pitchfork stop granary/app granary/fake-github"
+run = "pitchfork stop granary/app granary/loadgen granary/fake-github"
 
 [tasks.logs]
 description = "Tail logs of the dev daemons"
-run = "pitchfork logs -t granary/app granary/fake-github"
+run = "pitchfork logs -t granary/app granary/fake-github granary/loadgen"
 
 [tasks."dev:all"]
 description = "Alias for `up` (dev daemons via pitchfork)"
