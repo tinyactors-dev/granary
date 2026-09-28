@@ -19,7 +19,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | active |
 | [0002](0002-actor-topology.md) | Actor and I/O processor topology | active |
 | [0003](0003-sqlite-write-ahead-log.md) | Application-level write-ahead log in SQLite | partly superseded |
-| [0004](0004-policy-decisions.md) | Policy: who may open issues | active |
+| [0004](0004-policy-decisions.md) | Policy: who may open issues | partly superseded (0260: blocklist first) |
 | [0005](0005-processes-ports-and-configuration.md) | Processes, ports and configuration | partly superseded |
 | [0006](0006-fake-github-contract.md) | Fake GitHub contract | partly superseded |
 | [0007](0007-testing-through-traces.md) | Tests run against a running system and assert on traces | active |
@@ -177,4 +177,5 @@ superseded by N`) and the newer ADR says what changed.
 | [0233](0233-deploy-task-and-operations-handbook.md) | `mise run deploy` and the operations handbook | active |
 | [0234](0234-structured-logs-access-log-and-trace-correlation.md) | Structured logs, an HTTP access log, and log ↔ trace correlation | active |
 | [0240](0240-setup-checklist-from-real-state.md) | The setup checklist is computed on the server from the real state | active |
+| [0260](0260-blocklist-precedence-and-expiry.md) | A blocklist that beats the allowlist and maintainer associations | active |
 | [0270](0270-brand-wheat-logo-and-favicons.md) | Brand: colored wheat logo, favicons and app icons from one source | active |

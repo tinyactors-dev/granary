@@ -84,6 +84,35 @@ List admins. It uses the running server when there is one, else writes the datab
 | `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
 | `--json` | Print the raw JSON result |
 
+### `granary blocklist add <login>`
+
+Block a GitHub login: their issues are closed, even if allowlisted or an owner (ADR 0260). It uses the running server when there is one, else writes the database directly.
+
+| Option | Description |
+|---|---|
+| `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
+| `--json` | Print the raw JSON result |
+| `--for <value>` | Block only for this long, e.g. 1h, 30m, 7d (default: until removed) |
+| `--note <value>` | Why (shown in the UI) |
+
+### `granary blocklist remove <login>`
+
+Unblock a GitHub login. It uses the running server when there is one, else writes the database directly.
+
+| Option | Description |
+|---|---|
+| `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
+| `--json` | Print the raw JSON result |
+
+### `granary blocklist list`
+
+List blocked logins (expired entries marked). It uses the running server when there is one, else writes the database directly.
+
+| Option | Description |
+|---|---|
+| `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
+| `--json` | Print the raw JSON result |
+
 ### `granary login-link <login>`
 
 Print a one-time sign-in URL for an admin. It uses the running server when there is one, else writes the database directly.
