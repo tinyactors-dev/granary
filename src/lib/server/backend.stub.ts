@@ -62,11 +62,18 @@ import type { InboxState, OutboxState, VerdictValue } from '$lib/schemas/wal';
 import { SESSION_TTL_MS } from '$lib/schemas/wal';
 import { BackendError, type Backend } from './backend';
 import { chartFor } from './inspect/charts';
+import { StubSettings } from './settings.stub';
+import type { Admin, CreateLoginLinkInput } from '$lib/schemas/admins';
+import type { BeginManifestInput, GitHubMode, SetRepoEnabledInput } from '$lib/schemas/github-app';
 
 export interface StubBackendOptions {
 	admins?: string[];
 	dapPort?: number;
 	fakeGithubUrl?: string;
+	/** Public URL used in stub login links / manifest URLs (default http://localhost:5173). */
+	origin?: string;
+	/** GitHub connection mode to start in; `none` shows the setup wizard (ADR 0161). */
+	githubMode?: GitHubMode;
 }
 
 interface StubIssue extends IssueSummary {
@@ -103,11 +110,18 @@ export class StubBackend implements Backend {
 	private verdicts: VerdictSummary[] = [];
 	private fake: FakeState = { users: [], repos: [], issues: [], deliveries: [], faults: [] };
 	private nextNumber = 1;
+	private readonly settings: StubSettings;
 
 	constructor(options: StubBackendOptions = {}) {
 		this.admins = (options.admins ?? ['admin']).map((a) => a.toLowerCase());
 		this.dapPort = options.dapPort ?? 4711;
 		this.fakeGithubUrl = options.fakeGithubUrl ?? 'http://localhost:4010';
+		this.settings = new StubSettings({
+			admins: this.admins,
+			origin: options.origin ?? 'http://localhost:5173',
+			githubWebUrl: this.fakeGithubUrl,
+			mode: options.githubMode
+		});
 		this.seed();
 	}
 
@@ -257,7 +271,7 @@ export class StubBackend implements Backend {
 	}
 
 	private user(login: string, avatarUrl: string | null): SessionUser {
-		return { login, avatarUrl, isAdmin: this.admins.includes(login.toLowerCase()) };
+		return { login, avatarUrl, isAdmin: this.admins.includes(login.toLowerCase()) || this.settings.isAdmin(login) };
 	}
 
 	// -- sessions ------------------------------------------------------------------
@@ -633,6 +647,45 @@ export class StubBackend implements Backend {
 	}
 	async resetLoadgen() {
 		this.#loadgen.reset();
+	}
+
+	// -- setup, admins, login links, GitHub connection (ADR 0160, 0161, 0166) ------
+	async getSetupStatus() {
+		return this.settings.getSetupStatus();
+	}
+	async listAdmins() {
+		return this.settings.listAdmins();
+	}
+	async addAdmin(login: string, addedBy: string, source: Admin['source']) {
+		return this.settings.addAdmin(login, addedBy, source);
+	}
+	async removeAdmin(login: string, removedBy: string) {
+		return this.settings.removeAdmin(login, removedBy);
+	}
+	async createLoginLink(input: CreateLoginLinkInput, createdBy: string) {
+		return this.settings.createLoginLink(input, createdBy);
+	}
+	async consumeLoginLink(token: string) {
+		const login = this.settings.takeLoginLink(token);
+		return login ? this.createSession({ login }) : null;
+	}
+	async listAuditLog(limit: number) {
+		return this.settings.listAuditLog(limit);
+	}
+	async getGitHubStatus() {
+		return this.settings.getGitHubStatus();
+	}
+	async beginGitHubAppManifest(input: BeginManifestInput, requestedBy: string) {
+		return this.settings.beginGitHubAppManifest(input, requestedBy);
+	}
+	async completeGitHubAppManifest(code: string, state: string, actor: string) {
+		return this.settings.completeGitHubAppManifest(code, state, actor);
+	}
+	async refreshGitHubInstallations(actor: string) {
+		return this.settings.refreshGitHubInstallations(actor);
+	}
+	async setRepoEnabled(input: SetRepoEnabledInput, actor: string) {
+		return this.settings.setRepoEnabled(input, actor);
 	}
 
 	// -- fake-infra (ADR 0139) ---------------------------------------------------

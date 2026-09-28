@@ -35,7 +35,11 @@ export const CONTROL_PATHS = {
 	comment: '/__control/issues/comment',
 	rawDelivery: '/__control/deliveries/raw',
 	events: '/__control/events',
-	eventsLog: '/__control/events/log'
+	eventsLog: '/__control/events/log',
+	/** ADR 0164: install a GitHub App without the UI. */
+	appInstallations: (appId: number) => `/__control/apps/${appId}/installations`,
+	/** ADR 0164: while down, webhook deliveries fail with status_code 0 (catch-up tests). */
+	webhookOutage: '/__control/webhook-outage'
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -240,6 +244,83 @@ export const FakeDelivery = Type.Object(
 );
 export type FakeDelivery = Static<typeof FakeDelivery>;
 
+// ---------------------------------------------------------------------------
+// ADR 0164: GitHub Apps (manifest flow, installations, app hook deliveries)
+// ---------------------------------------------------------------------------
+
+export const FakeApp = Type.Object(
+	{
+		id: Type.Integer(),
+		slug: Type.String(),
+		name: Type.String(),
+		owner: Login,
+		clientId: Type.String(),
+		/** Manifest URLs, as registered. */
+		webhookUrl: Type.String(),
+		redirectUrl: Type.String(),
+		setupUrl: Type.Union([Type.String(), Type.Null()]),
+		callbackUrls: Type.Array(Type.String()),
+		permissions: Type.Record(Type.String(), Type.String()),
+		events: Type.Array(Type.String()),
+		createdAt: Type.Number()
+	},
+	closed
+);
+export type FakeApp = Static<typeof FakeApp>;
+
+export const FakeInstallation = Type.Object(
+	{
+		id: Type.Integer(),
+		appId: Type.Integer(),
+		account: Login,
+		accountType: Type.Union([Type.Literal('User'), Type.Literal('Organization')]),
+		repositorySelection: Type.Union([Type.Literal('all'), Type.Literal('selected')]),
+		/** Repo full names (`owner/name`) when `selected`. */
+		repos: Type.Array(Type.String()),
+		suspended: Type.Boolean(),
+		createdAt: Type.Number()
+	},
+	closed
+);
+export type FakeInstallation = Static<typeof FakeInstallation>;
+
+/** One entry of an app's delivery log (`GET /app/hook/deliveries`). */
+export const FakeAppDelivery = Type.Object(
+	{
+		id: Type.Integer(),
+		appId: Type.Integer(),
+		guid: Type.String(),
+		event: Type.String(),
+		action: Type.Union([Type.String(), Type.Null()]),
+		deliveredAt: Type.Number(),
+		redelivery: Type.Boolean(),
+		/** 0 when the delivery could not connect (outage). */
+		statusCode: Type.Integer(),
+		installationId: Type.Union([Type.Integer(), Type.Null()]),
+		repositoryId: Type.Union([Type.Integer(), Type.Null()])
+	},
+	closed
+);
+export type FakeAppDelivery = Static<typeof FakeAppDelivery>;
+
+/** POST /__control/apps/{appId}/installations */
+export const InstallAppRequest = Type.Object(
+	{
+		account: Login,
+		accountType: Type.Optional(Type.Union([Type.Literal('User'), Type.Literal('Organization')])),
+		/** Omit for `all`; repos are created if missing. */
+		repos: Type.Optional(Type.Array(Type.String({ pattern: '^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$' })))
+	},
+	closed
+);
+export type InstallAppRequest = Static<typeof InstallAppRequest>;
+export const InstallAppResponse = Type.Object({ installationId: Type.Integer(), deliveryId: Type.String() }, closed);
+export type InstallAppResponse = Static<typeof InstallAppResponse>;
+
+/** POST /__control/webhook-outage */
+export const WebhookOutageRequest = Type.Object({ down: Type.Boolean() }, closed);
+export type WebhookOutageRequest = Static<typeof WebhookOutageRequest>;
+
 export const FakeState = Type.Object(
 	{
 		users: Type.Array(FakeUser),
@@ -247,7 +328,12 @@ export const FakeState = Type.Object(
 		issues: Type.Array(FakeIssue),
 		/** Oldest first. */
 		deliveries: Type.Array(FakeDelivery),
-		faults: Type.Array(FakeFault)
+		faults: Type.Array(FakeFault),
+		/** ADR 0164 (optional until the fake implements GitHub Apps). */
+		apps: Type.Optional(Type.Array(FakeApp)),
+		installations: Type.Optional(Type.Array(FakeInstallation)),
+		appDeliveries: Type.Optional(Type.Array(FakeAppDelivery)),
+		webhookOutage: Type.Optional(Type.Boolean())
 	},
 	closed
 );

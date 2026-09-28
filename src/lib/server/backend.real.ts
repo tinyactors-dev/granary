@@ -86,6 +86,16 @@ import {
 	parseFakeState
 } from '../../../fake-github/schemas';
 import { BackendError, type Backend } from './backend';
+import type { AddAdminResult, Admin, AuditEntry, CreatedLoginLink, CreateLoginLinkInput, RemoveAdminResult, SetupStatus } from '../schemas/admins';
+import type {
+	BeginManifestInput,
+	CompleteManifestResult,
+	GitHubStatus,
+	InstallationSummary,
+	ManifestFormData,
+	RepoSummary,
+	SetRepoEnabledInput
+} from '../schemas/github-app';
 import { DAP_HOST } from './dap';
 import type { Runtime } from './system';
 import { addressOfInspection } from './tracing';
@@ -596,6 +606,51 @@ export class RealBackend implements Backend {
 	}
 	resetLoadgen(): Promise<void> {
 		return this.#loadgen.reset();
+	}
+
+	// -- setup, admins, login links (ADR 0161): pinned by ADR 0166, implemented by fork E1 --
+
+	#pending(fork: string): never {
+		throw new BackendError('unavailable', `not implemented yet (ADR 0166, fork ${fork})`);
+	}
+	async getSetupStatus(): Promise<SetupStatus> {
+		return this.#pending('E1');
+	}
+	async listAdmins(): Promise<Admin[]> {
+		return this.#pending('E1');
+	}
+	async addAdmin(_login: string, _addedBy: string, _source: Admin['source']): Promise<AddAdminResult> {
+		return this.#pending('E1');
+	}
+	async removeAdmin(_login: string, _removedBy: string): Promise<RemoveAdminResult> {
+		return this.#pending('E1');
+	}
+	async createLoginLink(_input: CreateLoginLinkInput, _createdBy: string): Promise<CreatedLoginLink> {
+		return this.#pending('E1');
+	}
+	async consumeLoginLink(_token: string): Promise<CreatedSession | null> {
+		return this.#pending('E1');
+	}
+	async listAuditLog(_limit: number): Promise<AuditEntry[]> {
+		return this.#pending('E1');
+	}
+
+	// -- GitHub connection (ADR 0160, 0162): implemented by fork E3 ---------------------
+
+	async getGitHubStatus(): Promise<GitHubStatus> {
+		return this.#pending('E3');
+	}
+	async beginGitHubAppManifest(_input: BeginManifestInput, _requestedBy: string): Promise<ManifestFormData> {
+		return this.#pending('E3');
+	}
+	async completeGitHubAppManifest(_code: string, _state: string, _actor: string): Promise<CompleteManifestResult> {
+		return this.#pending('E3');
+	}
+	async refreshGitHubInstallations(_actor: string): Promise<InstallationSummary[]> {
+		return this.#pending('E3');
+	}
+	async setRepoEnabled(_input: SetRepoEnabledInput, _actor: string): Promise<RepoSummary> {
+		return this.#pending('E3');
 	}
 
 	// -- fake-infra (ADR 0139) ---------------------------------------------------

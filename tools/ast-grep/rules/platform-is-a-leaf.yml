@@ -1,0 +1,21 @@
+# ADR 0158: src/lib/platform is a leaf layer; it must not import granary server code, the ops module, SvelteKit or UI.
+id: platform-is-a-leaf
+language: TypeScript
+severity: error
+message: src/lib/platform must not import granary server code, the ops module, SvelteKit or UI (ADR 0158)
+note: "Allowed: relative platform files, $lib/schemas/* (leaf schemas), npm packages, bun:*, node:*."
+files:
+  - src/lib/platform/**/*.ts
+utils:
+  forbidden:
+    any:
+      - regex: "\\$lib/(server|ops|remote|components)/"
+      - regex: "\\$app/|@sveltejs/kit|\\$env/"
+      - regex: "\\.\\./(server|ops|remote|components)/"
+      - regex: "(fake-github|fake-infra|loadgen)/"
+rule:
+  any:
+    - kind: import_statement
+      has: { field: source, matches: forbidden }
+    - kind: export_statement
+      has: { field: source, matches: forbidden }

@@ -38,6 +38,24 @@ import type {
 } from '$lib/schemas/api';
 import type { ActorAddress } from '$lib/schemas/actors';
 import type {
+	AddAdminResult,
+	Admin,
+	AuditEntry,
+	CreatedLoginLink,
+	CreateLoginLinkInput,
+	RemoveAdminResult,
+	SetupStatus
+} from '$lib/schemas/admins';
+import type {
+	BeginManifestInput,
+	CompleteManifestResult,
+	GitHubStatus,
+	InstallationSummary,
+	ManifestFormData,
+	RepoSummary,
+	SetRepoEnabledInput
+} from '$lib/schemas/github-app';
+import type {
 	DapLaunchConfig,
 	DevInfo,
 	DevTool,
@@ -172,6 +190,41 @@ export interface Backend {
 	listPersonaKinds(): Promise<PersonaKindInfo[]>;
 	/** Stop everything and forget all scenarios. */
 	resetLoadgen(): Promise<void>;
+
+	// -- setup, admins, login links (ADR 0161) — real impl: fork E1 ------------------
+
+	getSetupStatus(): Promise<SetupStatus>;
+	/** Sorted by login (case-insensitive). */
+	listAdmins(): Promise<Admin[]>;
+	/** Idempotent. `invalid` for a malformed login. */
+	addAdmin(login: string, addedBy: string, source: Admin['source']): Promise<AddAdminResult>;
+	/** `conflict` when it would remove the last admin. */
+	removeAdmin(login: string, removedBy: string): Promise<RemoveAdminResult>;
+	/** `invalid` when the login is not an admin. The URL is shown once. */
+	createLoginLink(input: CreateLoginLinkInput, createdBy: string): Promise<CreatedLoginLink>;
+	/**
+	 * Atomically consume a login-link token (single use, unexpired, login still
+	 * an admin) and create a session. null when invalid/expired/used.
+	 */
+	consumeLoginLink(token: string): Promise<CreatedSession | null>;
+	/** Newest first. */
+	listAuditLog(limit: number): Promise<AuditEntry[]>;
+
+	// -- GitHub connection (ADR 0160, 0162) — real impl: fork E3 ----------------------
+
+	getGitHubStatus(): Promise<GitHubStatus>;
+	/** Stores a manifest nonce (10 min) and returns what the settings form POSTs to GitHub. */
+	beginGitHubAppManifest(input: BeginManifestInput, requestedBy: string): Promise<ManifestFormData>;
+	/**
+	 * Exchange the manifest `code` (after checking `state`), store the app and
+	 * its secrets, switch mode to `app`. `invalid` for a bad/expired state,
+	 * `upstream` when GitHub rejects the code, `conflict` when an app exists.
+	 */
+	completeGitHubAppManifest(code: string, state: string, actor: string): Promise<CompleteManifestResult>;
+	/** Re-sync installations and their repositories from GitHub. */
+	refreshGitHubInstallations(actor: string): Promise<InstallationSummary[]>;
+	/** `not-found` for an unknown repo. */
+	setRepoEnabled(input: SetRepoEnabledInput, actor: string): Promise<RepoSummary>;
 
 	// -- fake-infra (ADR 0130–0139), dev only; proxies FAKE_INFRA_URL -------------------
 
