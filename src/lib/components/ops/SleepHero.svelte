@@ -9,7 +9,7 @@
 </script>
 
 <section
-	class="rounded-2xl border p-6 {status.mode === 'inactive'
+	class="rounded-2xl border p-4 sm:p-6 {status.mode === 'inactive'
 		? 'bg-muted/40'
 		: status.sleepOk
 			? 'border-emerald-600/20 bg-emerald-600/[0.05] dark:border-emerald-400/20 dark:bg-emerald-400/[0.06]'
@@ -18,13 +18,13 @@
 	data-sleep-ok={status.sleepOk}
 >
 	<div class="flex items-start gap-4">
-		<div class="bg-background flex size-12 shrink-0 items-center justify-center rounded-full border">
+		<div class="bg-background flex size-10 shrink-0 items-center justify-center rounded-full border sm:size-12">
 			{#if status.mode === 'inactive'}<CircleDashedIcon class="text-muted-foreground size-6" />
 			{:else if status.sleepOk}<MoonStarIcon class="size-6 text-emerald-700 dark:text-emerald-400" />
 			{:else}<CoffeeIcon class="size-6 text-amber-700 dark:text-amber-400" />{/if}
 		</div>
 		<div class="min-w-0">
-			<h2 class="text-3xl font-semibold tracking-tight">
+			<h2 class="text-xl font-semibold tracking-tight sm:text-3xl">
 				{#if status.mode === 'inactive'}Ops isn't running{:else if status.sleepOk}Sleeping is fine{:else}Needs you (not urgent){/if}
 			</h2>
 			<p class="text-muted-foreground mt-1 text-sm">

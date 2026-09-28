@@ -129,3 +129,114 @@
 		@apply font-sans;
 	}
 }
+
+/*
+ * Stacked tables (ADR 0295): `<Table.Root stack>` renders each row as a card
+ * below the md breakpoint — the first cell is the card's title, the others are
+ * "label  value" lines (labels copied from the column headers into data-label).
+ * Nothing is hidden without a choice: cells opt out with data-stack="hide".
+ * Unlayered on purpose, so it wins over the cells' utility classes (p-2,
+ * whitespace-nowrap) on phones only.
+ */
+@media (width < 48rem) {
+		[data-stack-table] {
+			overflow-x: visible;
+		}
+		[data-stack-table] thead {
+			display: none;
+		}
+		[data-stack-table] table,
+		[data-stack-table] tbody {
+			display: block;
+			width: 100%;
+		}
+		[data-stack-table] tbody tr {
+			display: flex;
+			flex-direction: column;
+			gap: 0.3rem;
+			padding: 0.75rem 0.75rem;
+		}
+		/* label | values: every child of the cell stacks in the right column */
+		[data-stack-table] tbody td {
+			display: grid;
+			grid-template-columns: minmax(5.5rem, auto) minmax(0, 1fr);
+			align-items: baseline;
+			justify-items: end;
+			column-gap: 0.75rem;
+			row-gap: 0.15rem;
+			min-width: 0;
+			padding: 0;
+			white-space: normal;
+			overflow-wrap: anywhere;
+			text-align: right;
+		}
+		[data-stack-table] tbody td > * {
+			grid-column: 2;
+			max-width: 100%;
+		}
+		[data-stack-table] tbody td::before {
+			content: attr(data-label);
+			grid-column: 1;
+			grid-row: 1;
+			justify-self: start;
+			color: var(--muted-foreground);
+			font-size: 0.75rem;
+			font-weight: 500;
+			text-align: left;
+		}
+		[data-stack-table] tbody td:first-child,
+		[data-stack-table] tbody td[data-stack='full'] {
+			display: block;
+			/* Chromium applies justify-items to block layout too: reset it */
+			justify-items: normal;
+			text-align: left;
+		}
+		[data-stack-table] tbody td:first-child::before,
+		[data-stack-table] tbody td[data-stack='full']::before,
+		[data-stack-table] tbody td[data-label='']::before {
+			content: none;
+		}
+		[data-stack-table] tbody td[data-label=''] {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		[data-stack-table] tbody td[data-label=''] > * {
+			grid-column: 1;
+		}
+		/* a row may pick its title cell; the first cell then becomes a normal line */
+		[data-stack-table] tbody td[data-stack='title'] {
+			order: -1;
+			display: block;
+			justify-items: normal;
+			text-align: left;
+		}
+		[data-stack-table] tbody td[data-stack='title']::before {
+			content: none;
+		}
+		[data-stack-table] tbody tr:has(> td[data-stack='title']) > td:first-child:not([data-stack='title']) {
+			display: grid;
+			text-align: right;
+		}
+		[data-stack-table] tbody tr:has(> td[data-stack='title']) > td:first-child:not([data-stack='title'])::before {
+			content: attr(data-label);
+		}
+		[data-stack-table] tbody td[data-stack='hide'],
+		[data-stack-table] tbody td:empty {
+			display: none;
+		}
+		/* right-aligned numeric/action cells keep their content on the right */
+		[data-stack-table] tbody td > :is(div, span, a, button, time) {
+			min-width: 0;
+		}
+}
+
+/* Horizontal scrollers (sub-navs, filter tabs): fade the edge that has more to show. */
+.scroll-fade-x {
+	scrollbar-width: none;
+	mask-image: linear-gradient(to right, #000 calc(100% - 2rem), transparent);
+}
+.scroll-fade-x::-webkit-scrollbar {
+	display: none;
+}
+.scroll-fade-x[data-at-end] {
+	mask-image: none;
+}

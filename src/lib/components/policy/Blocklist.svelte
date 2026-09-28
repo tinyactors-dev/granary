@@ -96,7 +96,7 @@
 		<div class="bg-card overflow-hidden rounded-xl border">
 			<svelte:boundary>
 				{@const list = await blocked}
-				<Table.Root>
+				<Table.Root stack>
 					<Table.Header>
 						<Table.Row class="hover:bg-transparent">
 							<Table.Head>Login</Table.Head>

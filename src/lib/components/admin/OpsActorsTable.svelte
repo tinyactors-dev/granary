@@ -32,7 +32,7 @@
 	</div>
 	<div class="bg-card overflow-x-auto rounded-xl border">
 		<svelte:boundary>
-			<Table.Root>
+			<Table.Root stack>
 				<Table.Header>
 					<Table.Row class="hover:bg-transparent">
 						<Table.Head>Address</Table.Head>

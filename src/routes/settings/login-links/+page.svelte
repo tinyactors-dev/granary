@@ -142,7 +142,7 @@
 						{#if links.length === 0}
 							<p class="text-muted-foreground text-sm">No login links yet.</p>
 						{:else}
-							<Table.Root>
+							<Table.Root stack>
 								<Table.Header>
 									<Table.Row><Table.Head>For</Table.Head><Table.Head>State</Table.Head><Table.Head>Created</Table.Head><Table.Head>Expires</Table.Head><Table.Head></Table.Head></Table.Row>
 								</Table.Header>

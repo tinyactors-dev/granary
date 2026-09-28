@@ -162,7 +162,7 @@
 			</table>
 		</div>
 	{:else}
-		<div class="relative" bind:clientWidth={width}>
+		<div class="relative w-full min-w-0 overflow-hidden" bind:clientWidth={width}>
 			{#if x.length < 2}
 				<div class="text-muted-foreground flex items-center justify-center text-xs" style="height: {height}px">
 					Waiting for samples…
@@ -175,7 +175,7 @@
 					aria-label="{title}: {series.map((s) => `${s.label} ${format(lastPoint(s.values)?.v ?? 0)}`).join(', ')}"
 					onpointermove={onMove}
 					onpointerleave={() => (hover = null)}
-					class="block touch-none select-none"
+					class="block max-w-full touch-none select-none"
 				>
 					{#each yTicks as v (v)}
 						<line x1={M.left} x2={M.left + innerW} y1={sy(v)} y2={sy(v)} class="stroke-border" stroke-width="1" />

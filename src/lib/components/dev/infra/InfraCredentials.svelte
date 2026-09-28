@@ -58,7 +58,7 @@
 			</Alert.Root>
 		{/if}
 		<div class="overflow-x-auto">
-			<Table.Root>
+			<Table.Root stack>
 				<Table.Header><Table.Row><Table.Head>Credential</Table.Head><Table.Head>State</Table.Head><Table.Head></Table.Head></Table.Row></Table.Header>
 				<Table.Body>
 					{#each infra.credentials as c (c.id)}

@@ -22,7 +22,7 @@
 	<div class="bg-card overflow-hidden rounded-xl border">
 		<svelte:boundary>
 			{@const list = await log}
-			<Table.Root>
+			<Table.Root stack>
 				<Table.Header>
 					<Table.Row class="hover:bg-transparent">
 						<Table.Head>When</Table.Head>

@@ -83,7 +83,7 @@
 		{@const selected = requested ?? st.status?.activeScenarioId ?? list[0]?.id ?? null}
 		<div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_28rem]">
 			<div class="bg-card overflow-hidden rounded-xl border">
-				<Table.Root>
+				<Table.Root stack>
 					<Table.Header>
 						<Table.Row class="hover:bg-transparent">
 							<Table.Head>Scenario</Table.Head>

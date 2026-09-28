@@ -85,8 +85,8 @@
 
 		<MetricTiles m={d.metrics} violations={s.violations} />
 
-		<div class="grid gap-3 lg:grid-cols-3">
-			<div class="lg:col-span-2">
+		<div class="grid gap-3 lg:grid-cols-3 [&>*]:min-w-0">
+			<div class="min-w-0 lg:col-span-2">
 				<LineChart
 					title="Issues over time"
 					subtitle="cumulative: opened by personas vs. closed by granary"
@@ -124,7 +124,7 @@
 			/>
 		</div>
 
-		<div class="grid gap-4 lg:grid-cols-2">
+		<div class="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
 			<div class="space-y-2">
 				<h3 class="text-sm font-medium">Invariants</h3>
 				<InvariantList invariants={d.invariants} />
@@ -135,7 +135,7 @@
 			</div>
 		</div>
 
-		<div class="grid gap-4 lg:grid-cols-2">
+		<div class="grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
 			<Card.Root>
 				<Card.Header>
 					<Card.Title>Population</Card.Title>

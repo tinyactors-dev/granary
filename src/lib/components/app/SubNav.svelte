@@ -14,13 +14,14 @@
 <script lang="ts">
 	import { page } from '$app/state';
 	import { cn } from '$lib/utils';
+	import { scrollFade } from './scroll-fade';
 
 	let { items, label, testid }: { items: SubNavItem[]; label: string; testid?: string } = $props();
 
 	const active = (item: SubNavItem, pathname: string) => (item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/'));
 </script>
 
-<nav class="-mx-1 flex gap-1 overflow-x-auto border-b px-1 pb-2" aria-label={label} data-testid={testid}>
+<nav use:scrollFade class="scroll-fade-x -mx-1 flex gap-1 overflow-x-auto border-b px-1 pb-2" aria-label={label} data-testid={testid}>
 	{#each items as item (item.href)}
 		{@const isActive = active(item, page.url.pathname)}
 		<a

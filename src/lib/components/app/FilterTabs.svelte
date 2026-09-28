@@ -26,7 +26,7 @@
 
 <nav
 	aria-label="Filter"
-	class="bg-muted text-muted-foreground inline-flex h-9 w-fit max-w-full items-center overflow-x-auto rounded-lg p-[3px]"
+	class="bg-muted text-muted-foreground inline-flex w-fit max-w-full flex-wrap items-center gap-y-[3px] rounded-lg p-[3px] sm:h-9 sm:flex-nowrap sm:overflow-x-auto"
 >
 	{#each options as value (value ?? '')}
 		<a
@@ -34,7 +34,7 @@
 			data-sveltekit-noscroll
 			aria-current={current === value ? 'page' : undefined}
 			class={cn(
-				'inline-flex h-full items-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors',
+				'inline-flex h-[30px] items-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors',
 				current === value
 					? 'bg-background text-foreground shadow-sm dark:bg-input/30'
 					: 'hover:text-foreground'

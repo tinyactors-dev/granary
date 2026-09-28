@@ -1,6 +1,6 @@
 <!--
 	App shell (ADR 0050, 0291): fixed sidebar on large screens, a top bar with a
-	horizontally scrolling nav on small screens, user menu top right. Under
+	menu button opening a navigation drawer on small screens (ADR 0296), user menu top right. Under
 	/admin the sidebar switches to the admin section's areas, with a "Back to
 	app" link (ADR 0290). The top bar names the section only; each page's
 	PageHeader carries its title and description.
@@ -16,6 +16,7 @@
 	import UserMenu from './UserMenu.svelte';
 	import DevTools from '$lib/components/dev/DevTools.svelte';
 	import ModeToggle from './ModeToggle.svelte';
+	import MobileNav from './MobileNav.svelte';
 	import { canSeeAdmin, shellData } from './session';
 
 	let { children }: { children: Snippet } = $props();
@@ -108,38 +109,16 @@
 	<div class="flex min-w-0 flex-1 flex-col">
 		<header class="bg-background/85 sticky top-0 z-20 border-b backdrop-blur">
 			<div class="flex h-14 items-center gap-3 px-4 lg:px-6">
-				<a href="/" class="flex items-center gap-2 font-semibold lg:hidden">
+				<MobileNav {items} {inAdmin} {data} />
+				<a href="/" class="flex shrink-0 items-center gap-2 font-semibold lg:hidden" aria-label="granary home">
 					<img src="/brand/granary.svg" alt="" class="size-7 rounded-[22%] dark:ring-1 dark:ring-white/10" width="28" height="28" />
-					<span class="hidden sm:inline">granary</span>
 				</a>
-				{#if section}<div class="text-muted-foreground hidden min-w-0 truncate text-sm font-medium lg:block" data-testid="topbar-section">{section}</div>{/if}
-				<div class="ml-auto flex items-center gap-1">
+				{#if section}<div class="text-foreground lg:text-muted-foreground min-w-0 truncate text-sm font-medium" data-testid="topbar-section">{section}</div>{/if}
+				<div class="ml-auto flex shrink-0 items-center gap-1">
 					<ModeToggle />
 					<UserMenu />
 				</div>
 			</div>
-			<nav class="flex gap-1 overflow-x-auto px-3 pb-2 lg:hidden" aria-label="Main (mobile)">
-				{#if inAdmin}
-					<a href="/" class="text-muted-foreground hover:text-foreground flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium"><ArrowLeftIcon class="size-4" />App</a>
-					{#each ADMIN_NAV as item (item.href)}
-						{@const active = adminActive(page.url.pathname, item)}
-						<a
-							href={item.href}
-							aria-current={active ? 'page' : undefined}
-							class={cn('flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium', active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}
-						><item.icon class="size-4" />{item.label}</a>
-					{/each}
-				{:else}
-					{#each items as item (item.href)}
-						{@const active = isActive(page.url.pathname, item.href)}
-						<a
-							href={item.href}
-							aria-current={active ? 'page' : undefined}
-							class={cn('flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1.5 text-sm font-medium', active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}
-						><item.icon class="size-4" />{item.label}</a>
-					{/each}
-				{/if}
-			</nav>
 		</header>
 		<main class="mx-auto w-full max-w-7xl flex-1 space-y-6 px-4 py-6 lg:px-8">
 			{@render children()}

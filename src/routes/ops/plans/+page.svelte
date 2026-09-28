@@ -57,7 +57,7 @@
 	{@const s = await status}
 	{@const databases = [...new Set([...s.backups.map((b) => b.database), ...planList.flatMap((p) => p.databases), 'granary', 'ops'])]}
 	<div class="bg-card overflow-hidden rounded-xl border">
-		<Table.Root>
+		<Table.Root stack>
 			<Table.Header>
 				<Table.Row class="hover:bg-transparent">
 					<Table.Head>Plan</Table.Head>

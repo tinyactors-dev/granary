@@ -100,7 +100,7 @@
 		<svelte:boundary>
 			{@const page = await recent}
 			<div class="overflow-x-auto">
-			<Table.Root>
+			<Table.Root stack>
 				<Table.Body>
 					{#each page.items as a (a.issueKey)}
 						<Table.Row>

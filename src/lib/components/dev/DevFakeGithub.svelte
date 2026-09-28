@@ -236,7 +236,7 @@
 				</Tabs.List>
 				<Tabs.Content value="issues">
 					<div class="overflow-hidden rounded-lg border">
-						<Table.Root>
+						<Table.Root stack>
 							<Table.Header>
 								<Table.Row class="hover:bg-transparent">
 									<Table.Head>Issue</Table.Head>
@@ -275,7 +275,7 @@
 				</Tabs.Content>
 				<Tabs.Content value="deliveries">
 					<div class="overflow-hidden rounded-lg border">
-						<Table.Root>
+						<Table.Root stack>
 							<Table.Header>
 								<Table.Row class="hover:bg-transparent">
 									<Table.Head>Delivery id</Table.Head>
@@ -307,7 +307,7 @@
 				</Tabs.Content>
 				<Tabs.Content value="faults">
 					<div class="overflow-hidden rounded-lg border">
-						<Table.Root>
+						<Table.Root stack>
 							<Table.Header>
 								<Table.Row class="hover:bg-transparent">
 									<Table.Head>Id</Table.Head>

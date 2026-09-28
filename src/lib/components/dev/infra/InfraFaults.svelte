@@ -85,7 +85,7 @@
 			<Button type="submit" size="sm"><ZapIcon class="size-4" />Inject</Button>
 		</form>
 		<div class="overflow-x-auto">
-			<Table.Root>
+			<Table.Root stack>
 				<Table.Header><Table.Row><Table.Head>Target</Table.Head><Table.Head>Match</Table.Head><Table.Head>Effect</Table.Head><Table.Head class="text-right">Left</Table.Head></Table.Row></Table.Header>
 				<Table.Body>
 					{#each [...infra.faults].reverse() as f (f.id)}

@@ -16,7 +16,7 @@
 	const familyOf = (address: string) => address.split('/')[0];
 </script>
 
-<div class="max-h-80 overflow-auto border-y" data-testid="trace-list">
+<div class="max-h-80 overflow-auto border-y" data-testid="trace-list" data-stack-table>
 	<table class="w-full border-collapse text-xs">
 		<thead class="bg-muted/60 text-muted-foreground sticky top-0 z-10 text-left">
 			<tr>
@@ -36,8 +36,8 @@
 					data-testid="trace-list-row"
 					aria-selected={t.traceId === selected}
 				>
-					<td class="text-muted-foreground px-3 py-1.5 font-mono whitespace-nowrap">{time(t.start)}</td>
-					<td class="px-3 py-1.5">
+					<td class="text-muted-foreground px-3 py-1.5 font-mono whitespace-nowrap" data-label="Start">{time(t.start)}</td>
+					<td class="px-3 py-1.5" data-stack="title">
 						<div class="flex items-center gap-1.5">
 							{#if t.errorCount}
 								<CircleAlertIcon class="size-3.5 shrink-0 text-[var(--trace-error)]" aria-label="{t.errorCount} error spans" />
@@ -51,8 +51,8 @@
 						</div>
 						<div class="text-muted-foreground font-mono text-[10px]">{t.traceId.slice(0, 16)}… · {t.services.join(', ') || '—'}</div>
 					</td>
-					<td class="px-3 py-1.5">
-						<div class="flex flex-wrap gap-1">
+					<td class="px-3 py-1.5" data-label="Actors">
+						<div class="flex flex-wrap justify-end gap-1 md:justify-start">
 							{#each t.addresses as a (a)}
 								<span class="inline-flex items-center gap-1 rounded border px-1 font-mono text-[10px]">
 									<span class="size-2 rounded-sm" style:background={familyColor(familyOf(a))}></span>{a}
@@ -62,15 +62,15 @@
 							{/each}
 						</div>
 					</td>
-					<td class="text-muted-foreground max-w-[220px] px-3 py-1.5 font-mono text-[10px]">{t.events.join(' → ') || '—'}</td>
-					<td class="px-3 py-1.5 text-right font-mono">
+					<td class="text-muted-foreground px-3 py-1.5 font-mono text-[10px] md:max-w-[220px]" data-label="Events">{t.events.join(' → ') || '—'}</td>
+					<td class="px-3 py-1.5 text-right font-mono" data-label="Spans">
 						{t.spanCount}{#if t.errorCount}<span class="text-[var(--trace-error)]"> · {t.errorCount} err</span>{/if}
 					</td>
-					<td class="px-3 py-1.5 text-right font-mono whitespace-nowrap">{formatDuration(t.durationMs)}</td>
+					<td class="px-3 py-1.5 text-right font-mono whitespace-nowrap" data-label="Duration">{formatDuration(t.durationMs)}</td>
 				</tr>
 			{:else}
 				<tr>
-					<td colspan="6" class="text-muted-foreground py-8 text-center">No traces match.</td>
+					<td colspan="6" class="text-muted-foreground py-8 text-center" data-stack="full">No traces match.</td>
 				</tr>
 			{/each}
 		</tbody>

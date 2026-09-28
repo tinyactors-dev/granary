@@ -31,7 +31,7 @@
 </script>
 
 <div class="bg-card overflow-hidden rounded-xl border">
-	<Table.Root>
+	<Table.Root stack>
 		<Table.Header>
 			<Table.Row class="hover:bg-transparent">{@render header()}</Table.Row>
 		</Table.Header>

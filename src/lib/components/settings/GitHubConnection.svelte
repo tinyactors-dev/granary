@@ -154,7 +154,7 @@
 							{#if inst.suspended}<Badge variant="destructive">suspended</Badge>{/if}
 							<span class="text-muted-foreground ml-auto text-xs">synced <RelativeTime ms={inst.syncedAt} /></span>
 						</div>
-						<Table.Root>
+						<Table.Root stack>
 							<Table.Body>
 								{#each inst.repos as repo (repo.repoId)}
 									<Table.Row data-testid="github-repo">

@@ -20,6 +20,7 @@
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
+	import ShortId from '$lib/components/app/ShortId.svelte';
 	import RetryEffectButton from '$lib/components/app/RetryEffectButton.svelte';
 	import { ISSUE_KEY_RE, issueLabel } from '$lib/components/app/format';
 	import { ACTION_LABELS, DELIVERY_LABELS, KIND_LABELS, OUTCOME_LABELS, deliveryLabel, reasonLabel } from '$lib/components/app/glossary';
@@ -163,7 +164,7 @@
 				</Card.Header>
 				<Card.Content class="px-0">
 					<div class="overflow-x-auto">
-					<Table.Root>
+					<Table.Root stack>
 						<Table.Header>
 							<Table.Row class="hover:bg-transparent">
 								<Table.Head class="pl-6">Event</Table.Head>
@@ -180,7 +181,7 @@
 										<StateBadge state={del.state} label={DELIVERY_LABELS[del.state]} />
 										{#if del.ignoreReason}<span class="text-muted-foreground mt-0.5 block text-xs">{del.ignoreReason}</span>{/if}
 									</Table.Cell>
-									<Table.Cell class="text-muted-foreground font-mono text-xs" title={del.deliveryId}>{del.deliveryId.slice(0, 8)}</Table.Cell>
+									<Table.Cell class="text-muted-foreground"><ShortId id={del.deliveryId} label="Copy delivery id" /></Table.Cell>
 									<Table.Cell class="text-muted-foreground pr-6 text-right text-sm"><RelativeTime ms={del.receivedAt} /></Table.Cell>
 								</Table.Row>
 							{:else}

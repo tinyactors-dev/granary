@@ -45,7 +45,7 @@
 				<Card.Description>Per database and destination. Off-site copies are what let you sleep.</Card.Description>
 			</Card.Header>
 			<Card.Content class="px-0">
-				<Table.Root>
+				<Table.Root stack>
 					<Table.Header>
 						<Table.Row class="hover:bg-transparent">
 							<Table.Head class="pl-6">Database</Table.Head>

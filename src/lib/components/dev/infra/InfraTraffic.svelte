@@ -26,7 +26,7 @@
 				<Tabs.Trigger value="otlp">OTLP batches ({infra.otlp.length})</Tabs.Trigger>
 			</Tabs.List>
 			<Tabs.Content value="requests" class="overflow-x-auto">
-				<Table.Root>
+				<Table.Root stack>
 					<Table.Header><Table.Row><Table.Head>When</Table.Head><Table.Head>Surface</Table.Head><Table.Head>Request</Table.Head><Table.Head>Status</Table.Head><Table.Head class="text-right">In</Table.Head><Table.Head>Credential / fault</Table.Head></Table.Row></Table.Header>
 					<Table.Body>
 						{#each requests as r, i (`${r.at}-${i}`)}
@@ -45,7 +45,7 @@
 				</Table.Root>
 			</Tabs.Content>
 			<Tabs.Content value="otlp" class="overflow-x-auto">
-				<Table.Root>
+				<Table.Root stack>
 					<Table.Header><Table.Row><Table.Head>When</Table.Head><Table.Head>Signal</Table.Head><Table.Head>Via</Table.Head><Table.Head>Service</Table.Head><Table.Head class="text-right">Size</Table.Head><Table.Head>Contents</Table.Head></Table.Row></Table.Header>
 					<Table.Body>
 						{#each batches as b, i (`${b.at}-${i}`)}
