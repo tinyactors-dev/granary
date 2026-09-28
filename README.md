@@ -14,15 +14,20 @@ All tasks are [mise](https://mise.jdx.dev) tasks (`mise tasks ls`):
 | `mise run install` | `bun install` |
 | `mise run dev` | SvelteKit dev server on Bun, http://localhost:5173 (dev env) |
 | `mise run fake-github` | fake GitHub on http://localhost:4010 (dev env) |
-| `mise run dev:all` | `fake-github` + `dev` in parallel |
+| `mise run loadgen` | load generator / persona simulator on http://localhost:4040 (ADR 0070) |
+| `mise run up` / `down` / `logs` | dev daemons via pitchfork (fake GitHub, app, loadgen); `dev:all` = `up` |
+| `mise run load:run -- --preset chaos --seed 7` | headless load scenario against the running stack; exit 1 on invariant violations |
 | `mise run build` | production build into `build/` (svelte-adapter-bun) |
 | `mise run start` | run `build/` against the fake GitHub (dev env, port 3000) |
 | `mise run check` | `svelte-kit sync` + `svelte-check` |
 | `mise run test` | build, then `bun test tests/` (integration tests, ADR 0007) |
 | `mise run prod` | `fnox exec -P prod -- bun build/index.js` (real secrets from 1Password, `prod` profile) |
 
-Typical dev loop: `mise run install && mise run dev:all`, then open
-http://localhost:5173 (and http://localhost:5173/__dev in development).
+Typical dev loop: `mise run install && mise run up`, then open
+http://localhost:5173. In development, http://localhost:5173/__dev is the
+developer console (the sidebar switches to it): sessions, fake GitHub, the
+load tester and its personas (`/__dev/load`), traces, actors & debugger, and
+component previews (`/__dev/ui`).
 
 ## Configuration
 
@@ -50,9 +55,12 @@ src/
     utils.ts                 # cn() etc.
     schemas/                 # TypeBox schemas (all serialization boundaries)
     remote/                  # SvelteKit remote functions (*.remote.ts)
+    dev-ui/                  # component preview registry (/__dev/ui)
+    trace/                   # browser-safe trace summaries and fixtures
     server/                  # system boot, WAL, relay, I/O processors
       actors/                # one file per actor (main system)
 fake-github/                 # fake GitHub server + actors/
+loadgen/                     # load generator: personas/ (statecharts), scenario coordinator, observer
 tests/                       # integration tests (bun test)
 data/                        # SQLite files (gitignored)
 config/dev.env               # fake dev/test env
