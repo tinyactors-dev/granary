@@ -8,7 +8,6 @@
 	import type { Snippet } from 'svelte';
 	import { page } from '$app/state';
 	import { cn } from '$lib/utils';
-	import WheatIcon from '@lucide/svelte/icons/wheat';
 	import ArrowLeftIcon from '@lucide/svelte/icons/arrow-left';
 	import { NAV, isActive } from './nav';
 	import { DEV_GROUPS, DEV_NAV, devActive, isDevPath } from '$lib/components/dev/nav';
@@ -36,9 +35,7 @@
 	<aside class="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 border-r lg:block">
 		<div class="sticky top-0 flex h-svh flex-col">
 		<a href="/" class="flex h-14 items-center gap-2 border-b px-4 font-semibold">
-			<span class="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md">
-				<WheatIcon class="size-4" />
-			</span>
+			<img src="/brand/granary.svg" alt="" class="size-7 rounded-[22%] dark:ring-1 dark:ring-white/10" width="28" height="28" />
 			granary
 		</a>
 		{#if inDev}
@@ -112,9 +109,7 @@
 		<header class="bg-background/85 sticky top-0 z-20 border-b backdrop-blur">
 			<div class="flex h-14 items-center gap-3 px-4 lg:px-6">
 				<a href="/" class="flex items-center gap-2 font-semibold lg:hidden">
-					<span class="bg-primary text-primary-foreground flex size-7 items-center justify-center rounded-md">
-						<WheatIcon class="size-4" />
-					</span>
+					<img src="/brand/granary.svg" alt="" class="size-7 rounded-[22%] dark:ring-1 dark:ring-white/10" width="28" height="28" />
 					<span class="hidden sm:inline">granary</span>
 				</a>
 				<div class="text-muted-foreground hidden min-w-0 text-sm lg:block">

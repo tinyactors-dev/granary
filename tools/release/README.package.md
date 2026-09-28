@@ -1,3 +1,5 @@
+<img src="https://raw.githubusercontent.com/tinyactors-dev/granary/main/static/brand/granary-128.webp" alt="granary" width="64" height="64">
+
 # granary
 
 Auto-closes GitHub issues opened by people who are not on your allowlist —

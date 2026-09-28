@@ -90,6 +90,14 @@ run = "bun build/index.js"
 description = "Generate docs/manual/cli.md from the CLI catalogue (ADR 0165)"
 run = "bun tools/docs/cli.ts"
 
+[tasks."brand:render"]
+description = "Regenerate the wheat logo, favicons and app icons in static/ (ADR 0270)"
+run = "bun tools/brand/render.ts"
+
+[tasks."brand:preview"]
+description = "Contact sheet of the brand assets (tile, mark on light/dark, 16/32 px favicon): mise run brand:preview -- <out.png>"
+run = "bun tools/brand/preview.ts ."
+
 [tasks.check]
 description = "Type-check (svelte-kit sync + svelte-check)"
 run = ["bunx svelte-kit sync", "bunx svelte-check --tsconfig ./tsconfig.json --output human"]

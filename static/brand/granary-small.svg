@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><defs>
+<linearGradient id="grain" x1="22" y1="2" x2="3" y2="21" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#FBE08A"/><stop offset="0.45" stop-color="#F2B63F"/><stop offset="1" stop-color="#D98A1E"/>
+</linearGradient>
+<linearGradient id="tile" x1="12" y1="0" x2="12" y2="24" gradientUnits="userSpaceOnUse">
+<stop offset="0" stop-color="#2E2419"/><stop offset="1" stop-color="#15100B"/>
+</linearGradient>
+</defs><rect width="24" height="24" rx="5.2" fill="url(#tile)"/><g fill="none" transform="translate(12 12) scale(0.8) translate(-12 -12)"><path d="M2 22 16 8" stroke="#7A5418" stroke-width="2.6" stroke-linecap="round"/><path d="M2 22 16 8" stroke="#C89A45" stroke-width="2.6" stroke-linecap="round"/><path d="M3.47 12.53 5 11l1.53 1.53a3.5 3.5 0 0 1 0 4.94L5 19l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z" fill="url(#grain)"/><path d="M7.47 8.53 9 7l1.53 1.53a3.5 3.5 0 0 1 0 4.94L9 15l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z" fill="url(#grain)"/><path d="M11.47 4.53 13 3l1.53 1.53a3.5 3.5 0 0 1 0 4.94L13 11l-1.53-1.53a3.5 3.5 0 0 1 0-4.94Z" fill="url(#grain)"/><path d="M11.47 17.47 13 19l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L5 19l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z" fill="url(#grain)"/><path d="M15.47 13.47 17 15l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L9 15l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z" fill="url(#grain)"/><path d="M19.47 9.47 21 11l-1.53 1.53a3.5 3.5 0 0 1-4.94 0L13 11l1.53-1.53a3.5 3.5 0 0 1 4.94 0Z" fill="url(#grain)"/><path d="M20 2h2v2a4 4 0 0 1-4 4h-2V6a4 4 0 0 1 4-4Z" fill="url(#grain)"/></g></svg>

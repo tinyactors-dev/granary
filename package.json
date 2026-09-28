@@ -15,6 +15,7 @@
     "cn": "^0.3.0",
     "mode-watcher": "^1.1.0",
     "shadcn-svelte": "^1.7.0",
+    "sharp": "^0.35.5",
     "svelte": "^5.57.1",
     "svelte-adapter-bun": "^1.0.1",
     "svelte-check": "^4.7.6",

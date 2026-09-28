@@ -2,7 +2,6 @@
 	import { page } from '$app/state';
 	import { Button } from '$lib/components/ui/button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import WheatIcon from '@lucide/svelte/icons/wheat';
 	import LogInIcon from '@lucide/svelte/icons/log-in';
 	import BugIcon from '@lucide/svelte/icons/bug';
 	import ModeToggle from './ModeToggle.svelte';
@@ -24,9 +23,7 @@
 	></div>
 	<Card.Root class="w-full max-w-sm">
 		<Card.Header class="items-center text-center">
-			<div class="bg-primary text-primary-foreground mx-auto mb-2 flex size-12 items-center justify-center rounded-xl">
-				<WheatIcon class="size-6" />
-			</div>
+			<img src="/brand/granary.svg" alt="" class="mx-auto mb-2 size-12 rounded-[22%] dark:ring-1 dark:ring-white/10" width="48" height="48" />
 			<Card.Title class="text-xl">Sign in to granary</Card.Title>
 			<Card.Description>
 				granary closes GitHub issues opened by people who are not on the allowlist. Sign in to watch

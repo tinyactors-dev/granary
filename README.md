@@ -1,3 +1,5 @@
+<img src="static/brand/granary-128.webp" alt="granary" width="64" height="64">
+
 # granary
 
 granary listens to GitHub `issues` webhooks and auto-closes issues opened by
