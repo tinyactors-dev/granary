@@ -32,6 +32,9 @@
 	});
 
 	let auto = $state(true);
+	// The viewer polls every 2 s; its own requests would flood the list, so they're hidden by default.
+	let showOwn = $state(false);
+	const OWN = /^(GET|POST) (remote:(listRecentTraces|getRecentSpans)|\/admin\/traces)$/;
 	let selectedTraceId = $state<string | null>(null);
 
 	const traces = $derived(
@@ -79,6 +82,10 @@
 		<Input bind:value={searchInput} placeholder="event / span name…" class="h-8 w-48 font-mono text-xs" aria-label="Search events" />
 		<div class="ml-auto flex items-center gap-3">
 			<div class="flex items-center gap-2">
+				<Switch id="traces-own" bind:checked={showOwn} />
+				<Label for="traces-own" class="text-sm">Show this page's own requests</Label>
+			</div>
+			<div class="flex items-center gap-2">
 				<Switch id="traces-auto" bind:checked={auto} />
 				<Label for="traces-auto" class="text-sm">Live (2 s)</Label>
 			</div>
@@ -89,7 +96,7 @@
 	</div>
 
 	<TraceBrowser
-		traces={traces.current ?? []}
+		traces={(traces.current ?? []).filter((t) => showOwn || !OWN.test(t.rootName))}
 		spans={spansQuery?.current ?? null}
 		bind:selectedTraceId
 		ready={traces.ready}

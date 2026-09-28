@@ -3,14 +3,8 @@
 	import TraceExplorer from './trace/TraceExplorer.svelte';
 </script>
 
+<!-- The page header already says "Traces"; the card only frames the explorer. -->
 <Card.Root id="spans">
-	<Card.Header>
-		<Card.Title>Traces</Card.Title>
-		<Card.Description>
-			The app's in-memory trace buffer as Jaeger-style span trees: pick a trace, expand the tree, click a span for its
-			attributes, events, links and cause.
-		</Card.Description>
-	</Card.Header>
 	<Card.Content class="px-0">
 		<TraceExplorer />
 	</Card.Content>

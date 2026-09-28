@@ -122,10 +122,10 @@
 		<section class="space-y-2" aria-label="Trace" data-testid="trace-view">
 			<div class="flex flex-wrap items-start gap-x-6 gap-y-2 px-6 pt-2">
 				<div class="min-w-0">
-					<h3 class="font-mono text-sm font-semibold">
+					<h2 class="font-mono text-sm font-semibold">
 						{selectedSummary ? shortName(selectedSummary.rootName) : 'trace'}
 						{#if selectedSummary?.rootAddress}<span class="text-muted-foreground font-normal"> · {selectedSummary.rootAddress}</span>{/if}
-					</h3>
+					</h2>
 					<div class="text-muted-foreground flex items-center gap-1 font-mono text-xs">
 						{selectedTraceId}<CopyButton text={selectedTraceId} label="Copy trace id" />
 					</div>

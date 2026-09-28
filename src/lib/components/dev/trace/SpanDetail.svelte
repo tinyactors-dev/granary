@@ -76,7 +76,7 @@
 	</dl>
 
 	<section>
-		<h4 class="mb-1 font-sans text-xs font-medium">Attributes ({attrs.length})</h4>
+		<h3 class="mb-1 font-sans text-xs font-medium">Attributes ({attrs.length})</h3>
 		<div class="overflow-hidden rounded-md border">
 			<table class="w-full border-collapse">
 				<tbody>
@@ -100,7 +100,7 @@
 
 	{#if span.events.length}
 		<section>
-			<h4 class="mb-1 font-sans text-xs font-medium">Events ({span.events.length})</h4>
+			<h3 class="mb-1 font-sans text-xs font-medium">Events ({span.events.length})</h3>
 			<ul class="space-y-1">
 				{#each span.events as e, i (i)}
 					<li class="rounded-md border px-2 py-1">
@@ -118,7 +118,7 @@
 
 	{#if span.links.length}
 		<section>
-			<h4 class="mb-1 font-sans text-xs font-medium">Links ({span.links.length})</h4>
+			<h3 class="mb-1 font-sans text-xs font-medium">Links ({span.links.length})</h3>
 			<ul class="space-y-1">
 				{#each span.links as l, i (i)}
 					<li class="flex flex-wrap items-center gap-2 font-mono">

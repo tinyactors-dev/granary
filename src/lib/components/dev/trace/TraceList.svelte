@@ -34,7 +34,6 @@
 					class="cursor-pointer border-t align-top {t.traceId === selected ? 'bg-accent' : 'hover:bg-muted/50'} {t.errorCount ? 'shadow-[inset_3px_0_0_var(--trace-error)]' : ''}"
 					onclick={() => onSelect(t.traceId)}
 					data-testid="trace-list-row"
-					aria-selected={t.traceId === selected}
 				>
 					<td class="text-muted-foreground px-3 py-1.5 font-mono whitespace-nowrap" data-label="Start">{time(t.start)}</td>
 					<td class="px-3 py-1.5" data-stack="title">
@@ -42,7 +41,16 @@
 							{#if t.errorCount}
 								<CircleAlertIcon class="size-3.5 shrink-0 text-[var(--trace-error)]" aria-label="{t.errorCount} error spans" />
 							{/if}
-							<span class="font-mono font-medium">{shortName(t.rootName)}</span>
+							<!-- a real button so the list is reachable and operable by keyboard; the row stays clickable -->
+							<button
+								type="button"
+								class="focus-visible:ring-ring rounded-sm text-left font-mono font-medium focus-visible:ring-2 focus-visible:outline-none"
+								aria-current={t.traceId === selected ? 'true' : undefined}
+								onclick={(e) => {
+									e.stopPropagation();
+									onSelect(t.traceId);
+								}}>{shortName(t.rootName)}</button
+							>
 							{#if t.linkedTraceIds.length}
 								<span class="text-muted-foreground flex items-center gap-0.5" title="Linked to {t.linkedTraceIds.length} other trace(s)">
 									<LinkIcon class="size-3" />{t.linkedTraceIds.length}

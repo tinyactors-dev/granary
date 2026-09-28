@@ -31,6 +31,11 @@
 	);
 </script>
 
+<a
+	href="#main"
+	class="bg-primary text-primary-foreground sr-only z-50 rounded-md px-3 py-2 text-sm font-medium focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
+	data-testid="skip-to-content">Skip to content</a
+>
 <div class="bg-background flex min-h-svh">
 	<aside class="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 border-r lg:block">
 		<div class="sticky top-0 flex h-svh flex-col">
@@ -120,7 +125,7 @@
 				</div>
 			</div>
 		</header>
-		<main class="mx-auto w-full max-w-7xl flex-1 space-y-6 px-4 py-6 lg:px-8">
+		<main id="main" tabindex="-1" class="mx-auto w-full max-w-7xl flex-1 space-y-6 px-4 py-6 focus:outline-none lg:px-8">
 			{@render children()}
 		</main>
 	</div>

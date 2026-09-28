@@ -79,11 +79,14 @@ export async function observeRequest(event: RequestEvent, handle: () => Response
 	} finally {
 		const durationMs = Math.round((performance.now() - t0) * 10) / 10;
 		const method = event.request.method;
-		const route = event.route?.id ?? null;
+		// Remote functions (/_app/remote/<hash>/<name>) have no route id: name them after the function.
+		const remote = /^\/_app\/remote\/[^/]+\/([^/?]+)/.exec(path)?.[1] ?? null;
+		const route = event.route?.id ?? (remote ? `remote:${remote}` : null);
 		const query = safeQuery(event.url);
 		const attrs: LogAttrs = {
 			'http.request.method': method,
 			'http.route': route ?? undefined,
+			'rpc.method': remote ?? undefined,
 			'url.path': safePath(event.url),
 			'url.query': query || undefined,
 			'http.response.status_code': status,
