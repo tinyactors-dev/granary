@@ -14,7 +14,7 @@ import type { FakeInfraState } from './schemas';
 import type { InfraLog } from './events';
 
 export interface FakeInfraOptions {
-	/** OTEL_EXPORTER_OTLP_ENDPOINT (without /v1/traces), or null. */
+	/** FAKE_INFRA_OTLP_ENDPOINT (without /v1/traces), or null. */
 	otlpEndpoint: string | null;
 }
 

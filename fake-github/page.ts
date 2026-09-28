@@ -37,7 +37,7 @@ export function controlPage(): string {
 <title>Fake GitHub</title><style>${STYLE}</style></head>
 <body><main>
 <h1>Fake GitHub</h1>
-<p class="lead">Drive the <code>/__control</code> API (ADR 0006, ADR 0035). Webhooks go to the configured <code>FAKE_GITHUB_WEBHOOK_URL</code>.</p>
+<p class="lead">Drive the <code>/__control</code> API (ADR 0006, ADR 0035). Webhooks go only to installed GitHub Apps (their hook URL and secret).</p>
 <div class="grid">
 <section><h2>Open an issue</h2>
 <form data-endpoint="/__control/issues">

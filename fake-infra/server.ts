@@ -9,7 +9,7 @@
  * - FAKE_INFRA_EXE_TOKEN_PORT (port+1), FAKE_INFRA_EXE_PEER_PORT (port+2): exe proxy fronts (0 = ephemeral)
  * - FAKE_INFRA_SEED_BUCKET, FAKE_INFRA_SEED_JURISDICTION, FAKE_INFRA_SEED_ACCESS_KEY_ID,
  *   FAKE_INFRA_SEED_SECRET_ACCESS_KEY, FAKE_INFRA_SEED_EXE_TOKEN: dev seeds, re-applied after reset
- * - OTEL_EXPORTER_OTLP_ENDPOINT: export own traces (service.name=fake-infra)
+ * - FAKE_INFRA_OTLP_ENDPOINT: export own traces (service.name=fake-infra)
  */
 import type { TSchema, Static } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
@@ -48,7 +48,7 @@ const exePorts = {
 	peer: portOr(env.FAKE_INFRA_EXE_PEER_PORT, port === 0 ? 0 : port + 2)
 };
 
-const infra = createInfraSystem({ otlpEndpoint: nonEmpty(env.OTEL_EXPORTER_OTLP_ENDPOINT) ?? null });
+const infra = createInfraSystem({ otlpEndpoint: nonEmpty(env.FAKE_INFRA_OTLP_ENDPOINT) ?? null });
 const { system } = infra;
 const log = new InfraLog();
 const exeProxy = new ExeProxy({ system, log }, exePorts);

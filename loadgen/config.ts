@@ -19,6 +19,6 @@ export function loadgenConfig(env: Record<string, string | undefined> = process.
 			.map((s) => s.trim())
 			.filter(Boolean),
 		granaryLogin: nonEmpty(env.LOADGEN_GRANARY_LOGIN) ?? 'granary[bot]',
-		otlpEndpoint: nonEmpty(env.OTEL_EXPORTER_OTLP_ENDPOINT) ?? null
+		otlpEndpoint: nonEmpty(env.LOADGEN_OTLP_ENDPOINT) ?? null
 	};
 }

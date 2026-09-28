@@ -1,6 +1,6 @@
 /**
- * The `webhook` I/O processor (ADR 0060): POSTs a delivery's exact body to
- * FAKE_GITHUB_WEBHOOK_URL with GitHub's headers and an HMAC-SHA256 signature
+ * The `webhook` I/O processor (ADR 0060, 0230): POSTs a delivery's exact body
+ * to its GitHub App's hook URL with GitHub's headers and an HMAC-SHA256 signature
  * over the body bytes, then posts `webhook.result {responseCode, error}`
  * back to the delivery actor. `responseCode` is null when unreachable.
  */
@@ -14,11 +14,10 @@ export interface WebhookPost {
 	deliveryId: string;
 	event: string;
 	body: string;
-	/** ADR 0200: per-delivery target (GitHub App hook); null/absent = config default. */
-	url?: string | null;
-	secret?: string | null;
-	/** Set for GitHub App deliveries (adds the installation-target headers). */
-	appId?: number | null;
+	/** The GitHub App's hook URL and secret (ADR 0200). */
+	url: string;
+	secret: string;
+	appId: number;
 }
 
 export interface WebhookResult {
@@ -28,8 +27,6 @@ export interface WebhookResult {
 }
 
 export interface WebhookConfig {
-	url: () => string;
-	secret: () => string;
 	timeoutMs?: number;
 	/** ADR 0200: while true, deliveries fail without connecting (`status_code` 0). */
 	outage?: () => boolean;
@@ -52,18 +49,17 @@ export function webhookProcessor(config: WebhookConfig): IOProcessor {
 				return;
 			}
 			try {
-				const res = await fetch(post.url ?? config.url(), {
+				const res = await fetch(post.url, {
 					method: 'POST',
 					headers: {
 						'Content-Type': 'application/json',
 						'User-Agent': 'GitHub-Hookshot/fake',
 						'X-GitHub-Event': post.event,
 						'X-GitHub-Delivery': post.deliveryId,
-						'X-GitHub-Hook-ID': post.appId ? String(post.appId) : '1',
-						...(post.appId
-							? { 'X-GitHub-Hook-Installation-Target-Type': 'integration', 'X-GitHub-Hook-Installation-Target-ID': String(post.appId) }
-							: { 'X-GitHub-Hook-Installation-Target-Type': 'repository' }),
-						'X-Hub-Signature-256': signature(post.secret ?? config.secret(), post.body)
+						'X-GitHub-Hook-ID': String(post.appId),
+						'X-GitHub-Hook-Installation-Target-Type': 'integration',
+						'X-GitHub-Hook-Installation-Target-ID': String(post.appId),
+						'X-Hub-Signature-256': signature(post.secret, post.body)
 					},
 					body: post.body,
 					signal: AbortSignal.any([context.signal, AbortSignal.timeout(config.timeoutMs ?? 10_000)])

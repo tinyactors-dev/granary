@@ -14,8 +14,8 @@ import { APPS_ADDRESS, appsChart, type AppsData } from './actors/apps';
 import { parseFakeState, type FakeDelivery, type FakeIssue, type FakeState } from './schemas';
 
 export interface FakeSystemOptions {
-	webhook: WebhookConfig;
-	/** OTEL_EXPORTER_OTLP_ENDPOINT (without /v1/traces), or null. */
+	webhook?: WebhookConfig;
+	/** FAKE_GITHUB_OTLP_ENDPOINT (without /v1/traces), or null. */
 	otlpEndpoint: string | null;
 	/** ADR 0200: the simulated webhook outage flag (reported in the snapshot). */
 	outage?: () => boolean;
@@ -24,7 +24,7 @@ export interface FakeSystemOptions {
 export function createFakeSystem(options: FakeSystemOptions) {
 	const system: System = createSystem({ finished: 'destroy' });
 	system.registerIO(REPLY_IO, replyProcessor);
-	system.registerIO(WEBHOOK_IO, webhookProcessor(options.webhook));
+	system.registerIO(WEBHOOK_IO, webhookProcessor({ ...options.webhook, outage: options.outage }));
 
 	if (options.otlpEndpoint) {
 		const base = options.otlpEndpoint.replace(/\/+$/, '');
@@ -52,11 +52,11 @@ export function createFakeSystem(options: FakeSystemOptions) {
 		apps: system.define(appsChart)
 	};
 
-	function spawnSingletons() {
+	function spawnSingletons(apps: AppsData['apps'] = []) {
 		system.spawn(definitions.registry, { address: REGISTRY_ADDRESS });
 		system.spawn(definitions.faults, { address: FAULTS_ADDRESS });
 		system.spawn(definitions.oauth, { address: OAUTH_ADDRESS });
-		system.spawn(definitions.apps, { address: APPS_ADDRESS });
+		system.spawn(definitions.apps, { address: APPS_ADDRESS, binding: { apps } });
 	}
 	spawnSingletons();
 
@@ -68,13 +68,19 @@ export function createFakeSystem(options: FakeSystemOptions) {
 		system,
 		definitions,
 
-		/** Destroy every actor and start over with empty singletons. */
-		reset() {
+		/**
+		 * Destroy every actor and start over with empty singletons. With
+		 * `keepApps`, registered GitHub Apps survive (their installations,
+		 * tokens and deliveries do not) — so a granary connected to an app
+		 * stays connected across test resets (ADR 0230).
+		 */
+		reset(opts: { keepApps?: boolean } = {}) {
+			const apps = opts.keepApps ? [...((system.findActor(APPS_ADDRESS)?.data() as AppsData | undefined)?.apps ?? [])] : [];
 			rejectAllPending('fake GitHub was reset');
 			for (const a of residents()) {
 				if (system.exists(a.actor)) system.destroy(a.actor);
 			}
-			spawnSingletons();
+			spawnSingletons(apps);
 		},
 
 		/** `GET /__control/state`, read from the actors' live data. */

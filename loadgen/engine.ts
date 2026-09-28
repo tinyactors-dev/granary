@@ -254,7 +254,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 					const number = Number(data.number);
 					note(p, 'action', `Reopening #${number}.`, { issueNumber: number });
 					const r = await fake.reopen({ owner: s.owner, repo: s.repo, number, actor: p.ref.login });
-					note(p, 'result', `Reopened #${number} (delivery ${r.deliveryId.slice(0, 8)}).`, { issueNumber: number });
+					note(p, 'result', `Reopened #${number} (delivery ${r.deliveryId?.slice(0, 8) ?? 'none'}).`, { issueNumber: number });
 					reply(p, PERSONA_EVENTS.reopened, { number });
 					return;
 				}

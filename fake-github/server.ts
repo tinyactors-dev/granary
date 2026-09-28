@@ -4,10 +4,11 @@
  * REST (issues, comments), webhooks, OAuth — plus the `/__control` API and
  * a small HTML page at `/`.
  *
- * Env: FAKE_GITHUB_PORT (4010), FAKE_GITHUB_URL (public base, default
- * http://localhost:$PORT), FAKE_GITHUB_WEBHOOK_URL, GITHUB_WEBHOOK_SECRET,
- * GITHUB_OAUTH_CLIENT_ID / _SECRET (checked when set),
- * OTEL_EXPORTER_OTLP_ENDPOINT (traces with service.name=fake-github).
+ * Env (ADR 0230): FAKE_GITHUB_PORT (4010), FAKE_GITHUB_URL (public base,
+ * default http://localhost:$PORT), FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS,
+ * FAKE_GITHUB_OTLP_ENDPOINT (traces with service.name=fake-github).
+ * Webhooks go only to installed GitHub Apps (their manifest's hook URL and
+ * secret); REST needs an installation or user-to-server token.
  */
 import type { TSchema, Static } from '@sinclair/typebox';
 import {
@@ -15,6 +16,7 @@ import {
 	CreateCommentControlRequest,
 	CreateIssueRequest,
 	RawDeliveryRequest,
+	ResetRequest,
 	EnsureRepoRequest,
 	EnsureUserRequest,
 	InjectFaultRequest,
@@ -62,19 +64,12 @@ const nonEmpty = (v: string | undefined) => (v && v.length ? v : undefined);
 const port = Number(nonEmpty(env.FAKE_GITHUB_PORT) ?? 4010);
 const base = (nonEmpty(env.FAKE_GITHUB_URL) ?? `http://localhost:${port}`).replace(/\/+$/, '');
 const bases: Bases = { web: base, api: base };
-const webhookUrl = () => nonEmpty(env.FAKE_GITHUB_WEBHOOK_URL) ?? 'http://localhost:5173/webhook';
-const webhookSecret = () => nonEmpty(env.GITHUB_WEBHOOK_SECRET) ?? 'dev-webhook-secret';
-const oauthClientId = nonEmpty(env.GITHUB_OAUTH_CLIENT_ID);
-const oauthClientSecret = nonEmpty(env.GITHUB_OAUTH_CLIENT_SECRET);
-/** The user behind the app's REST token (anything that is not an OAuth token). */
-const BOT_LOGIN = 'granary[bot]';
 
 /** ADR 0164: while true, every webhook delivery fails with status_code 0. */
 let webhookOutage = false;
 
 const fake = createFakeSystem({
-	webhook: { url: webhookUrl, secret: webhookSecret, outage: () => webhookOutage },
-	otlpEndpoint: nonEmpty(env.OTEL_EXPORTER_OTLP_ENDPOINT) ?? null,
+	otlpEndpoint: nonEmpty(env.FAKE_GITHUB_OTLP_ENDPOINT) ?? null,
 	outage: () => webhookOutage
 });
 const { system } = fake;
@@ -209,8 +204,8 @@ async function deliver(
 	repoId: number | null,
 	issueNumber: number | null,
 	event = 'issues',
-	id: string = crypto.randomUUID(),
-	target: DeliveryTarget | null = null
+	id: string,
+	target: DeliveryTarget
 ): Promise<DeliveryReply> {
 	const reqId = crypto.randomUUID();
 	const started = Date.now();
@@ -230,21 +225,19 @@ async function deliver(
 			lastAttemptAt: null,
 			lastError: null,
 			createdAt: nextId(),
-			url: target?.url ?? null,
-			secret: target?.secret ?? null,
-			appId: target?.appId ?? null,
-			installationId: target?.installationId ?? null,
+			url: target.url,
+			secret: target.secret,
+			appId: target.appId,
+			installationId: target.installationId,
 			reqIds: [reqId],
 			out: null
 		}
 	});
 	const reply = await waiting;
 	emitDelivery(reply, event, action, repoId, issueNumber);
-	if (target) {
-		const meta = deliveryMeta.get(reply.deliveryId);
-		if (meta) Object.assign(meta, { appId: target.appId, installationId: target.installationId });
-		await recordAppDelivery(target.appId, id, event, action, repoId, target.installationId, false, reply, started);
-	}
+	const meta = deliveryMeta.get(reply.deliveryId);
+	if (meta) Object.assign(meta, { appId: target.appId, installationId: target.installationId });
+	await recordAppDelivery(target.appId, id, event, action, repoId, target.installationId, false, reply, started);
 	return reply;
 }
 
@@ -278,9 +271,10 @@ async function recordAppDelivery(
 }
 
 /**
- * Deliver a repository event (ADR 0200): to every GitHub App installed on the
- * repo that subscribes to `event` (payload gains `installation`), else to the
- * default repo webhook (token mode). Returns the first delivery's reply.
+ * Deliver a repository event (ADR 0200, 0230): to every GitHub App installed
+ * on the repo that subscribes to `event` (payload gains `installation`).
+ * Auto-install apps are installed on the owner first. Returns the first
+ * delivery's reply, or null when no app covers the repo (nothing is sent).
  */
 async function deliverRepoEvent(
 	event: string,
@@ -288,13 +282,13 @@ async function deliverRepoEvent(
 	payload: Record<string, unknown>,
 	repo: { id: number; owner: string; name: string },
 	issueNumber: number | null
-): Promise<DeliveryReply> {
+): Promise<DeliveryReply | null> {
+	await appRoutes.ensureAutoInstalled(repo.owner);
 	const covering = await ask<Covering[]>(system, APPS_ADDRESS, APPS_EVENTS.covering, {
 		fullName: `${repo.owner}/${repo.name}`,
 		owner: repo.owner,
 		event
 	});
-	if (!covering.length) return deliver(action, JSON.stringify(payload), repo.id, issueNumber, event);
 	let first: DeliveryReply | null = null;
 	for (const { app, installation } of covering) {
 		const body = JSON.stringify({ ...payload, installation: { id: installation.id, node_id: `MDIz_fake${installation.id}` } });
@@ -306,7 +300,7 @@ async function deliverRepoEvent(
 		});
 		first ??= reply;
 	}
-	return first!;
+	return first;
 }
 
 /** Redeliver by guid (same body, same guid) and log it for its app. */
@@ -350,7 +344,11 @@ const appRoutes = createAppRoutes({
 
 async function control(req: Request, path: string): Promise<Response> {
 	const method = req.method;
-	if (method === 'GET' && path === CONTROL_PATHS.state) return json(fake.snapshot());
+	if (method === 'GET' && path === CONTROL_PATHS.state) {
+		const state = fake.snapshot();
+		state.apps = state.apps?.map((a) => ({ ...a, autoInstall: appRoutes.isAutoInstall(a.id) }));
+		return json(state);
+	}
 	if (method === 'GET' && path === CONTROL_PATHS.events) {
 		const url = new URL(req.url);
 		const since = Number(url.searchParams.get('since') ?? req.headers.get('last-event-id') ?? 0) || 0;
@@ -371,8 +369,11 @@ async function control(req: Request, path: string): Promise<Response> {
 	}
 
 	if (path === CONTROL_PATHS.reset) {
+		const raw = await readJson(req, { allowEmpty: true });
+		const body = raw === undefined ? {} : validate(ResetRequest, raw, 'reset');
 		webhookOutage = false;
-		fake.reset();
+		if (!body.keepApps) appRoutes.resetAutoInstall();
+		fake.reset({ keepApps: body.keepApps === true });
 		return json({ ok: true });
 	}
 
@@ -411,7 +412,7 @@ async function control(req: Request, path: string): Promise<Response> {
 		});
 		const payload = issuesEvent('opened', issue, repositoryView(repo, owner, bases), userView(author, bases));
 		const result = await deliverRepoEvent('issues', 'opened', payload as unknown as Record<string, unknown>, repo, issue.number);
-		return json({ number: issue.number, deliveryId: result.deliveryId } satisfies CreateIssueResponse);
+		return json({ number: issue.number, deliveryId: result?.deliveryId ?? null } satisfies CreateIssueResponse);
 	}
 
 	if (path === CONTROL_PATHS.reopen) {
@@ -439,7 +440,7 @@ async function control(req: Request, path: string): Promise<Response> {
 			userView(actor, bases)
 		);
 		const result = await deliverRepoEvent('issues', 'reopened', payload as unknown as Record<string, unknown>, found.repo, issue.number);
-		return json({ deliveryId: result.deliveryId } satisfies ReopenIssueResponse);
+		return json({ deliveryId: result?.deliveryId ?? null } satisfies ReopenIssueResponse);
 	}
 
 	const redeliver = /^\/__control\/deliveries\/([^/]+)\/redeliver$/.exec(path);
@@ -485,19 +486,22 @@ async function control(req: Request, path: string): Promise<Response> {
 			sender: userView(author, bases)
 		};
 		const result = await deliverRepoEvent('issue_comment', 'created', payload, found.repo, body.number);
-		return json({ commentId: comment.id, deliveryId: result.deliveryId } satisfies CreateCommentControlResponse);
+		return json({ commentId: comment.id, deliveryId: result?.deliveryId ?? null } satisfies CreateCommentControlResponse);
 	}
 
 	if (path === CONTROL_PATHS.rawDelivery) {
 		const body = validate(RawDeliveryRequest, await readJson(req), 'raw delivery');
-		const result = await deliver(
-			body.action ?? '(raw)',
-			body.body,
-			null,
-			null,
-			body.event,
-			body.deliveryId ?? crypto.randomUUID()
-		);
+		// Signed with, and sent to, the most recently created GitHub App (ADR 0230).
+		const app = (fake.snapshot().apps ?? []).at(-1);
+		const record = app ? await appRoutes.findApp({ id: app.id }) : null;
+		if (!record) return controlError(409, 'No GitHub App exists on the fake; raw deliveries go to an app');
+		const id = body.deliveryId ?? crypto.randomUUID();
+		const result = await deliver(body.action ?? '(raw)', body.body, null, null, body.event, id, {
+			url: record.webhookUrl,
+			secret: record.webhookSecret,
+			appId: record.id,
+			installationId: null
+		});
 		return json({ deliveryId: result.deliveryId, responseCode: result.responseCode } satisfies RawDeliveryResponse);
 	}
 
@@ -530,9 +534,7 @@ async function authorize(url: URL): Promise<Response> {
 	}
 	const q = query as Static<typeof OAuthAuthorizeQuery>;
 	const appClient = await appRoutes.findApp({ clientId: q.client_id });
-	if (!appClient && oauthClientId && q.client_id !== oauthClientId) {
-		return new Response(`Unknown client_id ${q.client_id}`, { status: 400 });
-	}
+	if (!appClient) return new Response(`Unknown client_id ${q.client_id}`, { status: 400 });
 	if (!q.redirect_uri) return new Response('redirect_uri is required by the fake', { status: 400 });
 	if (!q.login) {
 		const users = fake.snapshot().users;
@@ -582,10 +584,7 @@ async function accessToken(req: Request, url: URL): Promise<Response> {
 	const b = body as Static<typeof OAuthAccessTokenRequest>;
 	// ADR 0164: a GitHub App's client id/secret work too (user-to-server tokens, `ghu_`).
 	const appClient = await appRoutes.findApp({ clientId: b.client_id });
-	const badClient = appClient
-		? b.client_secret !== appClient.clientSecret
-		: (oauthClientId && b.client_id !== oauthClientId) || (oauthClientSecret && b.client_secret !== oauthClientSecret);
-	if (badClient) {
+	if (!appClient || b.client_secret !== appClient.clientSecret) {
 		return respond({
 			error: 'incorrect_client_credentials',
 			error_description: 'The client_id and/or client_secret passed are incorrect.'
@@ -594,7 +593,7 @@ async function accessToken(req: Request, url: URL): Promise<Response> {
 	const result = await ask<Record<string, string>>(system, OAUTH_ADDRESS, OAUTH_EVENTS.exchange, {
 		code: b.code,
 		clientId: b.client_id,
-		token: `${appClient ? 'ghu' : 'gho'}_fake${crypto.randomUUID().replaceAll('-', '')}`,
+		token: `ghu_fake${crypto.randomUUID().replaceAll('-', '')}`,
 		now: Date.now()
 	});
 	return respond(result);
@@ -613,15 +612,15 @@ async function installationOf(token: string): Promise<{ installation: Installati
 }
 
 /**
- * The user a token acts as: an OAuth token's user, an installation token's
- * `<slug>[bot]`, else (any other token, token mode) the app bot.
+ * The user a token acts as: a user-to-server token's user, an installation
+ * token's `<slug>[bot]`, else null (unknown token).
  */
-async function tokenUser(token: string): Promise<FakeUser> {
+async function tokenUser(token: string): Promise<FakeUser | null> {
 	const login = await ask<string | null>(system, OAUTH_ADDRESS, OAUTH_EVENTS.whoami, { token });
 	if (login) return (await getUser(login)) ?? (await ensureUser(login));
 	const inst = await installationOf(token);
 	if (inst) return ensureUser(`${inst.app.slug}[bot]`, 'Bot');
-	return ensureUser(BOT_LOGIN, 'Bot');
+	return null;
 }
 
 async function currentUser(req: Request): Promise<Response> {
@@ -629,6 +628,7 @@ async function currentUser(req: Request): Promise<Response> {
 	if (!token) return githubError(401, 'Requires authentication');
 	if (token.startsWith('ghs_')) return githubError(403, 'Resource not accessible by integration');
 	const u = await tokenUser(token);
+	if (!u) return githubError(401, 'Bad credentials');
 	const view: AuthenticatedUser & Record<string, unknown> = { ...userView(u, bases), avatar_url: u.avatarUrl, name: u.login };
 	return json(view);
 }
@@ -651,6 +651,8 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 	} else if (token.startsWith('eyJ')) {
 		return githubError(401, 'A JSON web token could not be used to access this resource');
 	}
+	const actor = await tokenUser(token);
+	if (!actor) return githubError(401, 'Bad credentials');
 
 	const fault = await ask<FaultHit | null>(system, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
 	if (fault) {
@@ -687,7 +689,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		if (!isFailure(before)) {
 			const prev = (before as Issue).state;
 			if (prev !== after.state) {
-				const by = (await tokenUser(token)).login;
+				const by = actor.login;
 				if (after.state === 'closed') {
 					events.emit({
 						type: 'issue.closed',
@@ -714,7 +716,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		}
 		const issues = issuesOf(CreateCommentRequest, body);
 		if (issues.length) return json({ message: 'Validation Failed', errors: issues }, 422);
-		const user: GitHubUser = userView(await tokenUser(token), bases);
+		const user: GitHubUser = userView(actor, bases);
 		const comment = unwrap<IssueComment>(
 			await ask(system, address, REPOSITORY_EVENTS.createComment, {
 				number,
@@ -779,7 +781,7 @@ const server = Bun.serve({
 	}
 });
 
-console.log(`[fake-github] listening on ${server.url} (public ${base}); webhooks → ${webhookUrl()}`);
+console.log(`[fake-github] listening on ${server.url} (public ${base}); webhooks go to installed GitHub Apps`);
 
 const shutdown = () => {
 	server.stop(true);

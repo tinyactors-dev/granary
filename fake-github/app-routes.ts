@@ -8,13 +8,13 @@
  *   `POST /app/hook/deliveries/{id}/attempts`
  * - installation token: `GET /installation/repositories`
  * - install UI: `GET /apps/{slug}/installations/new`, `POST …/confirm`
- * - control: `POST /__control/apps/{appId}/installations`
+ * - control: `POST /__control/apps/{appId}/installations`, `POST /__control/apps/{appId}/auto-install`
  *
  * All data lives in the `apps/main` actor; this module does HTTP, crypto
  * and webhook fan-out.
  */
 import type { System } from '@tinyactors/node';
-import { InstallAppRequest, type FakeUser, type InstallAppResponse } from './schemas';
+import { AppAutoInstallRequest, InstallAppRequest, type FakeUser, type InstallAppResponse } from './schemas';
 import { ask, isFailure } from './io/reply';
 import { nextId } from './ids';
 import { APPS_ADDRESS, APPS_EVENTS, repoCovered, type AppDeliveryRecord, type AppRecord, type InstallResult, type InstallationRecord } from './actors/apps';
@@ -434,6 +434,39 @@ export function createAppRoutes(deps: AppRouteDeps) {
 
 	// ---- control -------------------------------------------------------------------------
 
+	/** Apps installed automatically on every account with repo activity (ADR 0230). */
+	const autoInstall = new Set<number>();
+
+	async function controlAutoInstall(req: Request, appId: number): Promise<Response> {
+		const body = deps.validate<{ enabled: boolean }>(AppAutoInstallRequest, await deps.readJson(req), 'auto-install');
+		const app = await findApp({ id: appId });
+		if (!app) return deps.controlError(404, `Unknown app ${appId}`);
+		if (body.enabled) autoInstall.add(appId);
+		else autoInstall.delete(appId);
+		return json({ ok: true });
+	}
+
+	/**
+	 * Before a repo event is delivered: install every auto-install app on
+	 * `owner` (all repos) if it is not installed there yet. The installation
+	 * webhook goes out first, like on github.com.
+	 */
+	async function ensureAutoInstalled(owner: string): Promise<void> {
+		for (const appId of autoInstall) {
+			const app = await findApp({ id: appId });
+			if (!app) {
+				autoInstall.delete(appId);
+				continue;
+			}
+			const installations = await installationsOf({ appId });
+			if (installations.some((i) => i.account.toLowerCase() === owner.toLowerCase())) continue;
+			await install(app, owner, 'User', undefined);
+		}
+	}
+
+	const isAutoInstall = (appId: number) => autoInstall.has(appId);
+	const resetAutoInstall = () => autoInstall.clear();
+
 	async function controlInstall(req: Request, appId: number): Promise<Response> {
 		const body = deps.validate<{ account: string; accountType?: 'User' | 'Organization'; repos?: string[] }>(
 			InstallAppRequest,
@@ -464,10 +497,12 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		if (path === '/app' || path.startsWith('/app/')) return appApi(req, path, url);
 		const ctl = /^\/__control\/apps\/(\d+)\/installations$/.exec(path);
 		if (req.method === 'POST' && ctl) return controlInstall(req, Number(ctl[1]));
+		const auto = /^\/__control\/apps\/(\d+)\/auto-install$/.exec(path);
+		if (req.method === 'POST' && auto) return controlAutoInstall(req, Number(auto[1]));
 		return null;
 	}
 
-	return { route, installationRepos, findApp };
+	return { route, installationRepos, findApp, ensureAutoInstalled, isAutoInstall, resetAutoInstall };
 }
 
 export type AppRoutes = ReturnType<typeof createAppRoutes>;

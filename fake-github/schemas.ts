@@ -38,6 +38,8 @@ export const CONTROL_PATHS = {
 	eventsLog: '/__control/events/log',
 	/** ADR 0164: install a GitHub App without the UI. */
 	appInstallations: (appId: number) => `/__control/apps/${appId}/installations`,
+	/** Install the app on every account (all repos) the first time one of its repos has an event (ADR 0230). */
+	appAutoInstall: (appId: number) => `/__control/apps/${appId}/auto-install`,
 	/** ADR 0164: while down, webhook deliveries fail with status_code 0 (catch-up tests). */
 	webhookOutage: '/__control/webhook-outage'
 } as const;
@@ -61,8 +63,12 @@ export const ControlError = Type.Object(
 export type ControlError = Static<typeof ControlError>;
 
 // ---------------------------------------------------------------------------
-// POST /__control/reset  (no body) → ControlOk
+// POST /__control/reset  (optional body {keepApps}) → ControlOk
 // ---------------------------------------------------------------------------
+
+/** `keepApps`: registered GitHub Apps (and their auto-install flag) survive the reset (ADR 0230). */
+export const ResetRequest = Type.Object({ keepApps: Type.Optional(Type.Boolean()) }, closed);
+export type ResetRequest = Static<typeof ResetRequest>;
 
 export const ResetResponse = ControlOk;
 export type ResetResponse = ControlOk;
@@ -105,7 +111,7 @@ export type FakeRepo = Static<typeof FakeRepo>;
 // ---------------------------------------------------------------------------
 // POST /__control/issues → {number, deliveryId}
 // Ensures the repo and the author exist, creates the issue (state open),
-// then delivers `issues`/`opened` to FAKE_GITHUB_WEBHOOK_URL.
+// then delivers `issues`/`opened` to every installed GitHub App covering the repo.
 // `association` defaults to 'NONE'; `body` defaults to ''.
 // The response is sent after the delivery attempt finished.
 // ---------------------------------------------------------------------------
@@ -124,7 +130,8 @@ export const CreateIssueRequest = Type.Object(
 export type CreateIssueRequest = Static<typeof CreateIssueRequest>;
 
 export const CreateIssueResponse = Type.Object(
-	{ number: Type.Integer({ minimum: 1 }), deliveryId: Type.String() },
+	/** Null when no installed GitHub App covers the repo (nothing is delivered). */
+	{ number: Type.Integer({ minimum: 1 }), deliveryId: Nullable(Type.String()) },
 	closed
 );
 export type CreateIssueResponse = Static<typeof CreateIssueResponse>;
@@ -140,7 +147,7 @@ export const ReopenIssueRequest = Type.Object(
 );
 export type ReopenIssueRequest = Static<typeof ReopenIssueRequest>;
 
-export const ReopenIssueResponse = Type.Object({ deliveryId: Type.String() }, closed);
+export const ReopenIssueResponse = Type.Object({ deliveryId: Nullable(Type.String()) }, closed);
 export type ReopenIssueResponse = Static<typeof ReopenIssueResponse>;
 
 // ---------------------------------------------------------------------------
@@ -262,7 +269,9 @@ export const FakeApp = Type.Object(
 		callbackUrls: Type.Array(Type.String()),
 		permissions: Type.Record(Type.String(), Type.String()),
 		events: Type.Array(Type.String()),
-		createdAt: Type.Number()
+		createdAt: Type.Number(),
+		/** Installed automatically on every account with repo activity (ADR 0230). */
+		autoInstall: Type.Optional(Type.Boolean())
 	},
 	closed
 );
@@ -317,6 +326,10 @@ export type InstallAppRequest = Static<typeof InstallAppRequest>;
 export const InstallAppResponse = Type.Object({ installationId: Type.Integer(), deliveryId: Type.String() }, closed);
 export type InstallAppResponse = Static<typeof InstallAppResponse>;
 
+/** POST /__control/apps/{appId}/auto-install */
+export const AppAutoInstallRequest = Type.Object({ enabled: Type.Boolean() }, closed);
+export type AppAutoInstallRequest = Static<typeof AppAutoInstallRequest>;
+
 /** POST /__control/webhook-outage */
 export const WebhookOutageRequest = Type.Object({ down: Type.Boolean() }, closed);
 export type WebhookOutageRequest = Static<typeof WebhookOutageRequest>;
@@ -359,7 +372,7 @@ export const CreateCommentControlRequest = Type.Object(
 export type CreateCommentControlRequest = Static<typeof CreateCommentControlRequest>;
 
 export const CreateCommentControlResponse = Type.Object(
-	{ commentId: Type.Integer(), deliveryId: Type.String() },
+	{ commentId: Type.Integer(), deliveryId: Nullable(Type.String()) },
 	closed
 );
 export type CreateCommentControlResponse = Static<typeof CreateCommentControlResponse>;
