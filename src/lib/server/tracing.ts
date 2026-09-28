@@ -22,6 +22,7 @@ import { SPAN_BUFFER_SIZE } from '../schemas/dev';
 import type { Resolved } from '../schemas/api';
 import type { ActorAddress, IssueDoneData } from '../schemas/actors';
 import { FAMILY, ALLOWLIST_ADDRESS, formatAddress } from '../schemas/actors';
+import { CATCHUP_ADDRESS, CATCHUP_FAMILY } from './github/catchup';
 import { encodeTraces } from './otlp-encode';
 import { log } from './log';
 import type { TelemetrySink } from '../ops/contract';
@@ -38,10 +39,11 @@ export const GRANARY_ATTRS = {
 
 export const SERVICE_NAME = 'granary';
 
-/** Name of an actor from its inspection: issue actors by `data.issueKey`, the allowlist is `main`. */
+/** Name of an actor from its inspection: issue actors by `data.issueKey`; singletons (allowlist, delivery-catchup) are `main`. */
 export function addressOfInspection(i: ActorInspection): ActorAddress | null {
 	const family = i.definition.family;
 	if (family === FAMILY.allowlist) return ALLOWLIST_ADDRESS;
+	if (family === CATCHUP_FAMILY) return CATCHUP_ADDRESS;
 	const data = i.data as { issueKey?: unknown } | undefined;
 	if (family === FAMILY.issue && typeof data?.issueKey === 'string') return { family, name: data.issueKey };
 	return null;
