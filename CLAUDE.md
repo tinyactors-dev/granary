@@ -1,3 +1,23 @@
+# ⚠️ PROCESS RULES — READ FIRST, NO EXCEPTIONS
+
+1. **NEVER kill processes by pattern.** No `pkill -f`, `killall`, `pgrep … | xargs kill`,
+   or any name/regex-based kill. The developer runs their own long-lived processes
+   (e.g. the dev server, fake GitHub) with similar command lines; a pattern kill
+   takes those down too.
+2. **Long-lived processes are pitchfork daemons.** Anything that keeps running
+   (dev server, fake GitHub, loadgen, test fixtures you want to keep up) is started
+   and stopped with **pitchfork** (`mise x pitchfork -- pitchfork …`), wrapping a mise
+   task, defined in `pitchfork.toml` or run ad hoc with
+   `pitchfork run <unique-id> -- mise run <task>`.
+   Stop only daemons you started, by id: `pitchfork stop <id>`. Inspect with
+   `pitchfork list`, `pitchfork logs <id>`.
+3. Never use bare `&`/`nohup` background processes. Short-lived child processes
+   owned by a test harness (spawned and reaped by the harness itself) are fine.
+4. If a process you did not start is in the way (e.g. a port is taken), **ask** —
+   use a different port instead of killing it.
+
+---
+
 
 Default to using Bun instead of Node.js.
 

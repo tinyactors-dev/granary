@@ -1,0 +1,12 @@
+# Long-lived dev processes are pitchfork daemons wrapping mise tasks (ADR 0026).
+# Start: `pitchfork start -l` (or `mise run up`), stop: `pitchfork stop <id>`.
+
+[daemons.fake-github]
+run = "mise run fake-github"
+ready_port = 4010
+
+[daemons.app]
+run = "mise run dev"
+# vite binds [::1] only, so a TCP port probe never sees it; poll HTTP instead
+ready_http = "http://localhost:5173/"
+depends = ["fake-github"]

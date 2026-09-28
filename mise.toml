@@ -15,9 +15,21 @@ description = "Fake GitHub server (http://localhost:4010)"
 env = { _.file = "config/dev.env" }
 run = "bun --hot fake-github/server.ts"
 
+[tasks.up]
+description = "Start dev daemons via pitchfork (fake GitHub + app); see pitchfork.toml"
+run = "pitchfork start -l"
+
+[tasks.down]
+description = "Stop dev daemons started from pitchfork.toml"
+run = "pitchfork stop granary/app granary/fake-github"
+
+[tasks.logs]
+description = "Tail logs of the dev daemons"
+run = "pitchfork logs -t granary/app granary/fake-github"
+
 [tasks."dev:all"]
-description = "Run fake GitHub and the dev server together"
-depends = ["fake-github", "dev"]
+description = "Alias for `up` (dev daemons via pitchfork)"
+depends = ["up"]
 
 [tasks.build]
 description = "Production build (svelte-adapter-bun) into build/"
