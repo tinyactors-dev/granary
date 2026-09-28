@@ -20,8 +20,26 @@
 	import { absoluteTime, describeError } from '$lib/components/app/format';
 	import { isAdmin } from '$lib/components/app/session';
 	import { LOGIN_LINK_TTL_CHOICES } from '$lib/components/settings/nav';
-	import { createLoginLink, listAdmins } from '$lib/remote/settings.remote';
-	import type { CreatedLoginLink } from '$lib/schemas/admins';
+	import * as Table from '$lib/components/ui/table/index.js';
+	import { Badge } from '$lib/components/ui/badge/index.js';
+	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
+	import { createLoginLink, listAdmins, listLoginLinks, revokeLoginLink } from '$lib/remote/settings.remote';
+	import type { CreatedLoginLink, LoginLinkState } from '$lib/schemas/admins';
+
+	let revoking = $state<string | null>(null);
+	async function revoke(id: string) {
+		revoking = id;
+		try {
+			const r = await revokeLoginLink({ id });
+			if (r.revoked) toast.success('Link revoked');
+			else toast.info('That link could no longer be used anyway');
+		} catch (e) {
+			toast.error('Could not revoke', { description: describeError(e).message });
+		} finally {
+			revoking = null;
+		}
+	}
+	const STATE_VARIANT: Record<LoginLinkState, 'default' | 'secondary' | 'outline' | 'destructive'> = { valid: 'default', used: 'secondary', expired: 'outline', revoked: 'destructive' };
 
 	const admins = listAdmins();
 	const admin = $derived(isAdmin());
@@ -110,8 +128,45 @@
 			<Card.Content class="grid gap-1.5 text-sm">
 				<code class="bg-muted rounded px-1.5 py-0.5">granary admin add &lt;your-login&gt;</code>
 				<code class="bg-muted rounded px-1.5 py-0.5">granary login-link &lt;your-login&gt; --ttl 15m</code>
-				<p class="text-muted-foreground text-xs">Links can’t be listed or revoked here; unused links simply expire.</p>
 			</Card.Content>
 		</Card.Root>
+		{#if admin}
+			<Card.Root data-testid="login-link-list">
+				<Card.Header>
+					<Card.Title>Recent links</Card.Title>
+					<Card.Description>Tokens are never shown again; revoke a link you no longer trust.</Card.Description>
+				</Card.Header>
+				<Card.Content>
+					<svelte:boundary>
+						{@const links = await listLoginLinks()}
+						{#if links.length === 0}
+							<p class="text-muted-foreground text-sm">No login links yet.</p>
+						{:else}
+							<Table.Root>
+								<Table.Header>
+									<Table.Row><Table.Head>For</Table.Head><Table.Head>State</Table.Head><Table.Head>Created</Table.Head><Table.Head>Expires</Table.Head><Table.Head></Table.Head></Table.Row>
+								</Table.Header>
+								<Table.Body>
+									{#each links as l (l.id)}
+										<Table.Row>
+											<Table.Cell class="font-medium">{l.login}</Table.Cell>
+											<Table.Cell><Badge variant={STATE_VARIANT[l.state]}>{l.state}</Badge></Table.Cell>
+											<Table.Cell class="text-muted-foreground text-xs"><RelativeTime ms={l.createdAt} /> by {l.createdBy}</Table.Cell>
+											<Table.Cell class="text-muted-foreground text-xs"><RelativeTime ms={l.expiresAt} /></Table.Cell>
+											<Table.Cell class="text-right">
+												{#if l.state === 'valid'}
+													<Button size="sm" variant="outline" disabled={revoking === l.id} onclick={() => revoke(l.id)} data-testid="revoke-login-link">Revoke</Button>
+												{/if}
+											</Table.Cell>
+										</Table.Row>
+									{/each}
+								</Table.Body>
+							</Table.Root>
+						{/if}
+						{#snippet failed(e)}<ErrorAlert error={e} />{/snippet}
+					</svelte:boundary>
+				</Card.Content>
+			</Card.Root>
+		{/if}
 	</div>
 </div>

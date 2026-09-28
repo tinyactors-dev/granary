@@ -19,6 +19,8 @@ import {
 	type Admin,
 	type AuditEntry,
 	type CreatedLoginLink,
+	type LoginLinkSummary,
+	type RevokeLoginLinkResult,
 	type RemoveAdminResult,
 	type SetupStatus
 } from '$lib/schemas/admins';
@@ -96,6 +98,20 @@ const CreateLoginLinkForm = Type.Object(
  * Form `{login, ttlMinutes?}`. Admin only. The result holds the only copy of
  * the URL; the page shows it once and it is gone after navigation.
  */
+/** Admin only (ADR 0220): recent login links without their tokens. */
+export const listLoginLinks = query(async (): Promise<LoginLinkSummary[]> => {
+	requireAdmin();
+	return withBackend((b) => b.listLoginLinks(50));
+});
+
+/** Admin only: revoke an unused link by id. */
+export const revokeLoginLink = command(standard(Type.Object({ id: Type.String({ pattern: '^[0-9a-f]{16}$' }) }, { additionalProperties: false })), async ({ id }): Promise<RevokeLoginLinkResult> => {
+	const admin = requireAdmin();
+	const r = await withBackend((b) => b.revokeLoginLink(id, admin.login));
+	await Promise.all([listLoginLinks().refresh(), listAuditLog({}).refresh()]);
+	return r;
+});
+
 export const createLoginLink = form(standard(CreateLoginLinkForm), async ({ login, ttlMinutes }, issue): Promise<CreatedLoginLink> => {
 	const admin = requireAdmin();
 	const minutes = ttlMinutes ? Number(ttlMinutes) : LOGIN_LINK_DEFAULT_TTL_MS / 60_000;
@@ -109,7 +125,7 @@ export const createLoginLink = form(standard(CreateLoginLinkForm), async ({ logi
 		if (isBackendError(e)) error(backendErrorStatus(e.code), e.message);
 		throw e;
 	}
-	await listAuditLog({}).refresh();
+	await Promise.all([listAuditLog({}).refresh(), listLoginLinks().refresh()]);
 	return link;
 });
 
