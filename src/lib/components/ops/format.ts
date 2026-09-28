@@ -201,7 +201,8 @@ export function settingsIssues(s: DestinationSettings, secretMissing: boolean): 
 		if (!/^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/.test(s.bucket)) out.bucket = '3–63 lower-case letters, digits and dashes';
 	}
 	if (s.kind === 's3') {
-		if (!/^https?:\/\/[^\s/]+(:[0-9]+)?\/?$/.test(s.endpoint)) out.endpoint = 'A base URL such as https://s3.eu-central-1.amazonaws.com';
+		// Same rule as the S3Settings schema: an optional path is allowed (e.g. a store mounted under /s3).
+		if (!/^https?:\/\/[^\s/]+(:[0-9]+)?(\/[^\s]*)?$/.test(s.endpoint)) out.endpoint = 'A base URL such as https://s3.eu-central-1.amazonaws.com';
 		if (!s.region.trim()) out.region = 'Required';
 		if (s.bucket.length < 3 || s.bucket.length > 63) out.bucket = '3–63 characters';
 	}
