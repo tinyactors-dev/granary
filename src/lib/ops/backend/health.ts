@@ -230,9 +230,9 @@ export class HealthBackend implements OpsBackendHealth {
 			const name = byId.get(k) ?? nameOf(family, i.data);
 			if (seen.has(k)) continue;
 			seen.add(k);
-			out.push({ address: { family, name: name ?? `#${i.actor.slot}` }, activeStates: [...i.activeStates], scheduling: i.scheduling });
+			out.push({ address: { family, name: name ?? `#${i.actor.slot}` }, runtimeId: k, activeStates: [...i.activeStates], scheduling: i.scheduling });
 		}
-		return out.sort((a, b) => a.address.family.localeCompare(b.address.family) || a.address.name.localeCompare(b.address.name));
+		return out.sort((a, b) => a.address.family.localeCompare(b.address.family) || a.address.name.localeCompare(b.address.name) || a.runtimeId.localeCompare(b.runtimeId));
 	}
 }
 

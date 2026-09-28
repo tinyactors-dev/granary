@@ -449,13 +449,15 @@ export class StubOpsBackend implements OpsBackend {
 
 	async listOpsActors(): Promise<OpsActorSummary[]> {
 		return [
-			{ address: { family: 'ops-config', name: 'main' }, activeStates: ['ready'], scheduling: 'idle' },
-			{ address: { family: 'backup-plan', name: 'seed-all' }, activeStates: ['armed'], scheduling: 'idle' },
-			{ address: { family: 'upload', name: `${this.#runs[0]!.run.id}.seed-r2` }, activeStates: ['uploading'], scheduling: 'idle' },
-			{ address: { family: 'telemetry-sink', name: 'seed-otlp' }, activeStates: ['idle'], scheduling: 'idle' },
-			{ address: { family: 'watchdog', name: 'main' }, activeStates: ['sampling'], scheduling: 'idle' },
-			{ address: { family: 'condition', name: 'outbox-dead' }, activeStates: ['attention'], scheduling: 'idle' },
-			{ address: { family: 'remediator', name: 'main' }, activeStates: ['idle'], scheduling: 'idle' }
+			{ address: { family: 'ops-config', name: 'main' }, runtimeId: '1:1', activeStates: ['ready'], scheduling: 'idle' },
+			{ address: { family: 'backup-plan', name: 'seed-all' }, runtimeId: '2:1', activeStates: ['armed'], scheduling: 'idle' },
+			{ address: { family: 'upload', name: `${this.#runs[0]!.run.id}.seed-r2` }, runtimeId: '9:1', activeStates: ['uploading'], scheduling: 'idle' },
+			{ address: { family: 'telemetry-sink', name: 'seed-otlp' }, runtimeId: '3:1', activeStates: ['idle'], scheduling: 'idle' },
+			{ address: { family: 'restore-drill', name: 'seed-r2' }, runtimeId: '10:1', activeStates: ['idle'], scheduling: 'idle' },
+			{ address: { family: 'restore-drill', name: 'seed-r2' }, runtimeId: '11:1', activeStates: ['fetching'], scheduling: 'idle' },
+			{ address: { family: 'watchdog', name: 'main' }, runtimeId: '4:1', activeStates: ['sampling'], scheduling: 'idle' },
+			{ address: { family: 'condition', name: 'outbox-dead' }, runtimeId: '5:1', activeStates: ['attention'], scheduling: 'idle' },
+			{ address: { family: 'remediator', name: 'main' }, runtimeId: '6:1', activeStates: ['idle'], scheduling: 'idle' }
 		];
 	}
 }

@@ -40,9 +40,11 @@
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
-				{#each await actors as a (a.address.family + '/' + a.address.name)}
+				{@const list = await actors}
+				{#each list as a (a.runtimeId)}
+					{@const shared = list.filter((b) => b.address.family === a.address.family && b.address.name === a.address.name).length > 1}
 					<Table.Row data-testid="ops-actor">
-						<Table.Cell class="font-mono text-xs">{a.address.family}/{a.address.name}</Table.Cell>
+						<Table.Cell class="font-mono text-xs">{a.address.family}/{a.address.name}{#if shared}<span class="text-muted-foreground" title="Another resident actor has the same address (e.g. an on-demand drill next to the scheduled one)"> · #{a.runtimeId}</span>{/if}</Table.Cell>
 						<Table.Cell><div class="flex flex-wrap gap-1">{#each a.activeStates as s (s)}<StateBadge state={s} tone={s === 'attention' ? 'warning' : 'info'} />{/each}</div></Table.Cell>
 						<Table.Cell><StateBadge state={a.scheduling} /></Table.Cell>
 						<Table.Cell class="text-muted-foreground text-sm">{DESCRIBE[a.address.family] ?? ''}</Table.Cell>
