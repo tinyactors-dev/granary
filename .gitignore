@@ -49,3 +49,6 @@ mise.local.toml
 
 # release artefacts (ADR 0180)
 /release/
+
+# agent worktrees (Claude Code)
+/.claude/
