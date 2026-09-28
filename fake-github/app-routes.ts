@@ -14,7 +14,14 @@
  * and webhook fan-out.
  */
 import type { System } from '@tinyactors/node';
-import { AppAutoInstallRequest, InstallAppRequest, type FakeUser, type InstallAppResponse } from './schemas';
+import {
+	AppAutoInstallRequest,
+	InstallAppRequest,
+	SetAppPermissionsRequest,
+	type AcceptPermissionsResponse,
+	type FakeUser,
+	type InstallAppResponse
+} from './schemas';
 import { ask, isFailure } from './io/reply';
 import { nextId } from './ids';
 import { APPS_ADDRESS, APPS_EVENTS, repoCovered, type AppDeliveryRecord, type AppRecord, type InstallResult, type InstallationRecord } from './actors/apps';
@@ -114,8 +121,9 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		access_tokens_url: `${bases.api}/app/installations/${i.id}/access_tokens`,
 		repositories_url: `${bases.api}/installation/repositories`,
 		html_url: `${bases.web}/settings/installations/${i.id}`,
-		permissions: app.permissions,
-		events: app.events,
+		// What the account accepted, not what the app asks for (ADR 0282).
+		permissions: i.permissions,
+		events: i.events,
 		created_at: iso(i.createdAt),
 		updated_at: iso(i.createdAt),
 		suspended_at: i.suspended ? iso(i.createdAt) : null,
@@ -389,7 +397,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 				{
 					token: ok.token,
 					expires_at: iso(ok.expiresAt),
-					permissions: app.permissions,
+					permissions: ok.installation.permissions,
 					repository_selection: ok.installation.repositorySelection
 				},
 				201
@@ -479,6 +487,33 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		return json({ installationId: result.installation.id, deliveryId: reply.deliveryId } satisfies InstallAppResponse);
 	}
 
+	/** POST /__control/apps/{id}/permissions (ADR 0282): what the app asks for; installations keep theirs. */
+	async function controlSetPermissions(req: Request, appId: number): Promise<Response> {
+		const body = deps.validate<{ permissions: Record<string, string>; events: string[] }>(SetAppPermissionsRequest, await deps.readJson(req), 'permissions');
+		const r = await ask<AppRecord | { error: string; status: number }>(system, APPS_ADDRESS, APPS_EVENTS.setPermissions, { appId, ...body });
+		if (isFailure(r)) return deps.controlError((r as { status: number }).status, (r as { error: string }).error);
+		const app = r as AppRecord;
+		return json({ id: app.id, permissions: app.permissions, events: app.events });
+	}
+
+	/** POST /__control/installations/{id}/accept-permissions (ADR 0282): the account accepts; `installation.new_permissions_accepted`. */
+	async function controlAcceptPermissions(installationId: number): Promise<Response> {
+		const r = await ask<{ installation: InstallationRecord; app: AppRecord } | { error: string; status: number }>(system, APPS_ADDRESS, APPS_EVENTS.acceptPermissions, {
+			installationId
+		});
+		if (isFailure(r)) return deps.controlError((r as { status: number }).status, (r as { error: string }).error);
+		const { installation, app } = r as { installation: InstallationRecord; app: AppRecord };
+		const sender = await deps.ensureUser(installation.account);
+		const reply = await deps.deliverTo(
+			{ url: app.webhookUrl, secret: app.webhookSecret, appId: app.id, installationId },
+			'installation',
+			'new_permissions_accepted',
+			JSON.stringify({ action: 'new_permissions_accepted', installation: installationView(installation, app), sender: userView(sender, bases) }),
+			null
+		);
+		return json({ installationId, deliveryId: reply.deliveryId ?? null } satisfies AcceptPermissionsResponse);
+	}
+
 	/** Route; null when the path is not an app route. */
 	async function route(req: Request, url: URL): Promise<Response | null> {
 		const path = url.pathname;
@@ -505,6 +540,10 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		if (req.method === 'POST' && ctl) return controlInstall(req, Number(ctl[1]));
 		const auto = /^\/__control\/apps\/(\d+)\/auto-install$/.exec(path);
 		if (req.method === 'POST' && auto) return controlAutoInstall(req, Number(auto[1]));
+		const perms = /^\/__control\/apps\/(\d+)\/permissions$/.exec(path);
+		if (req.method === 'POST' && perms) return controlSetPermissions(req, Number(perms[1]));
+		const accept = /^\/__control\/installations\/(\d+)\/accept-permissions$/.exec(path);
+		if (req.method === 'POST' && accept) return controlAcceptPermissions(Number(accept[1]));
 		return null;
 	}
 

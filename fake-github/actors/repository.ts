@@ -39,6 +39,8 @@ export interface StoredIssue {
 	updated_at: string;
 	closed_at: string | null;
 	comments: StoredComment[];
+	/** Set for pull requests, which share the issue number sequence (ADR 0282). */
+	pullRequest?: { draft: boolean };
 }
 
 export interface RepositoryData {
@@ -57,6 +59,7 @@ export interface RepositoryData {
 
 export const REPOSITORY_EVENTS = {
 	createIssue: 'issue.create',
+	getPull: 'pull.get',
 	getIssue: 'issue.get',
 	updateIssue: 'issue.update',
 	reopenIssue: 'issue.reopen',
@@ -72,6 +75,8 @@ export interface CreateIssueEvent {
 	body: string;
 	association: AuthorAssociation;
 	now: string;
+	/** Create a pull request instead of an issue (ADR 0282). */
+	pullRequest?: { draft: boolean };
 }
 export interface UpdateIssueEvent {
 	number: number;
@@ -88,12 +93,35 @@ export interface CreateCommentEvent {
 
 const notFound: ActorFailure = { error: 'Not Found', status: 404 };
 
-function issueUrls(d: RepositoryData, n: number) {
+function issueUrls(d: RepositoryData, n: number, pull = false) {
 	return {
 		url: `${d.apiBase}/repos/${d.owner}/${d.name}/issues/${n}`,
 		repository_url: `${d.apiBase}/repos/${d.owner}/${d.name}`,
 		comments_url: `${d.apiBase}/repos/${d.owner}/${d.name}/issues/${n}/comments`,
-		html_url: `${d.webBase}/${d.owner}/${d.name}/issues/${n}`
+		html_url: `${d.webBase}/${d.owner}/${d.name}/${pull ? 'pull' : 'issues'}/${n}`
+	};
+}
+
+/** GitHub REST shape of a pull request (subset; ADR 0282). */
+export function pullView(d: RepositoryData, i: StoredIssue): Record<string, unknown> {
+	return {
+		id: i.id,
+		node_id: `PR_fake${i.id}`,
+		number: i.number,
+		title: i.title,
+		body: i.body,
+		state: i.state,
+		draft: i.pullRequest?.draft ?? false,
+		locked: false,
+		user: { ...i.user },
+		author_association: i.author_association,
+		created_at: i.created_at,
+		updated_at: i.updated_at,
+		closed_at: i.closed_at,
+		merged_at: null,
+		url: `${d.apiBase}/repos/${d.owner}/${d.name}/pulls/${i.number}`,
+		issue_url: `${d.apiBase}/repos/${d.owner}/${d.name}/issues/${i.number}`,
+		html_url: `${d.webBase}/${d.owner}/${d.name}/pull/${i.number}`
 	};
 }
 
@@ -115,12 +143,14 @@ export function issueView(d: RepositoryData, i: StoredIssue): Issue & Record<str
 		created_at: i.created_at,
 		updated_at: i.updated_at,
 		closed_at: i.closed_at,
-		...issueUrls(d, i.number)
+		...issueUrls(d, i.number, !!i.pullRequest),
+		// Issues endpoints return PRs too, marked like on GitHub.
+		...(i.pullRequest ? { pull_request: { url: `${d.apiBase}/repos/${d.owner}/${d.name}/pulls/${i.number}`, html_url: `${d.webBase}/${d.owner}/${d.name}/pull/${i.number}` } } : {})
 	};
 }
 
 export function commentView(d: RepositoryData, i: StoredIssue, c: StoredComment): IssueComment & Record<string, unknown> {
-	const urls = issueUrls(d, i.number);
+	const urls = issueUrls(d, i.number, !!i.pullRequest);
 	return {
 		id: c.id,
 		node_id: `IC_fake${c.id}`,
@@ -164,10 +194,18 @@ export const repositoryChart = statechart<RepositoryData>({ family: REPOSITORY_F
 						created_at: e.now,
 						updated_at: e.now,
 						closed_at: null,
-						comments: []
+						comments: [],
+						...(e.pullRequest ? { pullRequest: { draft: e.pullRequest.draft } } : {})
 					};
 					d.issues.push(issue);
-					return issueView(d, issue);
+					return e.pullRequest ? { issue: issueView(d, issue), pull: pullView(d, issue) } : issueView(d, issue);
+				})
+			)
+			.on(
+				REPOSITORY_EVENTS.getPull,
+				answer<RepositoryData, { number: number }>((d, e) => {
+					const i = find(d, e.number);
+					return i?.pullRequest ? pullView(d, i) : notFound;
 				})
 			)
 			.on(
@@ -188,7 +226,8 @@ export const repositoryChart = statechart<RepositoryData>({ family: REPOSITORY_F
 					if (p.state === 'closed') {
 						if (i.state !== 'closed') i.closed_at = e.now;
 						i.state = 'closed';
-						i.state_reason = p.state_reason ?? 'completed';
+						// Pull requests have no state_reason on GitHub.
+						i.state_reason = i.pullRequest ? null : (p.state_reason ?? 'completed');
 					} else if (p.state === 'open') {
 						if (i.state !== 'open') i.state_reason = p.state_reason ?? 'reopened';
 						else if (p.state_reason !== undefined) i.state_reason = p.state_reason;

@@ -130,7 +130,9 @@ export function createFakeSystem(options: FakeSystemOptions) {
 							repositorySelection: i.repositorySelection,
 							repos: [...i.repos],
 							suspended: i.suspended,
-							createdAt: i.createdAt
+							createdAt: i.createdAt,
+							permissions: { ...(i.permissions ?? {}) },
+							events: [...(i.events ?? [])]
 						}))
 					);
 					state.appDeliveries!.push(
@@ -157,7 +159,8 @@ export function createFakeSystem(options: FakeSystemOptions) {
 							repoId: d.id,
 							owner: d.owner,
 							repo: d.name,
-							comments: i.comments.map((c) => commentView(d, i, c))
+							comments: i.comments.map((c) => commentView(d, i, c)),
+							...(i.pullRequest ? { pullRequest: { draft: i.pullRequest.draft } } : {})
 						};
 						state.issues.push(issue);
 					}

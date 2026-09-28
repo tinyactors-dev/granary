@@ -41,7 +41,13 @@ export const CONTROL_PATHS = {
 	/** Install the app on every account (all repos) the first time one of its repos has an event (ADR 0230). */
 	appAutoInstall: (appId: number) => `/__control/apps/${appId}/auto-install`,
 	/** ADR 0164: while down, webhook deliveries fail with status_code 0 (catch-up tests). */
-	webhookOutage: '/__control/webhook-outage'
+	webhookOutage: '/__control/webhook-outage',
+	/** ADR 0282: open a pull request as a user; delivers `pull_request`/`opened`. */
+	pulls: '/__control/pulls',
+	/** ADR 0282: change what an app asks for (installations keep the old set until they accept). */
+	appPermissions: (appId: number) => `/__control/apps/${appId}/permissions`,
+	/** ADR 0282: the account accepts the app's current permissions; delivers `installation`/`new_permissions_accepted`. */
+	acceptPermissions: (installationId: number) => `/__control/installations/${installationId}/accept-permissions`
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -219,7 +225,9 @@ export const FakeIssue = Type.Intersect([
 		repoId: Type.Integer(),
 		owner: Type.String(),
 		repo: Type.String(),
-		comments: Type.Array(IssueComment)
+		comments: Type.Array(IssueComment),
+		/** Present for pull requests (ADR 0282). */
+		pullRequest: Type.Optional(Type.Object({ draft: Type.Boolean() }))
 	})
 ]);
 export type FakeIssue = Static<typeof FakeIssue>;
@@ -287,7 +295,10 @@ export const FakeInstallation = Type.Object(
 		/** Repo full names (`owner/name`) when `selected`. */
 		repos: Type.Array(Type.String()),
 		suspended: Type.Boolean(),
-		createdAt: Type.Number()
+		createdAt: Type.Number(),
+		/** Accepted permissions / events (ADR 0282). */
+		permissions: Type.Optional(Type.Record(Type.String(), Type.String())),
+		events: Type.Optional(Type.Array(Type.String()))
 	},
 	closed
 );
@@ -325,6 +336,41 @@ export const InstallAppRequest = Type.Object(
 export type InstallAppRequest = Static<typeof InstallAppRequest>;
 export const InstallAppResponse = Type.Object({ installationId: Type.Integer(), deliveryId: Type.String() }, closed);
 export type InstallAppResponse = Static<typeof InstallAppResponse>;
+
+// ---------------------------------------------------------------------------
+// Pull requests and app permissions (ADR 0282)
+// ---------------------------------------------------------------------------
+
+/** POST /__control/pulls → {number, deliveryId} (PRs share the repo's issue number sequence). */
+export const CreatePullRequestRequest = Type.Object(
+	{
+		owner: Login,
+		repo: RepoName,
+		author: Login,
+		title: Type.String({ minLength: 1 }),
+		body: Type.Optional(Type.String()),
+		association: Type.Optional(AuthorAssociation),
+		draft: Type.Optional(Type.Boolean())
+	},
+	closed
+);
+export type CreatePullRequestRequest = Static<typeof CreatePullRequestRequest>;
+export const CreatePullRequestResponse = CreateIssueResponse;
+export type CreatePullRequestResponse = Static<typeof CreatePullRequestResponse>;
+
+/** POST /__control/apps/{appId}/permissions → the app (as in state). */
+export const SetAppPermissionsRequest = Type.Object(
+	{ permissions: Type.Record(Type.String(), Type.Union([Type.Literal('read'), Type.Literal('write')])), events: Type.Array(Type.String()) },
+	closed
+);
+export type SetAppPermissionsRequest = Static<typeof SetAppPermissionsRequest>;
+
+/** POST /__control/installations/{id}/accept-permissions → {installationId, deliveryId}. */
+export const AcceptPermissionsResponse = Type.Object(
+	{ installationId: Type.Integer(), deliveryId: Nullable(Type.String()) },
+	closed
+);
+export type AcceptPermissionsResponse = Static<typeof AcceptPermissionsResponse>;
 
 /** POST /__control/apps/{appId}/auto-install */
 export const AppAutoInstallRequest = Type.Object({ enabled: Type.Boolean() }, closed);
@@ -409,6 +455,19 @@ const IssueRef = {
 
 /** One entry of the fake's event log (`GET /__control/events[/log]`). */
 export const FakeEvent = Type.Union([
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Literal('pull_request.opened'),
+			...IssueRef,
+			author: Type.String(),
+			association: AuthorAssociation,
+			title: Type.String(),
+			draft: Type.Boolean()
+		},
+		closed
+	),
+	Type.Object({ ...EventBase, type: Type.Literal('pull_request.closed'), ...IssueRef, by: Type.String() }, closed),
 	Type.Object(
 		{
 			...EventBase,

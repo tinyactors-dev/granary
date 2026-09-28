@@ -15,6 +15,7 @@ import {
 	CONTROL_PATHS,
 	CreateCommentControlRequest,
 	CreateIssueRequest,
+	CreatePullRequestRequest,
 	RawDeliveryRequest,
 	ResetRequest,
 	EnsureRepoRequest,
@@ -25,6 +26,7 @@ import {
 	type ControlError,
 	type CreateCommentControlResponse,
 	type CreateIssueResponse,
+	type CreatePullRequestResponse,
 	type EventsLogResponse,
 	type RawDeliveryResponse,
 	type EnsureRepoResponse,
@@ -38,6 +40,7 @@ import {
 	OAuthAccessTokenRequest,
 	OAuthAuthorizeQuery,
 	UpdateIssueRequest,
+	UpdatePullRequestRequest,
 	type AuthenticatedUser,
 	type GitHubUser,
 	type Issue,
@@ -415,6 +418,43 @@ async function control(req: Request, path: string): Promise<Response> {
 		return json({ number: issue.number, deliveryId: result?.deliveryId ?? null } satisfies CreateIssueResponse);
 	}
 
+	if (path === CONTROL_PATHS.pulls) {
+		const body = validate(CreatePullRequestRequest, await readJson(req), 'pull request');
+		const { repo, owner } = await ensureRepo(body.owner, body.repo);
+		const author = await ensureUser(body.author);
+		const draft = body.draft ?? false;
+		const created = unwrap<{ issue: Issue; pull: Record<string, unknown> }>(
+			await ask(system, repositoryAddress(repo.id), REPOSITORY_EVENTS.createIssue, {
+				id: nextId(),
+				author: userView(author, bases),
+				title: body.title,
+				body: body.body ?? '',
+				association: body.association ?? 'NONE',
+				now: now(),
+				pullRequest: { draft }
+			}),
+			controlError
+		);
+		const number = created.issue.number;
+		events.emit({
+			type: 'pull_request.opened',
+			...issueRef(repo, number),
+			author: author.login,
+			association: body.association ?? 'NONE',
+			title: created.issue.title,
+			draft
+		});
+		const payload = {
+			action: 'opened',
+			number,
+			pull_request: created.pull,
+			repository: repositoryView(repo, owner, bases),
+			sender: userView(author, bases)
+		};
+		const result = await deliverRepoEvent('pull_request', 'opened', payload, repo, number);
+		return json({ number, deliveryId: result?.deliveryId ?? null } satisfies CreatePullRequestResponse);
+	}
+
 	if (path === CONTROL_PATHS.reopen) {
 		const body = validate(ReopenIssueRequest, await readJson(req), 'reopen request');
 		const found = await findRepo(body.owner, body.repo);
@@ -638,6 +678,64 @@ async function currentUser(req: Request): Promise<Response> {
 // ---------------------------------------------------------------------------
 
 const ISSUE_PATH = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)(\/comments)?\/?$/;
+const PULL_PATH = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/?$/;
+
+/**
+ * `GET|PATCH /repos/{o}/{r}/pulls/{n}` (ADR 0282). Installation tokens need
+ * the accepted `pull_requests` permission (`write` for PATCH), as on GitHub:
+ * 403 "Resource not accessible by integration" otherwise.
+ */
+async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Response> {
+	const token = bearer(req);
+	if (!token) return githubError(401, 'Requires authentication');
+	let installation: InstallationRecord | null = null;
+	if (token.startsWith('ghs_')) {
+		const inst = await installationOf(token);
+		if (!inst) return githubError(401, 'Bad credentials');
+		installation = inst.installation;
+	} else if (token.startsWith('eyJ')) {
+		return githubError(401, 'A JSON web token could not be used to access this resource');
+	}
+	const actor = await tokenUser(token);
+	if (!actor) return githubError(401, 'Bad credentials');
+	const fault = await ask<FaultHit | null>(system, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
+	if (fault) {
+		const headers: Record<string, string> = {};
+		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
+		return json({ message: 'injected fault' }, fault.status, headers);
+	}
+	const [, owner, repoName, numberText] = m;
+	const number = Number(numberText);
+	const found = await findRepo(owner!, repoName!);
+	if (!found) return githubError(404, 'Not Found');
+	if (installation && !repoCovered(installation, found.repo.fullName, found.repo.owner)) return githubError(404, 'Not Found');
+	const level = installation?.permissions?.pull_requests;
+	if (installation && !level) return githubError(403, 'Resource not accessible by integration');
+	const address = repositoryAddress(found.repo.id);
+	if (req.method === 'GET') return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
+	if (req.method === 'PATCH') {
+		if (installation && level !== 'write') return githubError(403, 'Resource not accessible by integration');
+		let body: unknown;
+		try {
+			body = JSON.parse(await req.text());
+		} catch {
+			return githubError(400, 'Problems parsing JSON');
+		}
+		const problems = issuesOf(UpdatePullRequestRequest, body);
+		if (problems.length) return json({ message: 'Validation Failed', errors: problems }, 422);
+		const before = await ask<Record<string, unknown> | { error: string }>(system, address, REPOSITORY_EVENTS.getPull, { number });
+		if (isFailure(before)) return githubError(404, 'Not Found');
+		const after = unwrap<Issue>(
+			await ask(system, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
+			(st, msg) => githubError(st, msg)
+		);
+		if ((before as { state: string }).state !== after.state && after.state === 'closed') {
+			events.emit({ type: 'pull_request.closed', ...issueRef(found.repo, number), by: actor.login });
+		}
+		return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
+	}
+	return githubError(404, 'Not Found');
+}
 
 async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Response> {
 	const token = bearer(req);
@@ -764,6 +862,8 @@ async function route(req: Request): Promise<Response> {
 	if (path === '/user' && req.method === 'GET') return currentUser(req);
 	const m = ISSUE_PATH.exec(path);
 	if (m) return rest(req, path, m);
+	const pm = PULL_PATH.exec(path);
+	if (pm) return pulls(req, path, pm);
 	return githubError(404, 'Not Found');
 }
 

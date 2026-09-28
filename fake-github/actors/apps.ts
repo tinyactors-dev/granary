@@ -46,6 +46,13 @@ export interface InstallationRecord {
 	repos: string[];
 	suspended: boolean;
 	createdAt: number;
+	/**
+	 * Permissions and events the account accepted (ADR 0282): copied from the
+	 * app at install time; later app changes apply only after
+	 * `apps.accept-permissions` (GitHub's "Review request" → accept).
+	 */
+	permissions: Record<string, string>;
+	events: string[];
 }
 
 export interface AppDeliveryRecord {
@@ -83,7 +90,9 @@ export const APPS_EVENTS = {
 	resolveToken: 'apps.resolve-token',
 	covering: 'apps.covering',
 	recordDelivery: 'apps.record-delivery',
-	deliveries: 'apps.deliveries'
+	deliveries: 'apps.deliveries',
+	setPermissions: 'apps.set-permissions',
+	acceptPermissions: 'apps.accept-permissions'
 } as const;
 
 const fail = (status: number, error: string): ActorFailure => ({ status, error });
@@ -202,7 +211,9 @@ export const appsChart = statechart<AppsData>({ family: 'apps', revision: 'v1' }
 							repositorySelection: e.selection,
 							repos,
 							suspended: false,
-							createdAt: e.now
+							createdAt: e.now,
+							permissions: { ...(d.apps.find((a) => a.id === e.appId)?.permissions ?? {}) },
+							events: [...(d.apps.find((a) => a.id === e.appId)?.events ?? [])]
 						};
 						d.installations.push(installation);
 						return { installation, created: true, added: repos, removed: [] };
@@ -251,7 +262,8 @@ export const appsChart = statechart<AppsData>({ family: 'apps', revision: 'v1' }
 					for (const installation of d.installations) {
 						if (!repoCovered(installation, e.fullName, e.owner)) continue;
 						const app = d.apps.find((a) => a.id === installation.appId);
-						if (app && app.webhookActive && app.events.includes(e.event)) out.push({ app, installation });
+						// Only events the installation accepted are delivered (ADR 0282).
+						if (app && app.webhookActive && app.events.includes(e.event) && installation.events.includes(e.event)) out.push({ app, installation });
 					}
 					return out;
 				})
@@ -267,5 +279,26 @@ export const appsChart = statechart<AppsData>({ family: 'apps', revision: 'v1' }
 			.on(
 				APPS_EVENTS.deliveries,
 				answer<AppsData, { appId: number }>((d, e) => d.deliveries.filter((x) => x.appId === e.appId))
+			)
+			.on(
+				APPS_EVENTS.setPermissions,
+				answer<AppsData, { appId: number; permissions: Record<string, string>; events: string[] }>((d, e) => {
+					const app = d.apps.find((a) => a.id === e.appId);
+					if (!app) return fail(404, `Unknown app ${e.appId}`);
+					app.permissions = { metadata: 'read', ...e.permissions };
+					app.events = [...e.events];
+					return app;
+				})
+			)
+			.on(
+				APPS_EVENTS.acceptPermissions,
+				answer<AppsData, { installationId: number }>((d, e) => {
+					const installation = d.installations.find((i) => i.id === e.installationId);
+					const app = installation && d.apps.find((a) => a.id === installation.appId);
+					if (!installation || !app) return fail(404, `Unknown installation ${e.installationId}`);
+					installation.permissions = { ...app.permissions };
+					installation.events = [...app.events];
+					return { installation, app };
+				})
 			)
 	);

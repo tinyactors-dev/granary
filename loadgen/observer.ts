@@ -275,6 +275,8 @@ export class Observer {
 			return [];
 		}
 		if (this.repoId === null || e.repoId !== this.repoId) return [];
+		// Personas only open issues; pull request events are not judged (ADR 0282).
+		if (e.type === 'pull_request.opened' || e.type === 'pull_request.closed') return [];
 		const l = this.#ledger(e.number);
 		switch (e.type) {
 			case 'issue.opened': {
