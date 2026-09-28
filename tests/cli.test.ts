@@ -1,8 +1,6 @@
 /**
  * The `granary` CLI against a running server and offline (ADR 0159, 0161,
  * 0203): init, admins, login links, config, doctor, exit codes.
- *
- * `todo` until E1's CLI is in the tree and in `build/` (flip LIVE).
  */
 import { describe, expect, test } from 'bun:test';
 import { existsSync, statSync } from 'node:fs';
@@ -11,17 +9,11 @@ import { runCli, useHarness, type Harness } from './harness';
 import { consumeLoginLink } from './github-app';
 import { EXIT, DATA_DIR_LAYOUT } from '../src/lib/schemas/cli';
 
-const LIVE = process.env.GRANARY_TEST_PENDING === '1';
-const live = LIVE ? test : test.todo;
 const T = 60_000;
 
 let initOutput: { code: number; stdout: string; stderr: string } | null = null;
 
-const h: () => Harness = !LIVE
-	? () => {
-			throw new Error('not live');
-		}
-	: useHarness({
+const h: () => Harness = useHarness({
 			appEnv: { ADMINS: 'admin' },
 			/** Offline commands run before the server starts. */
 			prepare: async (harness) => {
@@ -35,7 +27,7 @@ const h: () => Harness = !LIVE
 		});
 
 describe('granary CLI', () => {
-	live('init (offline) creates a private data dir, prints the key once and writes granary.env', () => {
+	test('init (offline) creates a private data dir, prints the key once and writes granary.env', () => {
 		expect(initOutput?.code).toBe(EXIT.ok);
 		expect(initOutput!.stdout).toMatch(/[0-9a-f]{64}/i);
 		const mode = statSync(h().tmpDir).mode & 0o777;
@@ -43,12 +35,12 @@ describe('granary CLI', () => {
 		expect(existsSync(join(h().tmpDir, DATA_DIR_LAYOUT.envFile))).toBe(true);
 	});
 
-	live('init refuses while the server runs', async () => {
+	test('init refuses while the server runs', async () => {
 		const r = await runCli(h(), ['init', '--yes-i-stored-the-key']);
 		expect(r.code).not.toBe(EXIT.ok);
 	});
 
-	live('admin list (socket) shows seeded and offline-added admins', async () => {
+	test('admin list (socket) shows seeded and offline-added admins', async () => {
 		expect(existsSync(join(h().tmpDir, DATA_DIR_LAYOUT.adminSocket))).toBe(true);
 		const r = await runCli(h(), ['admin', 'list', '--json']);
 		expect(r.code).toBe(EXIT.ok);
@@ -56,7 +48,7 @@ describe('granary CLI', () => {
 		expect(logins).toEqual(expect.arrayContaining(['admin', 'offline-admin']));
 	});
 
-	live(
+	test(
 		'admin add + login-link: the new admin signs in with the one-time link',
 		async () => {
 			expect((await runCli(h(), ['admin', 'add', 'bob'])).code).toBe(EXIT.ok);
@@ -73,18 +65,18 @@ describe('granary CLI', () => {
 		T
 	);
 
-	live('admin remove: the last admin cannot be removed', async () => {
+	test('admin remove: the last admin cannot be removed', async () => {
 		for (const l of ['bob', 'offline-admin']) expect((await runCli(h(), ['admin', 'remove', l])).code).toBe(EXIT.ok);
 		expect((await runCli(h(), ['admin', 'remove', 'admin'])).code).toBe(EXIT.error);
 	});
 
-	live('config get returns what was set offline', async () => {
+	test('config get returns what was set offline', async () => {
 		const r = await runCli(h(), ['config', 'get', 'ui.greeting', '--json']);
 		expect(r.code).toBe(EXIT.ok);
 		expect(r.stdout).toContain('hello');
 	});
 
-	live('doctor --json reports its checks', async () => {
+	test('doctor --json reports its checks', async () => {
 		const r = await runCli(h(), ['doctor', '--json']);
 		expect([EXIT.ok, EXIT.error] as number[]).toContain(r.code);
 		const checks = JSON.parse(r.stdout) as { name: string; ok: boolean }[] | { checks: { name: string; ok: boolean }[] };
@@ -93,13 +85,13 @@ describe('granary CLI', () => {
 		expect(list.some((c) => /database|integrity/i.test(c.name) && c.ok)).toBe(true);
 	});
 
-	live('version works without a server', async () => {
+	test('version works without a server', async () => {
 		const r = await runCli(h(), ['version', '--json']);
 		expect(r.code).toBe(EXIT.ok);
 		expect(r.stdout).toContain('bun');
 	});
 
-	live(
+	test(
 		'socket-only commands exit 3 when no server runs; direct-mode commands still work',
 		async () => {
 			await h().killApp('SIGTERM');

@@ -90,6 +90,10 @@ description = "Run the built app with dev env (fake GitHub)"
 env = { _.file = "config/dev.env", ORIGIN = "http://localhost:3000" }
 run = "bun build/index.js"
 
+[tasks."docs:cli"]
+description = "Generate docs/manual/cli.md from the CLI catalogue (ADR 0165)"
+run = "bun tools/docs/cli.ts"
+
 [tasks.check]
 description = "Type-check (svelte-kit sync + svelte-check)"
 run = ["bunx svelte-kit sync", "bunx svelte-check --tsconfig ./tsconfig.json --output human"]
@@ -105,7 +109,7 @@ run = ["ast-grep scan", "tools/check-svelte-boundaries.sh"]
 [tasks.test]
 description = "Integration tests against the built app (ADR 0007)"
 depends = ["build"]
-run = "bun test --parallel=4 tests/"
+run = "bun test --parallel=4 ./tests/"
 
 [tasks.prod]
 description = "Run the built app with production secrets from fnox"

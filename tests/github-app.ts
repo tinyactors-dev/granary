@@ -98,7 +98,8 @@ export async function consumeLoginLink(h: Harness, linkUrl: string): Promise<{ c
 	if (page.status !== 200) throw new Error(`login link page: ${page.status}`);
 	const res = await h.fetchApp(path, {
 		method: 'POST',
-		headers: { Origin: h.appUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
+		// A browser form POST (Accept: text/html) gets the 303; `*/*` would get SvelteKit's JSON action result.
+		headers: { Origin: h.appUrl, 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'text/html' },
 		body: ''
 	});
 	const cookie = cookiesOf(res);
@@ -109,7 +110,8 @@ export async function consumeLoginLink(h: Harness, linkUrl: string): Promise<{ c
 /** Remote-function ids (`<hash>/<name>`) found in the client chunks a page loads. */
 async function remoteIds(h: Harness, cookie: string, pagePath: string): Promise<Map<string, string>> {
 	const html = await (await h.fetchApp(pagePath, { headers: { Cookie: cookie } })).text();
-	const queue = [...html.matchAll(/["'](\/_app\/immutable\/[^"']+\.js)["']/g)].map((m) => m[1]!);
+	// SvelteKit emits relative asset paths (`../_app/immutable/…`) by default.
+	const queue = [...html.matchAll(/["']((?:\.{1,2}\/)*\/?_app\/immutable\/[^"']+\.js)["']/g)].map((m) => new URL(m[1]!, `http://x${pagePath}`).pathname);
 	const seen = new Set<string>();
 	const ids = new Map<string, string>();
 	while (queue.length && seen.size < 200) {
@@ -118,7 +120,8 @@ async function remoteIds(h: Harness, cookie: string, pagePath: string): Promise<
 		seen.add(path);
 		const js = await (await h.fetchApp(path)).text();
 		for (const m of js.matchAll(/[`"']([a-z0-9]{4,12})\/([A-Za-z_$][\w$]*)[`"']/g)) ids.set(m[2]!, `${m[1]}/${m[2]}`);
-		for (const m of js.matchAll(/["'`]\.\/([\w.-]+\.js)["'`]/g)) queue.push(path.replace(/[^/]+$/, m[1]!));
+		// Relative imports (`./x.js`, `../chunks/x.js`), resolved against this chunk's path.
+		for (const m of js.matchAll(/["'`](\.{1,2}\/[\w./-]+\.js)["'`]/g)) queue.push(new URL(m[1]!, `http://x${path}`).pathname);
 	}
 	return ids;
 }

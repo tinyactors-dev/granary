@@ -4,9 +4,7 @@
  * installation sync, closing via installation tokens, token refresh and
  * sign-in via the app's OAuth.
  *
- * The scenarios run in order and share one app. They are `todo` until the
- * CLI/admins (E1), the GitHub App backend (E3) and the settings page (E5)
- * land; flip `live` to `test` then.
+ * The scenarios run in order and share one app.
  */
 import { describe, expect, test } from 'bun:test';
 import { runCli, useHarness, type Harness } from './harness';
@@ -17,16 +15,9 @@ import { actorFinished } from './traces';
 const TOKEN_TTL_MS = 4000;
 const T = 60_000;
 
-/**
- * Flip to true once E1 (CLI, login links), E3 (app backend) and E5 (settings
- * page with the manifest form) are in `build/`. While false, no harness is
- * started (the current build still requires GitHub env) and tests are todo.
- */
-const LIVE = process.env.GRANARY_TEST_PENDING === '1';
-const live = LIVE ? test : test.todo;
 
 /** No GitHub env at all: granary must come up in `none` mode (ADR 0157, 0160). */
-const h: () => Harness = !LIVE ? () => { throw new Error('not live'); } : useHarness({
+const h: () => Harness = useHarness({
 	appEnv: {
 		GITHUB_TOKEN: '',
 		GITHUB_WEBHOOK_SECRET: '',
@@ -42,7 +33,7 @@ let cookie = '';
 let app = { appId: 0, slug: '' };
 
 describe('GitHub App (in-product)', () => {
-	live(
+	test(
 		'before setup: webhooks are refused with 503 and admins are sent to /settings/github',
 		async () => {
 			const res = await h().postWebhook('{}', { signature: 'sha256=00' });
@@ -61,7 +52,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		'manifest flow: one click creates the app; granary stores its credentials',
 		async () => {
 			const created = await setupGitHubApp(h(), cookie);
@@ -75,7 +66,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		'installation sync: the installation webhook makes the repos known',
 		async () => {
 			await h().fakeGithub.installApp(app.appId, { account: OWNER });
@@ -90,7 +81,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		'relay closes an issue with an installation token (comment by <slug>[bot])',
 		async () => {
 			const i = await openIssue(h(), 'mallory');
@@ -102,7 +93,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		'installation tokens are refreshed when they expire',
 		async () => {
 			await settle(TOKEN_TTL_MS + 500);
@@ -113,7 +104,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		'allowlisted users stay open in app mode too',
 		async () => {
 			const i = await openIssue(h(), 'alice');
@@ -123,7 +114,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		"sign-in uses the app's OAuth client",
 		async () => {
 			const start = await h().fetchApp('/auth/login?redirect=/');
@@ -140,7 +131,7 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	live(
+	test(
 		'per-repo disable: issues in a disabled repo are left alone; re-enabling guards it again',
 		async () => {
 			const first = await openIssue(h(), 'mallory');

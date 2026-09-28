@@ -73,7 +73,7 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 	{ name: 'backup list', args: [], transport: 'socket', description: 'List recent backup runs', options: [DATA, JSON_OUT] },
 	{ name: 'restore', args: [], transport: 'offline', description: 'Restore a backup (see `granary restore --help`, ADR 0115)', options: [DATA] },
 	{ name: 'systemd-unit', args: [], transport: 'none', description: 'Print a systemd unit for granary', options: [DATA, { name: 'user', type: 'string', description: 'Service user', default: 'granary' }, { name: 'bin', type: 'string', description: 'Path to the granary binary' }] },
-	{ name: 'version', args: [], transport: 'none', description: 'Print granary, Bun and tinyactors versions', options: [JSON_OUT] }
+	{ name: 'version', args: [], transport: 'none', description: 'Print granary, Bun and tinyactors versions', options: [DATA, JSON_OUT] }
 ] as const;
 
 export type CliCommandName = (typeof CLI_COMMANDS)[number]['name'];

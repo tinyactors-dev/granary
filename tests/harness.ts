@@ -332,8 +332,8 @@ export class Harness {
 		});
 		void pump(this.app.stdout as ReadableStream<Uint8Array>, out);
 		void pump(this.app.stderr as ReadableStream<Uint8Array>, out);
-		// Any non-5xx answer on /auth/login means SvelteKit and the hooks are up.
-		await waitHttp(`${this.appUrl}/auth/login`, this.app, out, this.bootTimeout, (r) => r.status < 500);
+		// /readyz answers 200 once the database, actor system and backend are up (ADR 0163).
+		await waitHttp(`${this.appUrl}/readyz`, this.app, out, this.bootTimeout, (r) => r.ok);
 	}
 
 	/** Kill the app (default SIGKILL) and start it again on the same port and DB. */

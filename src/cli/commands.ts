@@ -180,7 +180,7 @@ export function systemdUnit(p: Parsed): string {
 #          sudo systemctl daemon-reload && sudo systemctl enable --now granary
 [Unit]
 Description=granary (GitHub issue gatekeeper)
-Documentation=https://github.com/tinyactors/granary
+Documentation=https://github.com/tinyactors-dev/granary/tree/main/docs/manual
 After=network-online.target
 Wants=network-online.target
 

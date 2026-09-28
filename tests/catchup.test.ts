@@ -3,25 +3,18 @@
  * granary was unreachable are found in the app's delivery log and
  * redelivered exactly once; the issue is closed exactly once.
  *
- * `todo` until E1 + E3 + E5 are in `build/` (see github-app.test.ts), and
- * until the catch-up timing can be shortened for tests: this file assumes
- * `GRANARY_CATCHUP_FIRST_DELAY_MS` / `GRANARY_CATCHUP_INTERVAL_MS` (E3/E6).
+ * The catch-up cadence is shortened with `GRANARY_CATCHUP_FIRST_DELAY_MS` /
+ * `GRANARY_CATCHUP_INTERVAL_MS` (ADR 0194).
  */
 import { describe, expect, test } from 'bun:test';
 import { useHarness, type Harness } from './harness';
 import { APP_MODE_ENV, setupAppMode } from './github-app';
 import { expectClosedOnce, openIssue, OWNER, settle, waitClosedOnGithub } from './helpers';
 
-const LIVE = process.env.GRANARY_TEST_PENDING === '1';
-const live = LIVE ? test : test.todo;
 const INTERVAL_MS = 1500;
 const T = 90_000;
 
-const h: () => Harness = !LIVE
-	? () => {
-			throw new Error('not live');
-		}
-	: useHarness({
+const h: () => Harness = useHarness({
 			appEnv: { ...APP_MODE_ENV, GRANARY_CATCHUP_FIRST_DELAY_MS: '500', GRANARY_CATCHUP_INTERVAL_MS: String(INTERVAL_MS) }
 		});
 
@@ -33,12 +26,12 @@ async function redeliveries(guid: string) {
 }
 
 describe('catch-up', () => {
-	live('setup', async () => {
+	test('setup', async () => {
 		({ appId } = await setupAppMode(h(), OWNER));
 		expect(appId).toBeGreaterThan(0);
 	}, T);
 
-	live(
+	test(
 		'webhook outage: the missed issues.opened is redelivered once and the issue closed once',
 		async () => {
 			await h().fakeGithub.webhookOutage(true);
@@ -58,7 +51,7 @@ describe('catch-up', () => {
 		T
 	);
 
-	live(
+	test(
 		'granary down (SIGKILL): deliveries fail to connect; after restart catch-up closes the issue',
 		async () => {
 			await h().killApp('SIGKILL');
@@ -71,7 +64,7 @@ describe('catch-up', () => {
 		T
 	);
 
-	live(
+	test(
 		'delivered webhooks are never redelivered',
 		async () => {
 			const i = await openIssue(h(), 'mallory');
