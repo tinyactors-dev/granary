@@ -1,6 +1,6 @@
 # 42. Observable trace vocabulary
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Span naming superseded by 155
 
 ## Context
 Tests assert on OTLP traces (ADR 0007). tinyactors' spans identify an actor

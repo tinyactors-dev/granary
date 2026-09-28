@@ -1,6 +1,6 @@
 # 62. Trace vocabulary and test predicates
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Name-based predicates superseded by 155
 
 ## Context
 Tests assert on tinyactors spans (ADR 0007). The vocabulary was
