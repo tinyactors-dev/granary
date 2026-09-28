@@ -13,3 +13,5 @@ GITHUB_TOKEN = { provider = "1password", value = "granary/github-token", descrip
 GITHUB_WEBHOOK_SECRET = { provider = "1password", value = "granary/webhook-secret", description = "HMAC secret for X-Hub-Signature-256" }
 GITHUB_OAUTH_CLIENT_ID = { provider = "1password", value = "granary/oauth-client-id", description = "GitHub OAuth app client id (UI login)" }
 GITHUB_OAUTH_CLIENT_SECRET = { provider = "1password", value = "granary/oauth-client-secret", description = "GitHub OAuth app client secret (UI login)" }
+OPS_MASTER_KEY = { provider = "1password", value = "granary/ops-master-key", description = "Ops master key (32 bytes, base64 or hex) wrapping secrets and backup keys (ADR 0086, 0097)" }
+OPS_MASTER_KEY_PREVIOUS = { provider = "1password", value = "granary/ops-master-key-previous", description = "Previous ops master key during rotation only; remove once rewrapped (ADR 0086)", if_missing = "ignore" }
