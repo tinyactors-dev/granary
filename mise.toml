@@ -115,6 +115,10 @@ run = "fnox exec -P prod -- bun build/index.js"
 pitchfork = "latest"
 "npm:agent-browser" = "latest"  # interactive browser verification (ADR 0024)
 
+[tasks.deploy]
+description = "Deploy to a host installed per docs/manual/install.md: pack HEAD (or --tarball/--npm), install, restart, verify (ADR 0233)"
+run = "bun tools/deploy/deploy.ts"
+
 [tasks."release:pack"]
 description = "Build the publishable npm package from a clean git export → release/*.tgz (ADR 0180)"
 run = "bun tools/release/pack.ts"
