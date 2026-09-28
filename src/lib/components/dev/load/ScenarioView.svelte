@@ -12,7 +12,7 @@
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import { describeError } from '$lib/components/app/format';
-	import { JsonView } from '$lib/components/json-view';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import type { ScenarioAction } from '$lib/schemas/dev';
 	import LineChart from './LineChart.svelte';
 	import MetricTiles from './MetricTiles.svelte';
@@ -186,7 +186,7 @@
 					</ol>
 					<details class="mt-3">
 						<summary class="text-muted-foreground cursor-pointer text-xs">Configuration</summary>
-						<div class="mt-2"><JsonView value={d.config} rootLabel="config" height="16rem" expandDepth={2} /></div>
+						<div class="mt-2"><JsonBlock value={d.config} preset="compact" rootLabel="config" alwaysTree /></div>
 					</details>
 				</Card.Content>
 			</Card.Root>

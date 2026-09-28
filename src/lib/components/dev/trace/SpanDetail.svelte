@@ -2,7 +2,7 @@
 	import type { SpanSummary } from '$lib/schemas/dev';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import CopyButton from '$lib/components/app/CopyButton.svelte';
-	import { prettyJson } from '$lib/components/app/format';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import LinkIcon from '@lucide/svelte/icons/link';
 	import CornerUpLeftIcon from '@lucide/svelte/icons/corner-up-left';
 	import { displayValue, formatDuration } from './tree';
@@ -86,7 +86,7 @@
 							<td class="text-muted-foreground w-[1%] py-1 pr-3 pl-2 font-mono whitespace-nowrap">{key}</td>
 							<td class="py-1 pr-2 font-mono break-all">
 								{#if v.json}
-									<pre class="whitespace-pre-wrap">{prettyJson(v.value)}</pre>
+									<JsonBlock value={v.value} preset="inline" rootLabel={key} />
 								{:else}
 									{String(v.value)}
 								{/if}

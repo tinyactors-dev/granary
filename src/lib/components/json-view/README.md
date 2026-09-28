@@ -32,6 +32,7 @@ be copied into another project as is. Playground: `/__dev/components/json-view`
 | `rowHeight` | `number` | `22` | px. Virtualization uses a fixed row height. |
 | `height` | `string` | `'28rem'` | CSS height of the whole component (toolbar, rows, status bar). |
 | `theme` | `'auto' \| 'light' \| 'dark'` | `'auto'` | `auto` follows the inherited `color-scheme`, or a `.dark` ancestor. |
+| `preserveState` | `boolean` | `true` | When `value` is replaced (polling), expanded nodes and the cursor stay on the same paths. `false` starts fresh from `expandDepth`. |
 | `onselect` | `(path: JsonPath, value: unknown) => void` | — | Called whenever the cursor moves. `path` is an array of keys and indices. |
 | `class` | `string` | `''` | Added to the root element. |
 

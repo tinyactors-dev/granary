@@ -7,7 +7,7 @@
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import { formatBytes, issueHref } from '$lib/components/app/format';
 	import ChartTree from './ChartTree.svelte';
-	import JsonTree from './JsonTree.svelte';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import { inlineJson } from './inspect';
 
 	let { snap, compact = false }: { snap: ActorSnapshot; compact?: boolean } = $props();
@@ -21,7 +21,7 @@
 			{#if e.sendId}<span class="text-muted-foreground">send id {e.sendId}</span>{/if}
 			{#if e.origin}<span class="text-muted-foreground ml-auto font-mono">from {e.origin}</span>{/if}
 		</div>
-		{#if e.data !== null}<div class="mt-1 font-mono"><JsonTree value={e.data} openDepth={1} /></div>{/if}
+		{#if e.data !== null}<div class="mt-1"><JsonBlock value={e.data} preset="inline" rootLabel="data" title="{e.name} data" fullscreen={!compact} /></div>{/if}
 	</div>
 {/snippet}
 
@@ -102,12 +102,12 @@
 				<Card.Description>Live data root (JSON-safe copy).</Card.Description>
 			</Card.Header>
 			<Card.Content>
-				<div class="bg-muted/40 max-h-[28rem] overflow-auto rounded-md border p-2 font-mono text-xs" data-testid="actor-data">
-					<JsonTree value={snap.data} openDepth={3} />
+				<div data-testid="actor-data">
+					<JsonBlock value={snap.data} preset="panel" rootLabel="data" title={snap.address ? `${snap.address.family}/${snap.address.name} data` : 'data'} alwaysTree fullscreen={!compact} />
 				</div>
 				{#if snap.completion !== null}
 					<h3 class="mt-3 mb-1 text-sm font-medium">Completion (donedata)</h3>
-					<div class="bg-muted/40 rounded-md border p-2 font-mono text-xs"><JsonTree value={snap.completion} /></div>
+					<JsonBlock value={snap.completion} preset="compact" rootLabel="completion" fullscreen={!compact} />
 				{/if}
 			</Card.Content>
 		</Card.Root>
@@ -139,7 +139,7 @@
 								{#if m.awaited}<span class="bg-muted rounded px-1.5 leading-5">awaited</span>{/if}
 								{#if m.transition}<span class="bg-muted rounded px-1.5 font-mono leading-5">goto {m.transition}</span>{/if}
 							</div>
-							{#if m.data !== null}<div class="mt-1 font-mono"><JsonTree value={m.data} openDepth={1} /></div>{/if}
+							{#if m.data !== null}<div class="mt-1"><JsonBlock value={m.data} preset="inline" rootLabel="data" title="{m.event} data" fullscreen={!compact} /></div>{/if}
 						</div>
 					{:else}
 						<p class="text-muted-foreground text-xs">Empty.</p>

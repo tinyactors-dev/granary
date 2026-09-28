@@ -8,7 +8,7 @@
 	import ScanSearchIcon from '@lucide/svelte/icons/scan-search';
 	import StateBadge from './StateBadge.svelte';
 	import RelativeTime from './RelativeTime.svelte';
-	import JsonView from './JsonView.svelte';
+	import JsonBlock from './JsonBlock.svelte';
 	import { formatBytes } from './format';
 
 	let {
@@ -69,7 +69,7 @@
 				<div class="min-w-0 space-y-4">
 					<div>
 						<h3 class="mb-1.5 text-sm font-medium">Data</h3>
-						<JsonView value={actor.data} class="max-h-80" />
+						<JsonBlock value={actor.data} preset="compact" rootLabel="data" title="{address} data" alwaysTree />
 					</div>
 					{#if actor.delayedSends.length}
 						<div>
@@ -88,7 +88,7 @@
 					{#if actor.mailbox.length}
 						<div>
 							<h3 class="mb-1.5 text-sm font-medium">Mailbox</h3>
-							<JsonView value={actor.mailbox} class="max-h-60" />
+							<JsonBlock value={actor.mailbox} preset="compact" rootLabel="mailbox" title="{address} mailbox" alwaysTree />
 						</div>
 					{/if}
 				</div>

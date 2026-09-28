@@ -19,6 +19,7 @@
 	import { devInjectFault, devOpenIssue, devRedeliver, devReopenIssue, devReset } from '$lib/remote/dev.remote';
 	import { DEV_ASSOCIATIONS, describeError, issueHref } from '$lib/components/app/format';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import NativeSelect from './NativeSelect.svelte';
 	import FieldIssues from './FieldIssues.svelte';
@@ -231,6 +232,7 @@
 					<Tabs.Trigger value="issues">Issues ({fs.issues.length})</Tabs.Trigger>
 					<Tabs.Trigger value="deliveries">Deliveries ({fs.deliveries.length})</Tabs.Trigger>
 					<Tabs.Trigger value="faults">Faults ({fs.faults.length})</Tabs.Trigger>
+					<Tabs.Trigger value="raw">Raw state</Tabs.Trigger>
 				</Tabs.List>
 				<Tabs.Content value="issues">
 					<div class="overflow-hidden rounded-lg border">
@@ -330,6 +332,9 @@
 							</Table.Body>
 						</Table.Root>
 					</div>
+				</Tabs.Content>
+				<Tabs.Content value="raw">
+					<JsonBlock value={fs} preset="panel" rootLabel="state" title="fake GitHub state" alwaysTree />
 				</Tabs.Content>
 			</Tabs.Root>
 		{/if}

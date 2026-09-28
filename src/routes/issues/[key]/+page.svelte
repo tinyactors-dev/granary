@@ -13,7 +13,7 @@
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
-	import JsonView from '$lib/components/app/JsonView.svelte';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import RetryEffectButton from '$lib/components/app/RetryEffectButton.svelte';
 	import ActorPanel from '$lib/components/app/ActorPanel.svelte';
 	import { ISSUE_KEY_RE, issueLabel } from '$lib/components/app/format';
@@ -168,7 +168,7 @@
 						<Card.Title>Effect payload</Card.Title>
 						<Card.Description>The <code>github.close</code> data stored in the outbox row; replies go to <code>{d.effect.replyTo.family}/{d.effect.replyTo.name}</code>.</Card.Description>
 					</Card.Header>
-					<Card.Content><JsonView value={d.effect.payload} /></Card.Content>
+					<Card.Content><JsonBlock value={d.effect.payload} preset="compact" rootLabel="payload" title="github.close payload" alwaysTree /></Card.Content>
 				</Card.Root>
 			{/if}
 		{/if}

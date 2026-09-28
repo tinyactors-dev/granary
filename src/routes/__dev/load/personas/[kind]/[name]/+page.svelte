@@ -12,7 +12,7 @@
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import { issueHref } from '$lib/components/app/format';
 	import ChartTree from '$lib/components/actors/ChartTree.svelte';
-	import { JsonView } from '$lib/components/json-view';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import KindIcon from '$lib/components/dev/load/KindIcon.svelte';
 	import PersonaState from '$lib/components/dev/load/PersonaState.svelte';
 	import PersonaTimeline from '$lib/components/dev/load/PersonaTimeline.svelte';
@@ -129,7 +129,7 @@
 				<Card.Title>Data model</Card.Title>
 				<Card.Description>The persona actor's live data (rng state, counters, current draft…).</Card.Description>
 			</Card.Header>
-			<Card.Content><JsonView value={d.data} rootLabel="data" height="22rem" expandDepth={1} /></Card.Content>
+			<Card.Content><JsonBlock value={d.data} preset="compact" rootLabel="data" expandDepth={1} alwaysTree /></Card.Content>
 		</Card.Root>
 		{#snippet failed(error, reset)}
 			<ErrorAlert {error} retry={() => { void persona?.refresh(); reset(); }} />

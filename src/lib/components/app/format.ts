@@ -91,15 +91,6 @@ export function formatBytes(n: number): string {
 	return `${(n / 1024 / 1024).toFixed(1)} MiB`;
 }
 
-export function prettyJson(value: unknown): string {
-	if (value === undefined) return 'undefined';
-	try {
-		return JSON.stringify(value, null, 2);
-	} catch {
-		return String(value);
-	}
-}
-
 /** Human message + status of anything a remote function can throw (HttpError or Error). */
 export function describeError(error: unknown): { status: number | null; message: string } {
 	const e = error as { status?: unknown; body?: { message?: unknown }; message?: unknown } | null;

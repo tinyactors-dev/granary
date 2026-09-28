@@ -28,6 +28,7 @@
 		setAll,
 		toPointer,
 		type JsonPath,
+		type JsonTree,
 		type ViewMode
 	} from './tree';
 	import { HELP, HELP_COMMON, resolveKey, type Action, type Keymap } from './keymap';
@@ -53,6 +54,12 @@
 		theme?: 'auto' | 'light' | 'dark';
 		/** Called when the cursor moves to a node. */
 		onselect?: (path: JsonPath, value: unknown) => void;
+		/**
+		 * When `value` is replaced (e.g. a polled snapshot), keep expanded
+		 * nodes and the cursor on the same paths (default true). With false,
+		 * a new value starts fresh from `expandDepth`.
+		 */
+		preserveState?: boolean;
 		class?: string;
 	}
 
@@ -67,6 +74,7 @@
 		height = '28rem',
 		theme = 'auto',
 		onselect,
+		preserveState = true,
 		class: className = ''
 	}: Props = $props();
 
@@ -75,7 +83,28 @@
 	const INDENT = 16;
 
 	// --- data -----------------------------------------------------------------
-	const tree = $derived(buildTree(value, expandDepth));
+	// A replaced value keeps expansion and cursor by path (preserveState).
+	let prevTree: JsonTree | null = null;
+	let prevDepth = -1;
+	let carriedCursor = 0;
+	const tree = $derived.by(() => {
+		const t = buildTree(value, expandDepth);
+		const old = prevTree;
+		carriedCursor = 0;
+		if (old && untrack(() => preserveState) && prevDepth === expandDepth) {
+			const open = new Set<string>();
+			for (let n = 0; n < old.size; n++) if (old.expanded[n] === 1) open.add(old.paths[n]!);
+			const cursorPath = old.paths[untrack(() => cursor)] ?? '';
+			for (let n = 0; n < t.size; n++) {
+				const p = t.paths[n]!;
+				if (isContainer(t.kinds[n]!)) t.expanded[n] = n === 0 || open.has(p) ? 1 : 0;
+				if (p === cursorPath) carriedCursor = n;
+			}
+		}
+		prevTree = t;
+		prevDepth = expandDepth;
+		return t;
+	});
 	let rev = $state(0);
 	const bump = () => rev++;
 	const rows = $derived.by(() => {
@@ -127,7 +156,7 @@
 	$effect(() => {
 		tree;
 		untrack(() => {
-			cursor = 0;
+			cursor = carriedCursor;
 			matchPos = -1;
 			fullStrings.clear();
 		});

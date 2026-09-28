@@ -18,7 +18,7 @@
 	import { devSendEvent } from '$lib/remote/dev.remote';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
-	import JsonView from '$lib/components/app/JsonView.svelte';
+	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
 	import { describeError, issueHref } from '$lib/components/app/format';
 	import ActorQuickView from '$lib/components/actors/ActorQuickView.svelte';
 	import { actorHref } from '$lib/components/actors/inspect';
@@ -171,7 +171,7 @@
 			{#if lastResult}
 				<div class="text-sm">
 					<p class="text-muted-foreground mb-1">Result for <code>{lastResult.target}</code>:</p>
-					<JsonView value={lastResult.result} />
+					<JsonBlock value={lastResult.result} preset="compact" rootLabel="result" />
 				</div>
 			{/if}
 		</form>

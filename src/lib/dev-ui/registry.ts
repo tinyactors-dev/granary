@@ -8,6 +8,7 @@ import type { PreviewEntry } from './types';
 import { JSON_DATASETS } from './fixtures/json';
 import JsonViewPreview from './previews/JsonViewPreview.svelte';
 import JsonViewDocs from './previews/JsonViewDocs.svelte';
+import JsonBlockPreview from './previews/JsonBlockPreview.svelte';
 import TraceViewerPreview from './previews/TraceViewerPreview.svelte';
 import TraceViewerDocs from './previews/TraceViewerDocs.svelte';
 
@@ -44,6 +45,29 @@ export const PREVIEWS: PreviewEntry[] = [
 		})).concat([
 			{ id: 'source-mode', title: 'Source mode, emacs keys', args: { ...jsonDefaults, dataset: 'small', mode: 'source', keymap: 'emacs' } }
 		])
+	},
+	{
+		id: 'json-block',
+		title: 'JSON block',
+		description: 'The app wrapper around JSON view: size presets, one-line tiny values, fullscreen dialog, shared keymap (ADR 0058).',
+		source: 'src/lib/components/app/JsonBlock.svelte',
+		preview: JsonBlockPreview,
+		canvas: { padded: true },
+		controls: [
+			{ key: 'value', type: 'select', options: ['live', 'tiny-array', 'tiny-object', 'tiny-string', ...JSON_DATASETS.map((d) => d.id)], help: '"live" replaces the value every second: expansion and cursor survive.' },
+			{ key: 'preset', type: 'select', options: ['inline', 'compact', 'panel'] },
+			{ key: 'context', type: 'select', options: ['card', 'table-cell'], help: 'Where the block sits.' },
+			{ key: 'rootLabel', type: 'text' },
+			{ key: 'alwaysTree', type: 'boolean', help: 'Use the viewer even for tiny values.' },
+			{ key: 'fullscreen', type: 'boolean', help: 'Offer the fullscreen dialog.' }
+		],
+		stories: [
+			{ id: 'compact', title: 'Compact (cards)', description: 'Grows with the content up to ~20rem.', args: { value: 'small', preset: 'compact', context: 'card', rootLabel: 'payload', alwaysTree: false, fullscreen: true } },
+			{ id: 'panel', title: 'Panel (main data)', args: { value: 'large10k', preset: 'panel', context: 'card', rootLabel: 'data', alwaysTree: true, fullscreen: true } },
+			{ id: 'inline-table', title: 'Inline, in a table cell', description: 'Span attributes: tiny values stay one line.', args: { value: 'small', preset: 'inline', context: 'table-cell', rootLabel: 'data', alwaysTree: false, fullscreen: true } },
+			{ id: 'tiny', title: 'Tiny value', description: 'Rendered as one line of code.', args: { value: 'tiny-object', preset: 'compact', context: 'card', rootLabel: '$', alwaysTree: false, fullscreen: true } },
+			{ id: 'live', title: 'Live (polled) value', description: 'Expand a node, move the cursor, wait: state is kept by path.', args: { value: 'live', preset: 'compact', context: 'card', rootLabel: 'data', alwaysTree: true, fullscreen: true } }
+		]
 	},
 	{
 		id: 'trace-viewer',
