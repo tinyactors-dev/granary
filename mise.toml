@@ -70,7 +70,7 @@ run = ["ast-grep scan", "tools/check-svelte-boundaries.sh"]
 [tasks.test]
 description = "Integration tests against the built app (ADR 0007)"
 depends = ["build"]
-run = "bun test tests/"
+run = "bun test --parallel=4 tests/"
 
 [tasks.prod]
 description = "Run the built app with production secrets from fnox"

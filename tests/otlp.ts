@@ -201,6 +201,8 @@ export class Collector {
 	readonly families = new Map<string, string>();
 	readonly epochs = new Map<string, number>();
 	readonly errors: string[] = [];
+	/** Every payload as received (for secret-leak checks, ADR 0150). */
+	readonly raw: { path: string; bytes: Uint8Array }[] = [];
 	private seq = 0;
 	private server: ReturnType<typeof Bun.serve> | null = null;
 	private listeners = new Set<() => void>();
@@ -218,9 +220,15 @@ export class Collector {
 				const path = new URL(req.url).pathname;
 				if (req.method !== 'POST') return new Response('method not allowed', { status: 405 });
 				const bytes = new Uint8Array(await req.arrayBuffer());
+				this.raw.push({ path, bytes });
+				const isJson = (req.headers.get('content-type') ?? '').includes('json');
 				try {
-					if (path === '/v1/traces') this.addTraces(bytes);
-					else if (path === '/v1/logs') this.addLogs(bytes);
+					if (path === '/v1/traces') {
+						if (!isJson) this.addTraces(bytes);
+					} else if (path === '/v1/logs') {
+						if (isJson) this.addJsonLogs(bytes);
+						else this.addLogs(bytes);
+					}
 					else if (path === '/v1/metrics') {
 						/* accepted and ignored */
 					} else return new Response('not found', { status: 404 });
@@ -279,6 +287,30 @@ export class Collector {
 			if (id !== undefined && typeof family === 'string') {
 				this.families.set(`${service}:${log.epoch}:${String(id)}`, family);
 			}
+		}
+		this.notify();
+	}
+
+	/** OTLP/JSON logs (the ops module sends its event log this way, ADR 0121). */
+	private addJsonLogs(bytes: Uint8Array) {
+		type KV = { key: string; value?: { stringValue?: string; intValue?: string | number; boolValue?: boolean } };
+		const val = (v: KV['value']) => v?.stringValue ?? (v?.intValue !== undefined ? Number(v.intValue) : v?.boolValue);
+		const doc = JSON.parse(new TextDecoder().decode(bytes)) as {
+			resourceLogs?: { resource?: { attributes?: KV[] }; scopeLogs?: { logRecords?: { timeUnixNano?: string; severityText?: string; body?: KV['value']; eventName?: string; attributes?: KV[] }[] }[] }[];
+		};
+		for (const rl of doc.resourceLogs ?? []) {
+			const service = String(rl.resource?.attributes?.find((a) => a.key === 'service.name')?.value?.stringValue ?? 'unknown');
+			for (const sl of rl.scopeLogs ?? [])
+				for (const r of sl.logRecords ?? [])
+					this.logs.push({
+						service,
+						epoch: this.epochOf(service),
+						timeUnixNano: BigInt(r.timeUnixNano ?? '0'),
+						severityText: r.severityText ?? '',
+						body: val(r.body),
+						eventName: r.eventName ?? '',
+						attributes: Object.fromEntries((r.attributes ?? []).map((a) => [a.key, val(a.value)]))
+					});
 		}
 		this.notify();
 	}

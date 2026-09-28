@@ -45,7 +45,31 @@ export interface HarnessOptions {
 	loadgen?: boolean;
 	/** Extra env for the load generator process. */
 	loadgenEnv?: Record<string, string>;
+	/**
+	 * Also start fake-infra (`bun fake-infra/server.ts`, ADR 0130) and wire the
+	 * app's operations module to it (ADR 0150): R2 seed destination on the fake
+	 * R2, dev mode for the `/__dev/api/ops` surface, fast test timings.
+	 * `opsSink` picks where the seeded OTLP sink goes: the harness collector
+	 * (default; granary + granary-ops traces arrive there) or fake-infra's
+	 * exe.dev token front (telemetry scenarios).
+	 */
+	infra?: boolean;
+	/** Runs after the collector/fakes start and before the app starts (e.g. pre-fill the DB). */
+	prepare?: (h: Harness) => void | Promise<void>;
+	opsSink?: 'collector' | 'exe-token';
+	/** Extra env for the fake-infra process. */
+	infraEnv?: Record<string, string>;
 }
+
+/** Test values for the ops module and fake-infra (FAKE; ADR 0150). */
+export const OPS_TEST = {
+	masterKey: 'a0'.repeat(32),
+	accountId: '0'.repeat(32),
+	bucket: 'granary-backups',
+	accessKeyId: '0000000000000000000000000000tst1',
+	secretAccessKey: 'ops-test-secret-access-key-0000000000000000000000000000tst1',
+	exeToken: 'exe_ops_test_token_0123456789'
+} as const;
 
 export interface WaitOptions {
 	timeout?: number;
@@ -126,6 +150,13 @@ export class Harness {
 	readonly loadgenPort = freePort();
 	readonly loadgenUrl: string;
 	readonly loadgenOutput = new Output('loadgen');
+	readonly infraPort = freePort();
+	readonly infraTokenPort = freePort();
+	readonly infraPeerPort = freePort();
+	readonly infraUrl: string;
+	readonly infraOutput = new Output('fake-infra');
+	readonly dapPort = freePort();
+	private infra: Subprocess | null = null;
 	private loadgen: Subprocess | null = null;
 	private app: Subprocess | null = null;
 	private fake: Subprocess | null = null;
@@ -135,6 +166,7 @@ export class Harness {
 		this.fakeUrl = `http://127.0.0.1:${this.fakePort}`;
 		this.appUrl = `http://127.0.0.1:${this.appPort}`;
 		this.loadgenUrl = `http://127.0.0.1:${this.loadgenPort}`;
+		this.infraUrl = `http://127.0.0.1:${this.infraPort}`;
 		this.fakeGithub = new FakeGithubClient(this.fakeUrl);
 	}
 
@@ -147,7 +179,7 @@ export class Harness {
 		const env: Record<string, string> = {};
 		for (const [k, v] of Object.entries(process.env)) {
 			if (v === undefined) continue;
-			if (/^(GRANARY_|GITHUB_|FAKE_GITHUB_|OTEL_|LOADGEN_|DATABASE_PATH$|ADMINS$|ORIGIN$|PORT$|HOST$|DAP_PORT$|ALLOWED_USERS_SEED$)/.test(k)) continue;
+			if (/^(GRANARY_|GITHUB_|FAKE_GITHUB_|FAKE_INFRA_|OPS_|OTEL_|LOADGEN_|DATABASE_PATH$|ADMINS$|ORIGIN$|PORT$|HOST$|DAP_PORT$|ALLOWED_USERS_SEED$)/.test(k)) continue;
 			env[k] = v;
 		}
 		return env;
@@ -171,8 +203,55 @@ export class Harness {
 			ADMINS: 'admin',
 			ALLOWED_USERS_SEED: 'alice',
 			OTEL_EXPORTER_OTLP_ENDPOINT: this.collector.url,
+			...(this.options.infra ? this.opsEnv() : {}),
 			...this.options.appEnv
 		};
+	}
+
+	/** App env for the operations module against fake-infra (ADR 0150). */
+	opsEnv(): Record<string, string> {
+		const sink: Record<string, string> =
+			this.options.opsSink === 'exe-token'
+				? { OPS_SEED_OTLP_ENDPOINT: `http://127.0.0.1:${this.infraTokenPort}`, OPS_SEED_OTLP_AUTH: 'exe-vm-token', OPS_SEED_OTLP_TOKEN: OPS_TEST.exeToken }
+				: { OPS_SEED_OTLP_ENDPOINT: this.collector.url, OPS_SEED_OTLP_AUTH: 'none' };
+		return {
+			GRANARY_DEV: '1',
+			DAP_PORT: String(this.dapPort),
+			OPS_MASTER_KEY: OPS_TEST.masterKey,
+			OPS_SEED_R2_ACCOUNT_ID: OPS_TEST.accountId,
+			OPS_SEED_R2_JURISDICTION: 'eu',
+			OPS_SEED_R2_BUCKET: OPS_TEST.bucket,
+			OPS_SEED_R2_ACCESS_KEY_ID: OPS_TEST.accessKeyId,
+			OPS_SEED_R2_SECRET_ACCESS_KEY: OPS_TEST.secretAccessKey,
+			OPS_SEED_R2_ENDPOINT_OVERRIDE: `${this.infraUrl}/s3/eu`,
+			OPS_WATCHDOG_INTERVAL_MS: '300',
+			OPS_TEST_GRACE_SCALE: '0.0001',
+			OPS_TEST_RETRY_BASE_MS: '150',
+			OPS_TEST_RETENTION_INTERVAL_MS: '2000',
+			...sink
+		};
+	}
+
+	infraEnv(): Record<string, string> {
+		return {
+			...this.baseEnv(),
+			FAKE_INFRA_PORT: String(this.infraPort),
+			FAKE_INFRA_EXE_TOKEN_PORT: String(this.infraTokenPort),
+			FAKE_INFRA_EXE_PEER_PORT: String(this.infraPeerPort),
+			FAKE_INFRA_SEED_BUCKET: OPS_TEST.bucket,
+			FAKE_INFRA_SEED_JURISDICTION: 'eu',
+			FAKE_INFRA_SEED_ACCESS_KEY_ID: OPS_TEST.accessKeyId,
+			FAKE_INFRA_SEED_SECRET_ACCESS_KEY: OPS_TEST.secretAccessKey,
+			FAKE_INFRA_SEED_EXE_TOKEN: OPS_TEST.exeToken,
+			...this.options.infraEnv
+		};
+	}
+
+	private async startInfra() {
+		this.infra = Bun.spawn(['bun', 'fake-infra/server.ts'], { cwd: ROOT, env: this.infraEnv(), stdout: 'pipe', stderr: 'pipe' });
+		void pump(this.infra.stdout as ReadableStream<Uint8Array>, this.infraOutput);
+		void pump(this.infra.stderr as ReadableStream<Uint8Array>, this.infraOutput);
+		await waitHttp(`${this.infraUrl}/healthz`, this.infra, this.infraOutput, this.bootTimeout, (r) => r.ok);
 	}
 
 	fakeEnv(): Record<string, string> {
@@ -194,7 +273,9 @@ export class Harness {
 			throw new Error('build/index.js missing — run `mise run build` (or `mise run test`, which builds first)');
 		}
 		this.collector.start();
+		if (this.options.infra) await this.startInfra();
 		await this.startFake();
+		await this.options.prepare?.(this);
 		await this.startApp();
 		if (this.options.loadgen) await this.startLoadgen();
 		return this;
@@ -278,6 +359,12 @@ export class Harness {
 			if (this.fake.exitCode === null) this.fake.kill('SIGKILL');
 			this.fake = null;
 		}
+		if (this.infra) {
+			this.infra.kill('SIGTERM');
+			await Promise.race([this.infra.exited, Bun.sleep(2000)]);
+			if (this.infra.exitCode === null) this.infra.kill('SIGKILL');
+			this.infra = null;
+		}
 		this.collector.stop();
 		rmSync(this.tmpDir, { recursive: true, force: true });
 	}
@@ -347,7 +434,8 @@ export class Harness {
 			this.appOutput.tail(),
 			'--- fake-github output ---',
 			this.fakeOutput.tail(20),
-			...(this.options.loadgen ? ['--- loadgen output ---', this.loadgenOutput.tail(20)] : [])
+			...(this.options.loadgen ? ['--- loadgen output ---', this.loadgenOutput.tail(20)] : []),
+			...(this.options.infra ? ['--- fake-infra output ---', this.infraOutput.tail(20)] : [])
 		]
 			.filter(Boolean)
 			.join('\n');
