@@ -11,10 +11,18 @@ import { startDapServer, stopDapServer } from './dap';
 import { log } from './log';
 import { attachLogExport } from './log-export';
 import { getRuntime, onShutdown, startRuntime, type Runtime } from './system';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { createOps } from '$lib/ops/index';
 import { hasOpsBackend, setOpsBackend, type OpsModule } from '$lib/ops/contract';
 import { createHostHealth } from './ops-health';
+import { AdminStore } from './admins';
+import { startAdminSocket, stopAdminSocket } from './admin-socket';
+import { closeGranarySecrets, openGranarySecrets } from './secrets';
+import { markNotReady, markReady } from './readiness';
+import { DATA_DIR_LAYOUT } from '$lib/schemas/cli';
+import { VERSION } from '$lib/version';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const SIGNALS_KEY = Symbol.for('granary.signals');
 type G = { [SIGNALS_KEY]?: boolean };
@@ -58,8 +66,8 @@ async function startOps(runtime: Runtime, config: Config, opts: { devMode: boole
 		telemetry: { subscribe: () => () => {} }, // reserved: granary pushes via ops.telemetrySink instead (ADR 0121)
 		log,
 		env: process.env,
-		dataDir: dirname(dbPath),
-		version: process.env.npm_package_version ?? '0.0.0',
+		dataDir: resolve(config.dataDir),
+		version: VERSION,
 		devMode: opts.devMode
 	});
 	try {
@@ -82,14 +90,67 @@ async function startOps(runtime: Runtime, config: Config, opts: { devMode: boole
 	});
 }
 
+/** Admin seeds (GRANARY_ADMINS / ADMINS); never removes admins (ADR 0161). */
+function seedAdmins(admins: AdminStore, config: Config): string[] {
+	const added = admins.seedAdmins(config.admins);
+	for (const l of added) log.info(`admins: seeded ${l}`);
+	return added.map((l) => `admin:${l}`);
+}
+
+/** `<data>/granary.pid` (advisory; the CLI uses it to decide offline mode, ADR 0159). */
+function writePidFile(dataDir: string): void {
+	const file = join(dataDir, DATA_DIR_LAYOUT.pidFile);
+	try {
+		writeFileSync(file, `${process.pid}\n`, { mode: 0o600 });
+		onShutdown(() => {
+			try {
+				if (existsSync(file) && readFileSync(file, 'utf8').trim() === String(process.pid)) rmSync(file);
+			} catch {
+				/* ignore */
+			}
+		});
+	} catch (e) {
+		log.warn(`could not write ${file}: ${e instanceof Error ? e.message : String(e)}`);
+	}
+}
+
 export async function bootBackend(config: Config, opts: { devMode: boolean }): Promise<Backend> {
 	const runtime = startRuntime(config, opts);
+	const dataDir = resolve(config.dataDir);
+	const admins = new AdminStore(runtime.wal.db);
+	seedAdmins(admins, config);
+	try {
+		const { keys } = await openGranarySecrets({ db: runtime.wal.db, env: process.env, dataDir, devMode: opts.devMode, log });
+		if (keys.status === 'missing') log.warn('no master key (GRANARY_MASTER_KEY or <data>/master.key): secrets, the GitHub App and backups are disabled; webhooks still land in the inbox (ADR 0157)');
+	} catch (e) {
+		log.error('master key could not be loaded; secrets are disabled', e);
+	}
+	onShutdown(() => closeGranarySecrets());
 	await startOps(runtime, config, opts);
 	if (opts.devMode) {
 		startDapServer(runtime.system, config.dapPort);
 		onShutdown(() => stopDapServer());
 	}
 	installShutdown();
+	const backend = new RealBackend(runtime);
+	writePidFile(dataDir);
+	startAdminSocket({
+		backend,
+		admins: backend.adminStore,
+		dataDir,
+		origin: backend.origin,
+		databasePath: resolve(config.databasePath),
+		seed: () => seedAdmins(backend.adminStore, config),
+		systemCheck: () =>
+			runtime.closed
+				? { name: 'system', status: 'fail', detail: 'the actor system is shut down' }
+				: { name: 'system', status: 'ok', detail: `granary ${VERSION}, pid ${process.pid}` }
+	});
+	onShutdown(() => {
+		markNotReady();
+		stopAdminSocket();
+	});
+	markReady();
 	log.info('backend ready');
-	return new RealBackend(runtime);
+	return backend;
 }

@@ -12,6 +12,8 @@ declare global {
 			sessionId: string | null;
 			/** `isDevMode({ dev, env })` (ADR 0005/0009). Gates /__dev and dev remote functions. */
 			devMode: boolean;
+			/** First-run state (ADR 0161): `needs-github` until a GitHub connection exists. */
+			setupState: import('$lib/schemas/admins').SetupState;
 		}
 		// interface PageData {}
 		// interface PageState {}

@@ -5,9 +5,14 @@
  * typed, normalised `Config`. It throws `ConfigError` listing every problem.
  * Dev mode is computed separately by `isDevMode`, because `dev` comes from
  * `$app/environment` (only available inside SvelteKit).
+ *
+ * Only process-level settings are env/flags (ADR 0157): data dir, ORIGIN,
+ * HOST, PORT, proxy headers, master key, NODE_ENV, GRANARY_DEV. Everything
+ * else is in-product; the GitHub/admin variables here are optional seeds.
  */
 import { Type, type Static } from '@sinclair/typebox';
 import { issuesOf } from './standard';
+import { DATA_DIR_LAYOUT } from './cli';
 
 const Url = Type.String({ pattern: '^https?://[^\\s]+$' });
 const Port = Type.String({ pattern: '^[0-9]{1,5}$' });
@@ -17,7 +22,15 @@ const NonEmpty = Type.String({ minLength: 1 });
 /** Raw environment (strings), as read from `process.env` / `$env/dynamic/private`. */
 export const RawEnv = Type.Object(
 	{
+		/** Data directory (ADR 0157); `granary serve --data` sets it. */
+		GRANARY_DATA_DIR: Type.Optional(NonEmpty),
+		/** Dev/tests: explicit granary.sqlite path; the data dir defaults to its directory. */
 		DATABASE_PATH: Type.Optional(NonEmpty),
+		XDG_STATE_HOME: Type.Optional(Type.String()),
+		HOME: Type.Optional(Type.String()),
+		HOST: Type.Optional(NonEmpty),
+		/** Admin seeds (ADR 0161); alias ADMINS. */
+		GRANARY_ADMINS: Type.Optional(Type.String()),
 		GITHUB_API_URL: Type.Optional(Url),
 		GITHUB_WEB_URL: Type.Optional(Url),
 		GITHUB_TOKEN: Type.Optional(NonEmpty),
@@ -50,16 +63,35 @@ export const RawEnv = Type.Object(
 );
 export type RawEnv = Static<typeof RawEnv>;
 
-/** Variables that must be set unless `requireSecrets: false`. */
-export const REQUIRED_SECRETS = [
-	'GITHUB_TOKEN',
-	'GITHUB_WEBHOOK_SECRET',
-	'GITHUB_OAUTH_CLIENT_ID',
-	'GITHUB_OAUTH_CLIENT_SECRET'
-] as const;
+/**
+ * Formerly required GitHub variables. Since ADR 0157 nothing is required at
+ * boot: these are optional seeds for the in-product GitHub connection.
+ */
+export const REQUIRED_SECRETS = [] as const;
+
+/**
+ * Data directory (ADR 0157): `flag` (`--data`) > `GRANARY_DATA_DIR` >
+ * directory of `DATABASE_PATH` (dev/tests) > `$XDG_STATE_HOME/granary` >
+ * `~/.local/state/granary`. Returned as given (relative paths stay relative).
+ */
+export function resolveDataDir(env: Record<string, string | undefined>, flag?: string | null): string {
+	if (flag) return trimSlash(flag) || '/';
+	if (env.GRANARY_DATA_DIR) return trimSlash(env.GRANARY_DATA_DIR) || '/';
+	if (env.DATABASE_PATH && env.DATABASE_PATH !== ':memory:') {
+		const i = env.DATABASE_PATH.lastIndexOf('/');
+		return i > 0 ? env.DATABASE_PATH.slice(0, i) : i === 0 ? '/' : '.';
+	}
+	if (env.XDG_STATE_HOME) return `${trimSlash(env.XDG_STATE_HOME)}/granary`;
+	return `${trimSlash(env.HOME ?? '.')}/.local/state/granary`;
+}
 
 export interface Config {
+	/** Data directory (ADR 0157): databases, master.key, granary.env, admin.sock. */
+	dataDir: string;
+	/** `DATABASE_PATH`, else `<dataDir>/granary.sqlite`. */
 	databasePath: string;
+	/** Bind address (`HOST`, default 0.0.0.0; used by `granary serve`). */
+	host: string;
 	/** No trailing slash. */
 	githubApiUrl: string;
 	/** No trailing slash. */
@@ -69,7 +101,10 @@ export interface Config {
 	webhookSecret: string;
 	oauthClientId: string;
 	oauthClientSecret: string;
-	/** Lower-cased, trimmed, empties removed. */
+	/**
+	 * Admin seeds from `GRANARY_ADMINS` (alias `ADMINS`): lower-cased, trimmed,
+	 * empties removed. Admins themselves live in the `admins` table (ADR 0161).
+	 */
 	admins: string[];
 	/** Public app URL, no trailing slash; null if unset (adapter derives it). */
 	origin: string | null;
@@ -110,7 +145,7 @@ export class ConfigError extends Error {
 const trimSlash = (s: string) => s.replace(/\/+$/, '');
 
 export interface LoadConfigOptions {
-	/** Default true. Set false for the stub backend / tooling that never talks to GitHub. */
+	/** Ignored since ADR 0157 (nothing is required at boot); kept for callers. */
 	requireSecrets?: boolean;
 }
 
@@ -133,35 +168,35 @@ export function loadConfig(
 	env: Record<string, string | undefined>,
 	options: LoadConfigOptions = {}
 ): Config {
-	const requireSecrets = options.requireSecrets ?? true;
+	void options;
 	// Treat empty strings as unset (except flags) so `FOO=` behaves like no FOO.
 	const cleaned: Record<string, string> = {};
 	for (const key of Object.keys(RawEnv.properties)) {
 		const v = env[key];
 		if (v === undefined) continue;
-		if (v === '' && key !== 'GRANARY_DEV' && key !== 'GRANARY_STUB_BACKEND' && key !== 'ADMINS') continue;
+		if (v === '' && key !== 'GRANARY_DEV' && key !== 'GRANARY_STUB_BACKEND' && key !== 'ADMINS' && key !== 'GRANARY_ADMINS') continue;
 		cleaned[key] = v;
 	}
 
 	const problems = issuesOf(RawEnv, cleaned).map(
 		(i) => `${i.path.join('.') || '(env)'}: ${i.message} (got ${JSON.stringify(cleaned[String(i.path[0])])})`
 	);
-	if (requireSecrets) {
-		for (const key of REQUIRED_SECRETS) if (!cleaned[key]) problems.push(`${key}: required`);
-	}
 	if (problems.length) throw new ConfigError(problems);
 
 	const raw = cleaned as RawEnv;
 	const fakeGithubPort = Number(raw.FAKE_GITHUB_PORT ?? 4010);
+	const dataDir = resolveDataDir(cleaned);
 	return {
-		databasePath: raw.DATABASE_PATH ?? './data/granary.sqlite',
+		dataDir,
+		databasePath: raw.DATABASE_PATH ?? `${dataDir}/${DATA_DIR_LAYOUT.database}`,
+		host: raw.HOST ?? '0.0.0.0',
 		githubApiUrl: trimSlash(raw.GITHUB_API_URL ?? 'https://api.github.com'),
 		githubWebUrl: trimSlash(raw.GITHUB_WEB_URL ?? 'https://github.com'),
 		githubToken: raw.GITHUB_TOKEN ?? '',
 		webhookSecret: raw.GITHUB_WEBHOOK_SECRET ?? '',
 		oauthClientId: raw.GITHUB_OAUTH_CLIENT_ID ?? '',
 		oauthClientSecret: raw.GITHUB_OAUTH_CLIENT_SECRET ?? '',
-		admins: (raw.ADMINS ?? '')
+		admins: (raw.GRANARY_ADMINS ?? raw.ADMINS ?? '')
 			.split(',')
 			.map((s) => s.trim().toLowerCase())
 			.filter(Boolean),

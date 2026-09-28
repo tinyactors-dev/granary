@@ -32,7 +32,8 @@ import type {
 	VerdictSummary
 } from '../schemas/api';
 import { formatAddress, parseIssueKey, type ActorAddress } from '../schemas/actors';
-import { isAdminLogin } from '../schemas/config';
+import { AdminStore, AdminStoreError } from './admins';
+import { masterKeyStatus } from './secrets';
 import type {
 	DapLaunchConfig,
 	DevInfo,
@@ -127,8 +128,30 @@ function jsonSafe(v: unknown): unknown {
 export class RealBackend implements Backend {
 	readonly #rt: Runtime;
 
+	readonly #admins: AdminStore;
+
 	constructor(runtime: Runtime) {
 		this.#rt = runtime;
+		this.#admins = new AdminStore(runtime.wal.db);
+	}
+
+	/** Admins, login links, audit and settings (ADR 0161); shared with the admin socket. */
+	get adminStore(): AdminStore {
+		return this.#admins;
+	}
+
+	/** Public URL for links (ORIGIN, else the local port). */
+	get origin(): string {
+		return this.#rt.config.origin ?? `http://localhost:${this.#rt.config.port}`;
+	}
+
+	#adminCall<T>(fn: () => T): T {
+		try {
+			return fn();
+		} catch (e) {
+			if (e instanceof AdminStoreError) throw new BackendError(e.code, e.message);
+			throw e;
+		}
 	}
 
 	get #wal() {
@@ -136,7 +159,7 @@ export class RealBackend implements Backend {
 	}
 
 	#user(login: string, avatarUrl: string | null): SessionUser {
-		return { login, avatarUrl, isAdmin: isAdminLogin(this.#rt.config, login) };
+		return { login, avatarUrl, isAdmin: this.#admins.isAdmin(login) };
 	}
 
 	#requireDev(): void {
@@ -485,7 +508,7 @@ export class RealBackend implements Backend {
 			dapHost: DAP_HOST,
 			dapPort: this.#rt.config.dapPort,
 			fakeGithubUrl: this.#rt.config.fakeGithubUrl,
-			admins: this.#rt.config.admins
+			admins: this.#admins.listAdmins().map((a) => a.login)
 		};
 		try {
 			const res = await fetch(`${this.#rt.config.fakeGithubUrl}${CONTROL_PATHS.state}`, {
@@ -614,25 +637,32 @@ export class RealBackend implements Backend {
 		throw new BackendError('unavailable', `not implemented yet (ADR 0166, fork ${fork})`);
 	}
 	async getSetupStatus(): Promise<SetupStatus> {
-		return this.#pending('E1');
+		const c = this.#rt.config;
+		return {
+			state: this.#admins.setupState(!!c.githubToken && !!c.webhookSecret),
+			origin: c.origin,
+			masterKey: masterKeyStatus(),
+			adminCount: this.#admins.adminCount()
+		};
 	}
 	async listAdmins(): Promise<Admin[]> {
-		return this.#pending('E1');
+		return this.#admins.listAdmins();
 	}
-	async addAdmin(_login: string, _addedBy: string, _source: Admin['source']): Promise<AddAdminResult> {
-		return this.#pending('E1');
+	async addAdmin(login: string, addedBy: string, source: Admin['source']): Promise<AddAdminResult> {
+		return this.#adminCall(() => this.#admins.addAdmin(login, addedBy, source));
 	}
-	async removeAdmin(_login: string, _removedBy: string): Promise<RemoveAdminResult> {
-		return this.#pending('E1');
+	async removeAdmin(login: string, removedBy: string): Promise<RemoveAdminResult> {
+		return this.#adminCall(() => this.#admins.removeAdmin(login, removedBy));
 	}
-	async createLoginLink(_input: CreateLoginLinkInput, _createdBy: string): Promise<CreatedLoginLink> {
-		return this.#pending('E1');
+	async createLoginLink(input: CreateLoginLinkInput, createdBy: string): Promise<CreatedLoginLink> {
+		return this.#adminCall(() => this.#admins.createLoginLink(input, createdBy, this.origin));
 	}
-	async consumeLoginLink(_token: string): Promise<CreatedSession | null> {
-		return this.#pending('E1');
+	async consumeLoginLink(token: string): Promise<CreatedSession | null> {
+		const login = this.#admins.consumeLoginLink(token);
+		return login ? this.createSession({ login }) : null;
 	}
-	async listAuditLog(_limit: number): Promise<AuditEntry[]> {
-		return this.#pending('E1');
+	async listAuditLog(limit: number): Promise<AuditEntry[]> {
+		return this.#admins.listAudit(limit);
 	}
 
 	// -- GitHub connection (ADR 0160, 0162): implemented by fork E3 ---------------------

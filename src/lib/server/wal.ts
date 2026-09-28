@@ -29,6 +29,7 @@ import {
 	type VerdictRow,
 	type VerdictValue
 } from '../schemas/wal';
+import { secretsTableSql } from '../platform/secrets/store';
 
 /** Schema migrations, applied in order; `PRAGMA user_version` records how many ran. */
 const MIGRATIONS: string[] = [
@@ -75,7 +76,40 @@ const MIGRATIONS: string[] = [
 		created_at INTEGER NOT NULL,
 		expires_at INTEGER NOT NULL
 	);
-	CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);`
+	CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);`,
+	/* 2: platform & first run (ADR 0157, 0158, 0161): admins, login links, audit log, secrets, settings */
+	`CREATE TABLE IF NOT EXISTS admins (
+		login TEXT PRIMARY KEY COLLATE NOCASE,
+		added_by TEXT NOT NULL,
+		added_at INTEGER NOT NULL,
+		source TEXT NOT NULL CHECK (source IN ('seed','cli','ui'))
+	);
+	CREATE TABLE IF NOT EXISTS login_links (
+		token_hash TEXT PRIMARY KEY,
+		login TEXT NOT NULL COLLATE NOCASE,
+		created_by TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL,
+		used_at INTEGER
+	);
+	CREATE INDEX IF NOT EXISTS login_links_expires ON login_links(expires_at);
+	CREATE TABLE IF NOT EXISTS audit_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		at INTEGER NOT NULL,
+		actor TEXT NOT NULL,
+		action TEXT NOT NULL,
+		subject TEXT NOT NULL,
+		detail TEXT
+	);
+	CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log(at);
+	${secretsTableSql('secrets')}
+	CREATE TABLE IF NOT EXISTS settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		source TEXT NOT NULL CHECK (source IN ('seed','cli','ui')),
+		updated_by TEXT NOT NULL,
+		updated_at INTEGER NOT NULL
+	);`
 ];
 
 export interface InsertInbox {
