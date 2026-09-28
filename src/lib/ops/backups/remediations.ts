@@ -6,6 +6,7 @@
 import type { RemediationHandler } from '../feature';
 import type { RemediationAction } from '../schemas/conditions';
 import { MAX_STRETCHED_INTERVAL_MS } from '../schemas/plans';
+import { REMEDIATION_STRETCH_HOLD_MS } from './runtime';
 import { OPS_CONFIG_ADDRESS, drillAddress, planAddress, uploadAddress } from '../schemas/events';
 import type { BackupsRuntime } from './runtime';
 import { openStore } from './stores';
@@ -41,6 +42,8 @@ export function backupsRemediations(rt: BackupsRuntime): Partial<Record<Remediat
 				const next = Math.min(Math.max(MAX_STRETCHED_INTERVAL_MS, p!.intervalMs), cur * 2);
 				if (next > cur) {
 					rt.r.setEffectiveInterval(p!.id, next);
+					// Keep the stretch for a day so the next egress refresh can't undo it (ADR 0150).
+					rt.r.kvSet(`stretch:${p!.id}`, JSON.stringify({ ms: next, until: rt.now + REMEDIATION_STRETCH_HOLD_MS }));
 					rt.post(OPS_CONFIG_ADDRESS, 'config.changed', { area: 'plan', id: p!.id });
 					changed.push(`${p!.id}: ${Math.round(cur / 60_000)} → ${Math.round(next / 60_000)} min`);
 				}

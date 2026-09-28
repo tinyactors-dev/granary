@@ -195,7 +195,8 @@ export class StubOpsBackend implements OpsBackend {
 				return { database, destinationId: d.id, destinationKind: d.settings.kind, offsite: d.settings.kind !== 'local-dir', lastVerifiedAt: r?.run.startedAt ?? null, lastVerifiedBytes: r?.run.sealedBytes ?? null, withinWindow: !!r && now - r.run.startedAt < 3 * HOUR };
 			})
 		);
-		const d = this.#drills[0]!;
+		// The newest *finished* drill: a running one has no result yet (OpsStatus.lastDrill needs one).
+		const d = this.#drills.find((x) => x.finishedAt !== null && x.result !== null) ?? null;
 		return {
 			at: now,
 			mode: 'ok',
@@ -204,7 +205,7 @@ export class StubOpsBackend implements OpsBackend {
 			attentionCount: attention.length,
 			handledLast24h: this.#events.filter((e) => e.kind === 'handled' && now - e.at < DAY).length,
 			backups,
-			lastDrill: { at: d.finishedAt!, result: d.result!, destinationId: d.destinationId },
+			lastDrill: d ? { at: d.finishedAt!, result: d.result!, destinationId: d.destinationId } : null,
 			telemetry: this.#sinks.map((s) => ({ sinkId: s.id, state: 'idle', lastSuccessAt: now - 3000, droppedLast24h: 0 }))
 		};
 	}

@@ -41,6 +41,8 @@ export interface OpsContext {
 	spawn<Data extends object>(definition: import('@tinyactors/node').Definition<Data>, address: ActorAddress, binding?: Partial<Data>): import('@tinyactors/node').Actor<Data>;
 	/** Never export spans of this definition (telemetry loop breaking, ADR 0093/0120). */
 	excludeFromTraces?(definition: import('@tinyactors/node').Definition<object>): void;
+	/** Addresses the ops System has spawned or loaded (ADR 0150), for naming actors in listings. */
+	addresses?(): ActorAddress[];
 }
 
 /** A self-healing action contributed by a feature (ADR 0101, 0123). Idempotent; never throws for "nothing to do". */

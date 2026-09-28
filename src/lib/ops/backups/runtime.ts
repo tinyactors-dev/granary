@@ -13,6 +13,9 @@ import type { Destination } from '../schemas/destinations';
 import { OPS_FAMILY, drillAddress, planAddress, retentionAddress, type OpsAddress } from '../schemas/events';
 import type { BackupPlan } from '../schemas/plans';
 import { MAX_STRETCHED_INTERVAL_MS } from '../schemas/plans';
+
+/** How long a remediator-applied interval stretch holds against the egress refresh (ADR 0150). */
+export const REMEDIATION_STRETCH_HOLD_MS = 24 * 3_600_000;
 import { BackupsRepo } from './repo';
 import { openStore, type BackupStore } from './stores';
 import { SnapshotWorker } from './worker';
@@ -164,11 +167,30 @@ export class BackupsRuntime {
 		return { ms, stretched: ms > p.intervalMs, projectedBytes, budgetBytes };
 	}
 
+	/** A stretch the remediator applied, still in force (ADR 0150), or null. */
+	remediationStretch(planId: string): number | null {
+		const raw = this.r.kvGet(`stretch:${planId}`);
+		if (!raw) return null;
+		try {
+			const v = JSON.parse(raw) as { ms?: unknown; until?: unknown };
+			return typeof v.ms === 'number' && typeof v.until === 'number' && v.until > this.now ? v.ms : null;
+		} catch {
+			return null;
+		}
+	}
+
 	/** Recompute and persist a plan's effective interval; record a `handled` item when it changes (ADR 0098, 0107). */
 	refreshInterval(planId: string): { planId: string; effectiveIntervalMs: number; stretched: boolean } | null {
 		const plan = this.r.plan(planId);
 		if (!plan) return null;
 		const eff = this.effectiveInterval(plan);
+		// The egress rule may lower the interval, but never below a remediation's
+		// stretch while it holds (ADR 0150).
+		const held = this.remediationStretch(plan.id);
+		if (held !== null && held > eff.ms) {
+			eff.ms = Math.min(MAX_STRETCHED_INTERVAL_MS, held);
+			eff.stretched = eff.ms > plan.intervalMs;
+		}
 		if (eff.ms !== plan.effectiveIntervalMs) {
 			this.r.setEffectiveInterval(plan.id, eff.ms);
 			this.r.event(

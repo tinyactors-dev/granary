@@ -178,14 +178,56 @@ export class HealthBackend implements OpsBackendHealth {
 		};
 	}
 
+	/**
+	 * Import telemetry sinks from a config export (ADR 0150). Like imported
+	 * destinations, sinks arrive **disabled** (enabling needs a passing test,
+	 * ADR 0102); existing ids are skipped; missing secrets are reported.
+	 * Not part of OpsBackendHealth: `composeBackend` calls it from importConfig.
+	 */
+	importSinks(raw: unknown[], actor: string): { created: number; skipped: number; missingSecrets: string[] } {
+		const rt = this.rt();
+		const out = { created: 0, skipped: 0, missingSecrets: [] as string[] };
+		const now = this.ctx.now();
+		for (const r of raw) {
+			const row = (r ?? {}) as { id?: unknown; name?: unknown; config?: unknown };
+			if (typeof row.id !== 'string' || typeof row.name !== 'string' || !row.config || typeof row.config !== 'object') {
+				out.skipped++;
+				continue;
+			}
+			if (rt.repo.exists(row.id)) {
+				out.skipped++;
+				continue;
+			}
+			const body = row.config as Parameters<SinksRepo['upsert']>[0]['body'];
+			const ref = secretRefOf(body.auth);
+			if (ref && !this.#secretExists(ref)) out.missingSecrets.push(ref);
+			try {
+				rt.repo.upsert({ id: row.id, name: row.name, enabled: false, origin: 'ui', body, now });
+				out.created++;
+			} catch (e) {
+				this.ctx.host.log.warn(`ops: imported sink ${row.id} is invalid; skipped`, e instanceof Error ? e.message : e);
+				out.skipped++;
+			}
+		}
+		if (out.created) rt.reconcileSinks();
+		this.ctx.host.log.info(`ops telemetry: ${actor} imported ${out.created} sink(s), skipped ${out.skipped}`);
+		return out;
+	}
+
 	async listOpsActors(): Promise<OpsActorSummary[]> {
 		const system = this.ctx.system;
 		const out: OpsActorSummary[] = [];
 		const seen = new Set<string>();
+		// Addresses by runtime ID, from what the ops System spawned or loaded (ADR 0150).
+		const byId = new Map<string, string>();
+		for (const a of this.ctx.addresses?.() ?? []) {
+			const actor = system.findActor(a);
+			if (actor) byId.set(`${actor.slot}:${actor.generation}`, a.name);
+		}
 		for (const i of system.actors()) {
 			const family = i.definition.family;
-			const name = nameOf(family, i.data);
 			const k = `${i.actor.slot}:${i.actor.generation}`;
+			const name = byId.get(k) ?? nameOf(family, i.data);
 			if (seen.has(k)) continue;
 			seen.add(k);
 			out.push({ address: { family, name: name ?? `#${i.actor.slot}` }, activeStates: [...i.activeStates], scheduling: i.scheduling });

@@ -115,7 +115,8 @@ export const createOps: CreateOps = (host) => {
 					}
 				},
 				spawn: (definition, address, binding) => sys.spawn(definition, address, binding),
-				excludeFromTraces: (d) => sys.excludeFromTraces(d)
+				excludeFromTraces: (d) => sys.excludeFromTraces(d),
+				addresses: () => sys.known()
 			};
 			for (const f of features)
 				for (const [family, l] of Object.entries(f.loaders ?? {}))
@@ -144,6 +145,14 @@ export const createOps: CreateOps = (host) => {
 				}
 			}
 			const backupsOk = !!backups && !failed.has(backups.name);
+			// Seed sinks whose token secret the backups feature just seeded (ADR 0150).
+			if (backupsOk) {
+				try {
+					health.runtime()?.reseedSinks();
+				} catch (e) {
+					host.log.warn('ops: re-seeding telemetry sinks failed', e instanceof Error ? e.message : e);
+				}
+			}
 			backend = composeBackend({ health: health.backend(ctx), ...(backupsOk ? { backups: backups!.backend(ctx) } : {}) });
 			sink = health.telemetrySink(ctx);
 			host.log.info(

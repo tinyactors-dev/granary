@@ -42,6 +42,12 @@ export interface HealthRuntime {
 	lastMeasurements: () => Measurements | null;
 	sinkStates(): (SinkState & { droppedLast24h: number; enabled: boolean; data: TelemetrySinkData | null })[];
 	reconcileSinks(): void;
+	/**
+	 * Re-run the sink seeds and reconcile (ADR 0150): the seed sink's token
+	 * secret is stored by the backups feature, which starts after health, so
+	 * a token-auth seed sink is first created disabled and enabled here.
+	 */
+	reseedSinks(): void;
 	/** Sample now (tests, acknowledge). */
 	sampleNow(): void;
 	status(): ReturnType<typeof computeStatus>;
@@ -255,6 +261,10 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 						};
 					}),
 				reconcileSinks,
+				reseedSinks: () => {
+					for (const m of seedSinks({ repo, env: ctx.host.env, db: ctx.db, now: ctx.now(), log: ctx.host.log })) ctx.host.log.info(`ops telemetry: ${m}`);
+					reconcileSinks();
+				},
 				sampleNow: () => ctx.post(WATCHDOG_ADDRESS, 'watchdog.sample-now', {}),
 				status: () =>
 					computeStatus({

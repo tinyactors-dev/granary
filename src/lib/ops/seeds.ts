@@ -12,7 +12,7 @@ import { GiB } from './schemas/common';
 import { DEFAULT_DRILL_INTERVAL_MS, DEFAULT_INTERVAL_MS } from './schemas/plans';
 import type { R2Jurisdiction, RetentionCaps, RetentionSchedule } from './schemas/destinations';
 
-export const SEED_IDS = { r2: 'seed-r2', s3: 'seed-s3', local: 'seed-local', plan: 'seed-all', r2Secret: 'seed-r2-secret', s3Secret: 'seed-s3-secret' } as const;
+export const SEED_IDS = { r2: 'seed-r2', s3: 'seed-s3', local: 'seed-local', plan: 'seed-all', r2Secret: 'seed-r2-secret', s3Secret: 'seed-s3-secret', otlpToken: 'seed-otlp-token' } as const;
 
 export const DEFAULT_SCHEDULE: RetentionSchedule = { keepAllHours: 48, dailyDays: 14, weeklyWeeks: 8, monthlyMonths: 12, floor: 3 };
 /** ADR 0108: 8 GiB and 82 backups per database. */
@@ -92,6 +92,21 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 			};
 			repo.insertDestination({ id: SEED_IDS.s3, name: 'S3-compatible (seed)', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.s3);
+		}
+	}
+
+	// Telemetry token seed (ADR 0122, 0150): the health feature's seed sink
+	// `seed-otlp` references the secret `seed-otlp-token`; the secret store
+	// belongs to backups, so the value is stored here. Never overwritten.
+	if (env.OPS_SEED_OTLP_TOKEN) {
+		const mode = env.OPS_SEED_OTLP_AUTH ?? 'none';
+		const kind = mode === 'exe-vm-token' ? 'exe-vm-token' : mode === 'bearer' ? 'bearer-token' : mode === 'basic' ? 'basic-password' : null;
+		if (!kind) out.skipped.push(`${SEED_IDS.otlpToken} (OPS_SEED_OTLP_AUTH=${mode} takes no token)`);
+		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.otlpToken} (no master key)`);
+		else if (secrets.exists(SEED_IDS.otlpToken)) out.skipped.push(SEED_IDS.otlpToken);
+		else {
+			await secrets.set({ name: 'OTLP token (seed)', kind, value: env.OPS_SEED_OTLP_TOKEN }, 'seed', { createId: SEED_IDS.otlpToken });
+			out.created.push(SEED_IDS.otlpToken);
 		}
 	}
 

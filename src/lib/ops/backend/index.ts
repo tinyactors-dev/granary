@@ -3,7 +3,7 @@
  * backups half are separate objects; methods of a feature that isn't
  * composed (yet) reject with `unavailable` instead of crashing the page.
  */
-import { OpsBackendError, type OpsBackend, type OpsBackendBackups, type OpsBackendHealth } from '../contract';
+import { OpsBackendError, type ConfigExport, type ImportResult, type OpsBackend, type OpsBackendBackups, type OpsBackendHealth } from '../contract';
 
 export const HEALTH_METHODS = [
 	'getStatus', 'getBanner', 'markVisited', 'listConditions', 'acknowledgeCondition', 'listEvents',
@@ -28,10 +28,31 @@ function bindAll<T extends object>(target: T | undefined, methods: readonly stri
 	}
 }
 
-export function composeBackend(parts: { health?: OpsBackendHealth; backups?: OpsBackendBackups }): OpsBackend {
+/** Health-side sink import, used by the composed importConfig (ADR 0150). */
+export interface SinkImporter {
+	importSinks(raw: unknown[], actor: string): { created: number; skipped: number; missingSecrets: string[] };
+}
+
+export function composeBackend(parts: { health?: OpsBackendHealth & Partial<SinkImporter>; backups?: OpsBackendBackups }): OpsBackend {
 	const out: Record<string, unknown> = {};
 	bindAll(parts.health, HEALTH_METHODS, 'health', out);
 	bindAll(parts.backups, BACKUP_METHODS, 'backups', out);
+	// Config import spans both halves: backups imports destinations/plans/budgets,
+	// health imports sinks (ADR 0150).
+	const health = parts.health;
+	const backups = parts.backups;
+	if (backups && health?.importSinks) {
+		out.importConfig = async (config: ConfigExport, actor: string): Promise<ImportResult> => {
+			const res = await backups.importConfig({ ...config, sinks: [] }, actor);
+			const sinks = health.importSinks!(config.sinks ?? [], actor);
+			return {
+				created: res.created + sinks.created,
+				updated: res.updated,
+				skipped: res.skipped + sinks.skipped,
+				missingSecrets: [...new Set([...res.missingSecrets, ...sinks.missingSecrets])]
+			};
+		};
+	}
 	return out as unknown as OpsBackend;
 }
 
