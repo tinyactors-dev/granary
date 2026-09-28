@@ -117,6 +117,8 @@ export interface DeliverySummary {
 	issueKey: string | null;
 	state: InboxState;
 	receivedAt: number;
+	/** Why an `ignored` delivery is not acted on (ADR 0220); null otherwise. */
+	ignoreReason: string | null;
 	/** From the payload when `event='issues'` and it parses; else null. */
 	issue: IssueSummary | null;
 }

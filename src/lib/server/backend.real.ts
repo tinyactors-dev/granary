@@ -216,6 +216,7 @@ export class RealBackend implements Backend {
 			issueKey: row.issue_key,
 			state: row.state,
 			receivedAt: row.received_at,
+			ignoreReason: row.ignore_reason ?? null,
 			issue: this.#issueSummary(row)
 		};
 	}

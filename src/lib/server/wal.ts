@@ -111,7 +111,9 @@ const MIGRATIONS: string[] = [
 		updated_at INTEGER NOT NULL
 	);`,
 	/* 3: revocable login links (ADR 0170) */
-	`ALTER TABLE login_links ADD COLUMN revoked_at INTEGER;`
+	`ALTER TABLE login_links ADD COLUMN revoked_at INTEGER;`,
+	/* 4: why a delivery was ignored (ADR 0220) */
+	`ALTER TABLE inbox ADD COLUMN ignore_reason TEXT;`
 ];
 
 export interface InsertInbox {
@@ -121,6 +123,8 @@ export interface InsertInbox {
 	issueKey: string | null;
 	payload: string;
 	state: 'pending' | 'ignored';
+	/** Why an `ignored` delivery is not acted on (ADR 0220). */
+	ignoreReason?: string | null;
 }
 
 export interface InsertOutbox {
@@ -190,8 +194,8 @@ export class Wal {
 	/** `INSERT OR IGNORE`; true when the row is new. */
 	insertInbox(row: InsertInbox, now = Date.now()): boolean {
 		const r = this.#q(
-			`INSERT OR IGNORE INTO inbox (delivery_id, event, action, issue_key, payload, received_at, state)
-			 VALUES ($id, $event, $action, $key, $payload, $at, $state)`
+			`INSERT OR IGNORE INTO inbox (delivery_id, event, action, issue_key, payload, received_at, state, ignore_reason)
+			 VALUES ($id, $event, $action, $key, $payload, $at, $state, $reason)`
 		).run({
 			id: row.deliveryId,
 			event: row.event,
@@ -199,7 +203,8 @@ export class Wal {
 			key: row.issueKey,
 			payload: row.payload,
 			at: now,
-			state: row.state
+			state: row.state,
+			reason: row.state === 'ignored' ? (row.ignoreReason ?? null) : null
 		});
 		return r.changes === 1;
 	}

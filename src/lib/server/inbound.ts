@@ -130,7 +130,8 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 	const state = actionable ? 'pending' : 'ignored';
 	let inserted: boolean;
 	try {
-		inserted = rt.wal.insertInbox({ deliveryId, event, action, issueKey: key, payload: raw, state });
+		const ignoreReason = actionable ? null : (reason ?? `${action ? `${event}.${action}` : event} is not acted on`);
+		inserted = rt.wal.insertInbox({ deliveryId, event, action, issueKey: key, payload: raw, state, ignoreReason });
 	} catch (e) {
 		log.error(`webhook: could not store delivery ${deliveryId}`, e);
 		return { status: 500, body: 'Could not store delivery' };

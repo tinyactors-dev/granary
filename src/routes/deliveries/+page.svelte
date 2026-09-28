@@ -49,7 +49,10 @@
 			<Table.Row>
 				<Table.Cell><IssueRef issueKey={d.issueKey} issue={d.issue} /></Table.Cell>
 				<Table.Cell class="font-mono text-xs">{d.event}{d.action ? `.${d.action}` : ''}</Table.Cell>
-				<Table.Cell><StateBadge state={d.state} /></Table.Cell>
+				<Table.Cell>
+					<StateBadge state={d.state} />
+					{#if d.ignoreReason}<div class="text-muted-foreground mt-0.5 max-w-64 text-xs" data-testid="ignore-reason">{d.ignoreReason}</div>{/if}
+				</Table.Cell>
 				<Table.Cell class="text-muted-foreground max-w-48 truncate font-mono text-xs" title={d.deliveryId}>{d.deliveryId}</Table.Cell>
 				<Table.Cell class="text-muted-foreground text-right text-sm"><RelativeTime ms={d.receivedAt} /></Table.Cell>
 			</Table.Row>

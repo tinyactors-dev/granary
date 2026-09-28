@@ -83,7 +83,9 @@ export const InboxRow = Type.Object(
 		issue_key: Nullable(IssueKey),
 		payload: Type.String(),
 		received_at: EpochMs,
-		state: InboxState
+		state: InboxState,
+		/** Why an `ignored` row is not acted on (migration 4, ADR 0220). */
+		ignore_reason: Type.Optional(Nullable(Type.String()))
 	},
 	{ ...closed, title: 'InboxRow' }
 );

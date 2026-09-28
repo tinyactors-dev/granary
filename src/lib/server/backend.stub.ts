@@ -206,6 +206,7 @@ export class StubBackend implements Backend {
 			issueKey: null,
 			state: 'ignored',
 			receivedAt: now - 200 * MINUTE,
+			ignoreReason: 'ping is not acted on',
 			issue: null
 		});
 		this.deliveries.sort((a, b) => b.receivedAt - a.receivedAt);
@@ -238,6 +239,7 @@ export class StubBackend implements Backend {
 			issueKey: issueKey(REPO_ID, number),
 			state: 'pending',
 			receivedAt: at,
+			ignoreReason: null,
 			issue: summary(issue)
 		});
 		this.ensureFakeUser(author);
@@ -564,6 +566,7 @@ export class StubBackend implements Backend {
 			issueKey: issueKey(issue.repoId, issue.number),
 			state: 'ignored',
 			receivedAt: Date.now(),
+			ignoreReason: 'issues.reopened is not acted on',
 			issue: null
 		});
 		return { deliveryId };
