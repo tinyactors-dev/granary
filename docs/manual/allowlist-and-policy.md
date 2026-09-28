@@ -26,7 +26,7 @@ GitHub sends is stored as *ignored*, with the reason visible on
 can view them. Changes take effect for the next issue.
 
 For a first install you can seed logins with the environment variable
-`ALLOWED_USERS_SEED=alice,bob`. It is applied once at startup and never
+`GRANARY_SEED_ALLOWLIST=alice,bob`. It is applied once at startup and never
 removes or overrides anything edited in the UI.
 
 ## What happens under the hood

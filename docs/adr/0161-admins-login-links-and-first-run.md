@@ -1,6 +1,6 @@
 # 161. In-product admins, login links, and the first-run wizard
 
-Date: 2026-09-28 · Status: accepted · Amends 0004 (admins), 0034
+Date: 2026-09-28 · Status: accepted · Amends 0004 (admins), 0034 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - **Admins** live in `admins` (login COLLATE NOCASE PK, added_by, added_at,

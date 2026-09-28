@@ -34,7 +34,7 @@ and **bucket credentials** (an R2 token with read access).
 ```sh
 bun add -g @tinyactors/granary
 export GRANARY_MASTER_KEY=<the key from your password manager>
-export OPS_RESTORE_SECRET_ACCESS_KEY=<secret access key>
+export GRANARY_RESTORE_SECRET_ACCESS_KEY=<secret access key>
 granary restore --r2-account <account-id> --jurisdiction eu --bucket <bucket> \
   --prefix granary/ --access-key-id <access-key-id> --list
 granary restore --r2-account <account-id> --jurisdiction eu --bucket <bucket> \

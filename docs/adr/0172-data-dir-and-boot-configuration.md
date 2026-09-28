@@ -1,6 +1,6 @@
 # 172. Data dir resolution and what boot still requires
 
-Date: 2026-09-28 · Status: accepted · Implements 0157
+Date: 2026-09-28 · Status: accepted · Implements 0157 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - `resolveDataDir(env, flag)` (in `$lib/schemas/config`): `--data` >

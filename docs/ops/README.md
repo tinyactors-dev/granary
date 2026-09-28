@@ -43,7 +43,7 @@ the product (`/ops`); env vars only seed. **Status: planned.**
 2. Snapshot Worker: `VACUUM INTO` the spool → `integrity_check` → row counts.
 3. `retention/<dest>` makes room first (caps always hold).
 4. `upload/<run>.<dest>`: stream zstd → AES-256-GCM (per-artifact key wrapped
-   by `OPS_MASTER_KEY`) straight into an R2 multipart upload; then PUT the
+   by `GRANARY_MASTER_KEY`) straight into an R2 multipart upload; then PUT the
    manifest with `If-None-Match: *` — the manifest is the create-once commit
    marker. Crashes resume idempotently.
 5. Raw snapshot deleted; at most one local copy kept if the disk allows.
@@ -57,7 +57,7 @@ an **attention** item: a banner on your next visit to the admin UI, a line on
 `/ops`, and a metric/log in Grafana. No email, no push, no heartbeat.
 
 ## Restoring (runbook sketch)
-You need: `OPS_MASTER_KEY` (1Password item `granary`) and an R2 token.
+You need: `GRANARY_MASTER_KEY` (1Password item `granary`) and an R2 token.
 `mise run ops:restore -- --dest seed:r2 --latest --out granary.sqlite`.
 Full runbook: `docs/ops/runbook.md`; exe.dev setup: `docs/ops/exe-dev.md`
 (both milestone M5).

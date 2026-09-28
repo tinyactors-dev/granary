@@ -160,6 +160,12 @@ architecture, and add a new ADR for every new decision.
 - **Tasks** are mise tasks (`mise.toml`). Secrets come from fnox; never
   hardcode real secrets.
 - **Commits:** Conventional Commits, linear history.
+- **No backward compatibility before the first release.** No env-var
+  aliases, no "kept for compatibility" code paths, no migration shims for
+  old dev databases: rename and replace. Every environment variable follows
+  the one naming scheme in ADR 0230 (standard ones unprefixed, else
+  `GRANARY_*` / `GRANARY_SEED_*` / `GRANARY_DEV_*` / `GRANARY_TEST_*`, fakes
+  `FAKE_GITHUB_*` / `FAKE_INFRA_*` / `LOADGEN_*`) and is listed there.
 - **Interactive verification in a browser uses `agent-browser`** (installed via
   mise as `npm:agent-browser`; see `agent-browser --help`). Do not install
   Playwright or download Chromium for checking pages or taking screenshots.

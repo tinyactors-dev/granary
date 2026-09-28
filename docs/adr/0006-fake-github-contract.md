@@ -1,6 +1,6 @@
 # 6. Fake GitHub contract
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 The app, the `/__dev` page and the tests are built in parallel and all talk

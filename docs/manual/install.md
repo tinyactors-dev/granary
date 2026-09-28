@@ -65,7 +65,7 @@ from a secret manager. `init` refuses to run while granary is running.
 | `HOST`, `PORT` | Where to listen (default `0.0.0.0:3000`) |
 | `PROTOCOL_HEADER`, `HOST_HEADER` | Trust `X-Forwarded-Proto` / `X-Forwarded-Host` from your reverse proxy |
 | `GRANARY_MASTER_KEY` | The master key, if you don't use `master.key` |
-| `GRANARY_ADMINS` | Optional seed: comma-separated admin logins, applied once |
+| `GRANARY_SEED_ADMINS` | Optional seed: comma-separated admin logins, applied once |
 
 Everything else is configured in the product. Environment variables for
 it exist only as optional one-time seeds (`granary config seed`).

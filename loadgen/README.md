@@ -25,6 +25,7 @@ mise run load:run -- --preset chaos --seed 7  # headless; exit 1 on violations
 | `fuzz-cases.ts`, `text.ts`, `rng.ts` | fuzz cases, persona prose, seeded randomness |
 | `schemas.ts` | TypeBox API schemas (shared with the app's dev backend) |
 
-Env: `LOADGEN_PORT`, `FAKE_GITHUB_URL`, `LOADGEN_ALLOWLISTED` (must match
-granary's `ALLOWED_USERS_SEED`), `LOADGEN_GRANARY_LOGIN`,
-`OTEL_EXPORTER_OTLP_ENDPOINT`.
+Env (ADR 0230): `LOADGEN_PORT`, `FAKE_GITHUB_URL`, `LOADGEN_ALLOWLISTED`
+(must match granary's `GRANARY_SEED_ALLOWLIST`), `LOADGEN_GRANARY_LOGIN`
+(the GitHub App's bot login, `granary[bot]` for the app the dev bootstrap
+creates), `LOADGEN_OTLP_ENDPOINT`.

@@ -1,6 +1,6 @@
 # 86. Secret store: envelope encryption in ops.sqlite, master key from fnox
 
-Date: 2026-09-28 · Status: proposed
+Date: 2026-09-28 · Status: proposed · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 Sink and destination credentials are entered in the UI, so they must be

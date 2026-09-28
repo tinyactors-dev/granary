@@ -1,6 +1,6 @@
 # 181. release:verify installs the tarball on clean Linux containers
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230
 
 ## Context
 ADR 0156 requires the packed tarball to be exercised on clean linux-x64 and

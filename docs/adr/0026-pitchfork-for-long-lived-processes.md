@@ -1,6 +1,6 @@
 # 26. Long-lived processes run under pitchfork; never kill by pattern
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230
 
 ## Context
 An agent cleaned up its own test processes with `pkill -f fake-github/server.ts`,

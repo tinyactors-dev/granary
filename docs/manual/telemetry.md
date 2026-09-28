@@ -60,7 +60,7 @@ Secrets are scrubbed from everything that is exported.
 
 ## Seeding a sink from the environment
 
-For automated installs a sink can be seeded once with `OPS_SEED_OTLP_ENDPOINT`,
-`OPS_SEED_OTLP_AUTH` (`none`, `bearer`, `basic`, `exe-vm-token`, …),
-`OPS_SEED_OTLP_TOKEN` and `OPS_SEED_OTLP_GRAFANA_URL`. After that it is
+For automated installs a sink can be seeded once with `GRANARY_SEED_OTLP_ENDPOINT`,
+`GRANARY_SEED_OTLP_AUTH` (`none`, `bearer`, `basic`, `exe-vm-token`, …),
+`GRANARY_SEED_OTLP_TOKEN` and `GRANARY_SEED_OTLP_GRAFANA_URL`. After that it is
 edited in the UI like any other sink.

@@ -1,6 +1,6 @@
 # 190. GitHub connection storage: own tables and schema steps
 
-Date: 2026-09-28 · Status: accepted · Refines 0160, 0166
+Date: 2026-09-28 · Status: accepted · Refines 0160, 0166 · Partially superseded by 230
 
 ## Context
 ADR 0166 gives E3 "granary.sqlite migrations for `github_app`,

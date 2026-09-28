@@ -1,6 +1,6 @@
 # 193. GitHub seeds, secret fallback and sign-in credentials
 
-Date: 2026-09-28 · Status: accepted · Refines 0157, 0160
+Date: 2026-09-28 · Status: accepted · Refines 0157, 0160 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - **Seeds** (boot, `GitHubConnection.seed()`): a never-configured instance

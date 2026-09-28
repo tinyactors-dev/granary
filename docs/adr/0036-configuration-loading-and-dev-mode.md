@@ -1,6 +1,6 @@
 # 36. Configuration loading and dev-mode computation
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - `src/lib/schemas/config.ts` `loadConfig(env, {requireSecrets = true})`

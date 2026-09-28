@@ -1,6 +1,6 @@
 # 160. The GitHub connection is a GitHub App created in-product
 
-Date: 2026-09-28 · Status: accepted · Supersedes the env-only parts of 0005/0034
+Date: 2026-09-28 · Status: accepted · Supersedes the env-only parts of 0005/0034 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 **Mode:** `github.mode = 'app' | 'token' | 'none'` (setting in

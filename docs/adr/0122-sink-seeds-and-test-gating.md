@@ -1,6 +1,6 @@
 # 122. Telemetry sink seeds, the legacy endpoint, and test gating
 
-Date: 2026-09-28 · Status: accepted · Implements 102 for sinks
+Date: 2026-09-28 · Status: accepted · Implements 102 for sinks · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - One seed sink, id `seed-otlp`:

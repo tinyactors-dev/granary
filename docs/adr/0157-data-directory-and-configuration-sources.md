@@ -1,6 +1,6 @@
 # 157. Data directory, configuration sources and the master key
 
-Date: 2026-09-28 · Status: accepted · Amends 0005, 0036, 0086/0117 (key name)
+Date: 2026-09-28 · Status: accepted · Amends 0005, 0036, 0086/0117 (key name) · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 **Data directory** (everything granary owns on disk):

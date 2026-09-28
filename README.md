@@ -15,7 +15,7 @@ All tasks are [mise](https://mise.jdx.dev) tasks (`mise tasks ls`):
 | `mise run dev` | SvelteKit dev server on Bun, http://localhost:5173 (dev env) |
 | `mise run fake-github` | fake GitHub on http://localhost:4010 (dev env) |
 | `mise run loadgen` | load generator / persona simulator on http://localhost:4040 (ADR 0070) |
-| `mise run up` / `down` / `logs` | dev daemons via pitchfork (fake GitHub, app, loadgen); `dev:all` = `up` |
+| `mise run up` / `down` / `logs` | dev daemons via pitchfork (fake GitHub, fake-infra, loadgen, app) |
 | `mise run load:run -- --preset chaos --seed 7` | headless load scenario against the running stack; exit 1 on invariant violations |
 | `mise run build` | production build into `build/` (svelte-adapter-bun) |
 | `mise run start` | run `build/` against the fake GitHub (dev env, port 3000) |
@@ -31,14 +31,22 @@ component previews (`/__dev/ui`).
 
 ## Configuration
 
-- Dev/test defaults (fake values only) live in `config/dev.env` and are
-  attached to the `dev`, `fake-github` and `start` tasks — not globally, so
-  `prod` never sees them. See ADR 0005 for every variable.
-- Production secrets (`GITHUB_TOKEN`, `GITHUB_WEBHOOK_SECRET`,
-  `GITHUB_OAUTH_CLIENT_ID`, `GITHUB_OAUTH_CLIENT_SECRET`) are declared in
-  `fnox.toml` as 1Password references (item `granary`). Non-secret prod
-  settings (`ORIGIN`, `PORT`, `DATABASE_PATH`, `ADMINS`, `GITHUB_API_URL`, …)
-  come from the process environment.
+- Every environment variable is listed in ADR 0230 (one naming scheme:
+  standard ones like `ORIGIN`/`PORT` unprefixed, everything else
+  `GRANARY_*`, seeds `GRANARY_SEED_*`, dev-only `GRANARY_DEV_*`, test-only
+  `GRANARY_TEST_*`; the fakes use `FAKE_GITHUB_*`, `FAKE_INFRA_*`, `LOADGEN_*`).
+- Dev defaults (fake values only) live in `config/dev.env` and are attached
+  to the dev tasks — not globally, so `prod` never sees them. In dev granary
+  connects to the fake GitHub as a GitHub App by itself
+  (`GRANARY_DEV_GITHUB_AUTOCONNECT=1`).
+- Production: the only secret is `GRANARY_MASTER_KEY`, declared in
+  `fnox.toml` (profile `prod`) as a 1Password reference. The GitHub App,
+  admins, allowlist, backup destinations and telemetry sinks are configured
+  in the product (the manual in `docs/manual/`).
+- The data directory (`GRANARY_DATA_DIR`) holds `granary.sqlite` and
+  `ops.sqlite`. Before the first release their schemas were squashed into
+  one baseline each; a data directory from an earlier dev build is refused —
+  `rm -rf data/*` (ADR 0230).
 - Deploying `build/` needs the production `node_modules` next to it
   (`bun install --production`): runtime `dependencies` such as the native
   `@tinyactors/node` addon are not bundled (ADR 0022).
@@ -48,7 +56,7 @@ component previews (`/__dev/ui`).
 ```
 src/
   app.html, app.css, app.d.ts
-  hooks.server.ts            # (to come) boots the actor system
+  hooks.server.ts            # boots the backend (actor system, ops)
   routes/                    # pages, /webhook, /__dev
   lib/
     components/ui/           # shadcn-svelte components
@@ -59,11 +67,12 @@ src/
     trace/                   # browser-safe trace summaries and fixtures
     server/                  # system boot, WAL, relay, I/O processors
       actors/                # one file per actor (main system)
-fake-github/                 # fake GitHub server + actors/
+fake-github/                 # fake GitHub (GitHub Apps only) + actors/
+fake-infra/                  # fake R2, OTLP receiver, exe.dev proxy stand-in
 loadgen/                     # load generator: personas/ (statecharts), scenario coordinator, observer
 tests/                       # integration tests (bun test)
 data/                        # SQLite files (gitignored)
-config/dev.env               # fake dev/test env
+config/dev.env, real.env     # fake dev env; real local ops stack overlay
 docs/adr/                    # architecture decision records
 ```
 

@@ -1,6 +1,6 @@
 # 40. Runtime boot, issue actor states and process lifecycle
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 ADR 0002/0003/0033 fix the topology, the WAL and the protocol. This records

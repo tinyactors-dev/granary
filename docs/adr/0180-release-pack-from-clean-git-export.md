@@ -1,6 +1,6 @@
 # 180. release:pack builds from a clean git export with a generated manifest
 
-Date: 2026-09-28 · Status: accepted (defaults confirmed in 0187)
+Date: 2026-09-28 · Status: accepted (defaults confirmed in 0187) · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 ADR 0156 decides to ship `@tinyactors/granary` on npm. The repository's own

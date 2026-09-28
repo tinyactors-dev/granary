@@ -2,7 +2,7 @@
 
 Talks to the backend only through `src/lib/remote/ops.remote.ts`, which uses
 `getOpsBackend()` from `$lib/ops/contract`. Develop against the stub:
-`GRANARY_STUB_BACKEND=1 GRANARY_STUB_OPS=1 ADMINS=admin bun --bun vite dev`,
+`GRANARY_STUB_BACKEND=1 GRANARY_STUB_OPS=1 GRANARY_SEED_ADMINS=admin bun --bun vite dev`,
 then log in via `/__dev/sessions`.
 
 Pages: `/ops` (overview), `/ops/conditions`, `/ops/backups` (+ `[runId]`),

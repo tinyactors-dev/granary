@@ -1,6 +1,6 @@
 # 150. Dev seeds point the operations module at fake-infra
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 After M1–M4, `mise run up` started ops with only the always-on local-dir

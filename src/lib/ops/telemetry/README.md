@@ -6,5 +6,5 @@
 | `otlp-wire.ts` | OTLP protobuf wire helpers: same-length in-place masking of sensitive attribute keys, span filtering by copying raw bytes (loop breaking, sampling) |
 | `redactor.ts` | `SecretRedactor` (implements `Redactor`): registered secret values masked in text and bytes |
 | `sinks-repo.ts` | `telemetry_sinks` table, fingerprints for test gating |
-| `seeds.ts` | `seed-otlp` from `OPS_SEED_OTLP_*` or the legacy `OTEL_EXPORTER_OTLP_ENDPOINT` |
+| `seeds.ts` | `seed-otlp` from `GRANARY_SEED_OTLP_*` |
 | `signals-out.ts` | ops' own telemetry: event log lines (OTLP/JSON) and metrics (`metricsToOTLP`) |

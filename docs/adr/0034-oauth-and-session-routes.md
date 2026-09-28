@@ -1,6 +1,6 @@
 # 34. OAuth and session route contract
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 UI login is GitHub OAuth (real GitHub or the fake, ADR 0006). Remote

@@ -1,6 +1,6 @@
 # 203. Tests for the GitHub App, catch-up and the CLI
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - `tests/github-app-fake.test.ts` pins the fake's App surface as a contract

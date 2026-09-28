@@ -1,6 +1,6 @@
 # 102. Ops configuration and seeds, revised for R2 and exe.dev
 
-Date: 2026-09-28 · Status: proposed · Supersedes 87
+Date: 2026-09-28 · Status: proposed · Supersedes 87 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 Everything is still configured in-product (ops.sqlite, `origin: seed|ui`,

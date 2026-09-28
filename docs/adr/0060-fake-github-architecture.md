@@ -1,6 +1,6 @@
 # 60. Fake GitHub architecture: actors, I/O processors, faults
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Context
 ADR 0006 fixes the fake GitHub's surface and ADR 0035 its control schemas.

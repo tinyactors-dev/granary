@@ -1,6 +1,6 @@
 # 194. Delivery catch-up: implementation details
 
-Date: 2026-09-28 · Status: accepted · Refines 0162
+Date: 2026-09-28 · Status: accepted · Refines 0162 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - `delivery-catchup/main` (`src/lib/server/actors/delivery-catchup.ts`) is

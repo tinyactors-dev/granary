@@ -6,5 +6,4 @@ here is the ops adapter over ops.sqlite's `secrets` table: `usedBy`
 (destinations/sinks referencing a secret), `ops_audit` entries and
 `OpsBackendError`s. It implements `SecretReader` (`../feature.ts`) for I/O
 processors. No API returns plaintext. Master key: `GRANARY_MASTER_KEY`
-(alias `OPS_MASTER_KEY`) or `<data>/master.key`; rotation via
-`GRANARY_MASTER_KEY_PREVIOUS` (alias `OPS_MASTER_KEY_PREVIOUS`).
+or `<data>/master.key`; rotation via `GRANARY_MASTER_KEY_PREVIOUS`.

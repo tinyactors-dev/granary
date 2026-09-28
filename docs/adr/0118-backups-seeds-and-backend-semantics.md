@@ -1,6 +1,6 @@
 # 118. Backups seeds and OpsBackend semantics
 
-Date: 2026-09-28 · Status: accepted · Amends 102, 110
+Date: 2026-09-28 · Status: accepted · Amends 102, 110 · Partially superseded by 230 (env names, GitHub token mode, migrations)
 
 ## Decision
 - Seeds (create-if-absent, `origin:'seed'`): `seed-r2` (kind `r2`, EU
