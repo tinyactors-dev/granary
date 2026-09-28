@@ -160,6 +160,7 @@ export const AuditAction = Type.Union([
 	Type.Literal('github.app.create'),
 	Type.Literal('github.mode.set'),
 	Type.Literal('github.disconnect'),
+	Type.Literal('github.logo.dismiss'),
 	Type.Literal('github.repo.enable'),
 	Type.Literal('github.repo.disable'),
 	Type.Literal('config.set'),

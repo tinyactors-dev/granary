@@ -174,7 +174,9 @@ const MIGRATIONS: string[] = [
 	ALTER TABLE github_installations ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}';
 	ALTER TABLE github_installations ADD COLUMN events TEXT NOT NULL DEFAULT '[]';
 	ALTER TABLE github_app ADD COLUMN permissions TEXT;
-	ALTER TABLE github_app ADD COLUMN events TEXT;`
+	ALTER TABLE github_app ADD COLUMN events TEXT;`,
+	/* 4: who owns the GitHub App, for its settings URL (ADR 0271) */
+	`ALTER TABLE github_app ADD COLUMN owner_type TEXT;`
 ];
 
 export interface InsertInbox {

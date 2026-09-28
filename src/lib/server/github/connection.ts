@@ -214,15 +214,40 @@ export class GitHubConnection {
 		return { permission: perms[PR_PERMISSION] === 'write', event: events.includes(PR_EVENT) };
 	}
 
-	/** `https://github.com/settings/apps/<slug>/permissions` (org apps: `/organizations/<org>/settings/apps/<slug>/permissions`). */
-	permissionsUrl(): string | null {
+	/**
+	 * The app's settings page: `https://github.com/settings/apps/<slug>` or, for an
+	 * organization's app, `/organizations/<org>/settings/apps/<slug>` (ADR 0271).
+	 * The owner type comes from the manifest conversion / `GET /app`; for rows
+	 * stored before it was recorded, from an installation on the owner's account.
+	 */
+	settingsUrl(): string | null {
 		const app = this.#store.getApp();
 		if (!app) return null;
 		const web = this.#config.githubWebUrl.replace(/\/+$/, '');
-		const orgOwned = this.#store.listInstallations().some((i) => i.account_login.toLowerCase() === app.owner_login.toLowerCase() && i.account_type === 'Organization');
+		const orgOwned =
+			app.owner_type !== null
+				? app.owner_type === 'Organization'
+				: this.#store.listInstallations().some((i) => i.account_login.toLowerCase() === app.owner_login.toLowerCase() && i.account_type === 'Organization');
 		return orgOwned
-			? `${web}/organizations/${encodeURIComponent(app.owner_login)}/settings/apps/${encodeURIComponent(app.slug)}/permissions`
-			: `${web}/settings/apps/${encodeURIComponent(app.slug)}/permissions`;
+			? `${web}/organizations/${encodeURIComponent(app.owner_login)}/settings/apps/${encodeURIComponent(app.slug)}`
+			: `${web}/settings/apps/${encodeURIComponent(app.slug)}`;
+	}
+
+	/** `<settingsUrl>/permissions` (ADR 0281). */
+	permissionsUrl(): string | null {
+		const url = this.settingsUrl();
+		return url ? `${url}/permissions` : null;
+	}
+
+	/** Hide the "add the logo" hint for the current app (ADR 0271). */
+	dismissLogoHint(actor: string): void {
+		const app = this.#store.getApp();
+		if (!app) throw new BackendError('not-found', 'no GitHub App is connected');
+		this.#store.setSetting(GITHUB_SETTING_KEYS.logoHintDismissedFor, String(app.app_id), actor);
+	}
+
+	#logoHintDismissed(appId: number): boolean {
+		return this.#store.getSetting(GITHUB_SETTING_KEYS.logoHintDismissedFor) === String(appId);
 	}
 
 	pullRequestAccess(): GitHubStatus['pullRequests'] {
@@ -351,7 +376,7 @@ export class GitHubConnection {
 			redirect_url: `${origin}/settings/github/callback`,
 			callback_urls: [`${origin}/auth/callback`],
 			setup_url: `${origin}/settings/github/installed`,
-			description: 'granary closes issues opened by users who are not on the allowlist.',
+			description: "Closes issues and pull requests from people who aren't on the allowlist.",
 			public: false,
 			request_oauth_on_install: false,
 			setup_on_update: true,
@@ -414,7 +439,8 @@ export class GitHubConnection {
 			created_by: actor,
 			created_at: now,
 			permissions: conv.permissions ? JSON.stringify(conv.permissions) : null,
-			events: conv.events ? JSON.stringify(conv.events) : null
+			events: conv.events ? JSON.stringify(conv.events) : null,
+			owner_type: conv.owner.type ?? null
 		});
 		this.#tokens.clear();
 		this.#setMode('app', actor);
@@ -568,7 +594,7 @@ export class GitHubConnection {
 		try {
 			const info = parse(GitHubAppInfo, await this.appRequest('GET', '/app'), 'GET /app');
 			const app = this.#store.getApp();
-			if (app) this.#store.setAppPermissions(app.app_id, info.permissions ?? {}, info.events ?? []);
+			if (app) this.#store.setAppPermissions(app.app_id, info.permissions ?? {}, info.events ?? [], info.owner?.type ?? null);
 			this.#auth = { ok: true, checkedAt: now, error: null };
 		} catch (e) {
 			const message = e instanceof GitHubHttpError ? `HTTP ${e.status}` : (e as Error).message;
@@ -590,6 +616,8 @@ export class GitHubConnection {
 						htmlUrl: app.html_url,
 						owner: app.owner_login,
 						installUrl: this.installUrl(app.slug),
+						settingsUrl: this.settingsUrl() ?? app.html_url,
+						logoHintDismissed: this.#logoHintDismissed(app.app_id),
 						createdAt: app.created_at
 					}
 				: null,

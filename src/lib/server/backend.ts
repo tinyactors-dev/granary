@@ -255,6 +255,11 @@ export interface Backend {
 	 * enable choices are kept. The app itself must be deleted on GitHub.
 	 */
 	disconnectGitHub(actor: string): Promise<GitHubStatus>;
+	/**
+	 * Hide the "add the logo" hint for the current app (ADR 0271). GitHub offers no
+	 * API for app logos, so the hint stays until an admin dismisses it.
+	 */
+	dismissGitHubLogoHint(actor: string): Promise<GitHubStatus>;
 	/** `not-found` for an unknown repo. */
 	setRepoEnabled(input: SetRepoEnabledInput, actor: string): Promise<RepoSummary>;
 

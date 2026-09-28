@@ -180,6 +180,14 @@ export const disconnectGitHub = command(async (): Promise<GitHubStatus> => {
 	return status;
 });
 
+/** Admin only (ADR 0271): hide the "add the logo" card for the current app. */
+export const dismissGitHubLogoHint = command(async (): Promise<GitHubStatus> => {
+	const admin = requireAdmin();
+	const status = await withBackend((b) => b.dismissGitHubLogoHint(admin.login));
+	await getGitHubStatus().refresh();
+	return status;
+});
+
 /** Admin only. Disabled repos keep receiving webhooks but they are stored as ignored. */
 export const setRepoEnabled = command(standard(SetRepoEnabledInput), async (input): Promise<RepoSummary> => {
 	const admin = requireAdmin();

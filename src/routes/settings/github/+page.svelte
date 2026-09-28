@@ -36,7 +36,7 @@
 	<Alert.Root data-testid="github-created">
 		<PartyPopperIcon />
 		<Alert.Title>The GitHub App exists</Alert.Title>
-		<Alert.Description>Last step: install it on the repositories granary should look after.</Alert.Description>
+		<Alert.Description>Next: install it on the repositories granary should look after, and add its logo (see below).</Alert.Description>
 	</Alert.Root>
 {:else if installed}
 	<Alert.Root data-testid="github-installed">
@@ -51,7 +51,7 @@
 	{#if s.mode === 'none'}
 		<GitHubWizard setup={await setup} webhookUrl={s.webhookUrl} />
 	{:else}
-		<GitHubConnection status={s} />
+		<GitHubConnection status={s} justCreated={created} />
 	{/if}
 	{#snippet pending()}
 		<Skeleton class="h-72 rounded-xl" />

@@ -796,6 +796,12 @@ export class RealBackend implements Backend {
 		this.#admins.audit(actor, 'github.disconnect', before, null);
 		return this.getGitHubStatus();
 	}
+	async dismissGitHubLogoHint(actor: string): Promise<GitHubStatus> {
+		this.#rt.github.dismissLogoHint(actor);
+		const status = await this.getGitHubStatus();
+		this.#admins.audit(actor, 'github.logo.dismiss', status.app?.slug ?? '', null);
+		return status;
+	}
 	async refreshGitHubInstallations(actor: string): Promise<InstallationSummary[]> {
 		return this.#rt.github.refreshInstallations(actor);
 	}

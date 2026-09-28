@@ -732,6 +732,9 @@ export class StubBackend implements Backend {
 	async disconnectGitHub(actor: string) {
 		return this.settings.disconnectGitHub(actor);
 	}
+	async dismissGitHubLogoHint(actor: string) {
+		return this.settings.dismissGitHubLogoHint(actor);
+	}
 	async refreshGitHubInstallations(actor: string) {
 		return this.settings.refreshGitHubInstallations(actor);
 	}

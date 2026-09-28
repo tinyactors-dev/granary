@@ -24,10 +24,12 @@
 	import CopyButton from '$lib/components/app/CopyButton.svelte';
 	import AdminOnly from '$lib/components/app/AdminOnly.svelte';
 	import { describeError } from '$lib/components/app/format';
+	import GitHubLogoCard from './GitHubLogoCard.svelte';
 	import { disconnectGitHub, refreshGitHubInstallations, setRepoEnabled } from '$lib/remote/settings.remote';
 	import type { GitHubStatus, RepoSummary, RepoSwitch } from '$lib/schemas/github-app';
 
-	let { status }: { status: GitHubStatus } = $props();
+	/** `justCreated`: the manifest callback just redirected here (`?created=1`); highlights the logo step. */
+	let { status, justCreated = false }: { status: GitHubStatus; justCreated?: boolean } = $props();
 
 	let refreshing = $state(false);
 	let confirmDisconnect = $state(false);
@@ -117,6 +119,9 @@
 					</ol>
 				</Card.Content>
 			</Card.Root>
+		{/if}
+		{#if status.app && !status.app.logoHintDismissed}
+			<GitHubLogoCard settingsUrl={status.app.settingsUrl} highlight={justCreated} />
 		{/if}
 		<Card.Root data-testid="github-installations">
 			<Card.Header class="flex flex-row items-start justify-between gap-3">

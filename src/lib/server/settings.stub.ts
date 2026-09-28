@@ -65,7 +65,17 @@ export class StubSettings {
 
 	#connect(appId: number, slug: string, at: number) {
 		this.#mode = 'app';
-		this.#app = { appId, slug, name: slug, htmlUrl: `${this.#web}/apps/${slug}`, owner: 'acme', installUrl: `${this.#web}/apps/${slug}/installations/new`, createdAt: at };
+		this.#app = {
+			appId,
+			slug,
+			name: slug,
+			htmlUrl: `${this.#web}/apps/${slug}`,
+			owner: 'acme',
+			installUrl: `${this.#web}/apps/${slug}/installations/new`,
+			settingsUrl: `${this.#web}/organizations/acme/settings/apps/${slug}`,
+			logoHintDismissed: false,
+			createdAt: at
+		};
 		this.#installations = [
 			{
 				installationId: 9001,
@@ -252,6 +262,12 @@ export class StubSettings {
 		this.#app = null;
 		this.#installations = [];
 		this.#log(actor, 'github.disconnect', before);
+		return this.getGitHubStatus();
+	}
+	async dismissGitHubLogoHint(actor: string): Promise<GitHubStatus> {
+		if (!this.#app) throw new BackendError('not-found', 'no GitHub App is connected');
+		this.#app.logoHintDismissed = true;
+		this.#log(actor, 'github.logo.dismiss', this.#app.slug);
 		return this.getGitHubStatus();
 	}
 	async refreshGitHubInstallations(_actor: string): Promise<InstallationSummary[]> {

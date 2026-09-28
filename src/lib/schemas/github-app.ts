@@ -32,7 +32,9 @@ export const GITHUB_SECRET_REFS = {
 /** Settings keys (granary.sqlite `settings` kv) owned by the GitHub connection. */
 export const GITHUB_SETTING_KEYS = {
 	mode: 'github.mode',
-	catchupCheckpoint: 'github.catchup.checkpoint'
+	catchupCheckpoint: 'github.catchup.checkpoint',
+	/** The app id whose "add the logo" hint an admin dismissed (ADR 0271); a new app shows it again. */
+	logoHintDismissedFor: 'github.logo.dismissedFor'
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -137,7 +139,9 @@ export const GitHubAppRow = Type.Object(
 		created_at: EpochMs,
 		/** JSON of what the app asks for (`GET /app` / manifest conversion), null until known (ADR 0281). */
 		permissions: Nullable(Type.String()),
-		events: Nullable(Type.String())
+		events: Nullable(Type.String()),
+		/** `User` or `Organization` (manifest conversion / `GET /app`), null until known (ADR 0271). */
+		owner_type: Nullable(Type.String())
 	},
 	closed
 );
@@ -206,6 +210,7 @@ export const GitHubAppInfo = Type.Object(
 	{
 		id: Type.Integer(),
 		slug: Type.Optional(Type.String()),
+		owner: Type.Optional(Type.Object({ login: Type.String(), type: Type.Optional(Type.String()) }, open)),
 		permissions: Type.Optional(Type.Record(Type.String(), Type.String())),
 		events: Type.Optional(Type.Array(Type.String()))
 	},
@@ -302,6 +307,13 @@ export const GitHubStatus = Type.Object(
 					owner: Type.String(),
 					/** `https://github.com/apps/<slug>/installations/new` (or the fake's). */
 					installUrl: Type.String(),
+					/**
+					 * The app's settings page on GitHub, where its logo is uploaded
+					 * (`/settings/apps/<slug>` or `/organizations/<org>/settings/apps/<slug>`).
+					 */
+					settingsUrl: Type.String(),
+					/** An admin dismissed the "add the logo" hint for this app (ADR 0271). */
+					logoHintDismissed: Type.Boolean(),
 					createdAt: EpochMs
 				},
 				closed

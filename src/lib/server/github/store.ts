@@ -94,17 +94,17 @@ export class GitHubStore {
 		parse(GitHubAppRow, row, 'github_app row');
 		this.db
 			.query(
-				`INSERT INTO github_app (app_id, slug, name, html_url, owner_login, client_id, created_by, created_at, permissions, events)
-				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
+				`INSERT INTO github_app (app_id, slug, name, html_url, owner_login, client_id, created_by, created_at, permissions, events, owner_type)
+				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`
 			)
-			.run(row.app_id, row.slug, row.name, row.html_url, row.owner_login, row.client_id, row.created_by, row.created_at, row.permissions, row.events);
+			.run(row.app_id, row.slug, row.name, row.html_url, row.owner_login, row.client_id, row.created_by, row.created_at, row.permissions, row.events, row.owner_type);
 	}
 
 	/** Record what the app asks for, from `GET /app` (ADR 0281). */
-	setAppPermissions(appId: number, permissions: Record<string, string>, events: string[]): void {
+	setAppPermissions(appId: number, permissions: Record<string, string>, events: string[], ownerType?: string | null): void {
 		this.db
-			.query('UPDATE github_app SET permissions = ?2, events = ?3 WHERE app_id = ?1')
-			.run(appId, JSON.stringify(permissions), JSON.stringify(events));
+			.query('UPDATE github_app SET permissions = ?2, events = ?3, owner_type = COALESCE(?4, owner_type) WHERE app_id = ?1')
+			.run(appId, JSON.stringify(permissions), JSON.stringify(events), ownerType ?? null);
 	}
 
 	// -- installations & repos --------------------------------------------------------
