@@ -10,6 +10,7 @@
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import { shellData } from '$lib/components/app/session';
 	import { DEV_NAV } from '$lib/components/dev/nav';
+	import DevTools from '$lib/components/dev/DevTools.svelte';
 	import { SCENARIO_TONE, duration, scenarioHref } from '$lib/components/dev/load/meta';
 
 	const info = getDevInfo();
@@ -87,6 +88,14 @@
 			<Card.Content class="text-sm"><a class="underline-offset-4 hover:underline" href="/__dev/actors">attach configurations →</a></Card.Content>
 		</Card.Root>
 	</div>
+
+	<Card.Root>
+		<Card.Header>
+			<Card.Title>Tools</Card.Title>
+			<Card.Description>Everything worth opening, with links taken from config and /ops settings — the same links work in production.</Card.Description>
+		</Card.Header>
+		<Card.Content><DevTools /></Card.Content>
+	</Card.Root>
 
 	<div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 		{#each DEV_NAV.filter((i) => i.href !== '/__dev') as item (item.href)}

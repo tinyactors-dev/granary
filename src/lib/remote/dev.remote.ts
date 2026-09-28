@@ -18,6 +18,7 @@ import {
 	ListRecentTracesInput,
 	type DapLaunchConfig,
 	type DevInfo,
+	type DevTool,
 	type DevInjectFaultResult,
 	type DevOpenIssueResult,
 	type DevRedeliverResult,
@@ -39,6 +40,12 @@ const DEFAULT_TRACE_LIMIT = 50;
 export const getDevInfo = query(async (): Promise<DevInfo> => {
 	requireDev();
 	return withBackend((b) => b.getDevInfo());
+});
+
+/** Every UI worth opening (granary pages, fakes, Grafana, storage consoles) with reachability (ADR 0154). */
+export const getDevTools = query(async (): Promise<DevTool[]> => {
+	requireDev();
+	return withBackend((b) => b.getDevTools());
 });
 
 /**

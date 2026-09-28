@@ -13,6 +13,7 @@
 	import { NAV, isActive } from './nav';
 	import { DEV_GROUPS, DEV_NAV, devActive, isDevPath } from '$lib/components/dev/nav';
 	import UserMenu from './UserMenu.svelte';
+	import DevTools from '$lib/components/dev/DevTools.svelte';
 	import ModeToggle from './ModeToggle.svelte';
 	import { shellData } from './session';
 
@@ -77,6 +78,8 @@
 					{/each}
 				{/each}
 			{/each}
+			<div class="text-sidebar-foreground/50 mt-2 px-2.5 pb-1 text-[11px] font-semibold tracking-wide uppercase">External</div>
+			<DevTools compact />
 		</nav>
 		{:else}
 		<nav class="flex flex-1 flex-col gap-0.5 p-2" aria-label="Main">

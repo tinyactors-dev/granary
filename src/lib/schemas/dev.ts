@@ -18,6 +18,28 @@ import { Login } from './github';
 const closed = { additionalProperties: false } as const;
 
 // ---------------------------------------------------------------------------
+// getDevTools (ADR 0154)
+// ---------------------------------------------------------------------------
+
+/**
+ * One UI a developer may want to open. URLs come from server config and the
+ * ops configuration (sinks' `grafanaUrl`, destinations' console links), so
+ * they are right wherever granary runs.
+ */
+export interface DevTool {
+	id: string;
+	name: string;
+	/** Absolute URL, or an app-relative path for granary's own pages. */
+	url: string;
+	description: string;
+	group: 'granary' | 'fakes' | 'ops targets';
+	/** Reachability probe: true/false, or null when not probed. */
+	up: boolean | null;
+	/** Opens in a new tab (external UI). */
+	external: boolean;
+}
+
+// ---------------------------------------------------------------------------
 // getDevInfo
 // ---------------------------------------------------------------------------
 

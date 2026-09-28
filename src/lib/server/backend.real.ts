@@ -36,6 +36,7 @@ import { isAdminLogin } from '../schemas/config';
 import type {
 	DapLaunchConfig,
 	DevInfo,
+	DevTool,
 	DevInjectFaultInput,
 	DevInjectFaultResult,
 	DevOpenIssueInput,
@@ -89,6 +90,7 @@ import { DAP_HOST } from './dap';
 import type { Runtime } from './system';
 import { addressOfInspection } from './tracing';
 import { snapshotOf } from './inspect/snapshot';
+import { destinationConsoleLink, getOpsBackend, hasOpsBackend } from '$lib/ops/contract';
 
 function offsetPage<T>(rows: T[], limit: number, offset: number): Page<T> {
 	// rows were fetched with limit + 1 to know whether there is a next page
@@ -413,6 +415,49 @@ export class RealBackend implements Backend {
 			if (e instanceof SchemaValidationError) throw new BackendError('upstream', e.message);
 			throw e;
 		}
+	}
+
+	async getDevTools(): Promise<DevTool[]> {
+		this.#requireDev();
+		const c = this.#rt.config;
+		const tools: DevTool[] = [
+			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
+			{ id: 'dap', name: `Debugger (DAP ${DAP_HOST}:${c.dapPort})`, url: '/__dev/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
+			{ id: 'fake-github', name: 'Fake GitHub', url: `${c.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: null, external: true },
+			{ id: 'fake-infra', name: 'Fake infra', url: `${c.fakeInfraUrl}/`, description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: null, external: true },
+			{ id: 'loadgen', name: 'Load generator', url: '/__dev/load', description: `Scenarios and personas (API ${c.loadgenUrl})`, group: 'fakes', up: null, external: false }
+		];
+		const probes: Record<string, string> = { 'fake-github': `${c.fakeGithubUrl}/`, 'fake-infra': `${c.fakeInfraUrl}/`, loadgen: `${c.loadgenUrl}/api/status` };
+		if (hasOpsBackend()) {
+			const ops = getOpsBackend();
+			const [sinks, dests] = await Promise.all([ops.listSinks().catch(() => []), ops.listDestinations().catch(() => [])]);
+			for (const s of sinks) {
+				if (!s.grafanaUrl) continue;
+				tools.push({ id: `sink:${s.id}`, name: `Grafana (${s.name})`, url: s.grafanaUrl, description: 'Logs (Loki), traces (Tempo), metrics (Prometheus)', group: 'ops targets', up: null, external: true });
+				probes[`sink:${s.id}`] = s.grafanaUrl;
+			}
+			for (const d of dests) {
+				const link = destinationConsoleLink(d);
+				if (!link) continue;
+				tools.push({ id: `dest:${d.id}`, name: `Storage console (${d.name})`, url: link.url, description: `Backups of destination ${d.id}`, group: 'ops targets', up: null, external: true });
+				probes[`dest:${d.id}`] = link.url;
+			}
+		}
+		// Reachability: any HTTP answer below 500 counts as up (logins redirect, SPAs 200).
+		await Promise.all(
+			tools.map(async (t) => {
+				const url = probes[t.id];
+				if (!url) return;
+				try {
+					const res = await fetch(url, { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(1500) });
+					t.up = res.status < 500;
+					await res.body?.cancel();
+				} catch {
+					t.up = false;
+				}
+			})
+		);
+		return tools;
 	}
 
 	async getDevInfo(): Promise<DevInfo> {

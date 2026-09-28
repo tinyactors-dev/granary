@@ -40,6 +40,7 @@ import type { ActorAddress } from '$lib/schemas/actors';
 import type {
 	DapLaunchConfig,
 	DevInfo,
+	DevTool,
 	DevInjectFaultInput,
 	DevInjectFaultResult,
 	DevOpenIssueInput,
@@ -132,6 +133,8 @@ export interface Backend {
 	// -- dev (ADR 0009) ------------------------------------------------------------
 
 	getDevInfo(): Promise<DevInfo>;
+	/** Every UI worth opening, from config + ops config, with reachability (ADR 0154). */
+	getDevTools(): Promise<DevTool[]>;
 	/** Ensures the repo (`POST /__control/repos`) then `POST /__control/issues`. */
 	devOpenIssue(input: DevOpenIssueInput): Promise<DevOpenIssueResult>;
 	devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult>;

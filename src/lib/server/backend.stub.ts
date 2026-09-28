@@ -40,6 +40,7 @@ import type { AuthorAssociation } from '$lib/schemas/github';
 import type {
 	DapLaunchConfig,
 	DevInfo,
+	DevTool,
 	DevInjectFaultInput,
 	DevInjectFaultResult,
 	DevOpenIssueInput,
@@ -499,6 +500,18 @@ export class StubBackend implements Backend {
 	}
 
 	// -- dev -------------------------------------------------------------------------
+
+	async getDevTools(): Promise<DevTool[]> {
+		return [
+			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
+			{ id: 'dap', name: `Debugger (DAP 127.0.0.1:${this.dapPort})`, url: '/__dev/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
+			{ id: 'fake-github', name: 'Fake GitHub', url: `${this.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: true, external: true },
+			{ id: 'fake-infra', name: 'Fake infra', url: 'http://localhost:4090/', description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: false, external: true },
+			{ id: 'loadgen', name: 'Load generator', url: '/__dev/load', description: 'Scenarios and personas (API http://localhost:4040)', group: 'fakes', up: true, external: false },
+			{ id: 'sink:seed-otlp', name: 'Grafana (OTLP (seeded))', url: 'http://localhost:3300/explore', description: 'Logs (Loki), traces (Tempo), metrics (Prometheus)', group: 'ops targets', up: true, external: true },
+			{ id: 'dest:seed-s3', name: 'Storage console (S3-compatible (seed))', url: 'http://localhost:9001/rustfs/console/browser/?bucket=granary-backups&key=granary%2F', description: 'Backups of destination seed-s3', group: 'ops targets', up: true, external: true }
+		];
+	}
 
 	async getDevInfo(): Promise<DevInfo> {
 		return {
