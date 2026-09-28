@@ -12,7 +12,7 @@ superseded by N`) and the newer ADR says what changed.
 - **GitHub:** granary connects only as a GitHub App (0160, 0190–0194, 0230).
 - **Databases:** one baseline migration each for granary.sqlite and
   ops.sqlite (0230).
-- **Production:** ta-granary.exe.xyz, telemetry to the shared ta-metrics stack (0231).
+- **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233).
 
 | ADR | Title | State |
 |---|---|---|
@@ -173,3 +173,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0230](0230-one-naming-scheme-no-legacy-before-first-release.md) | One naming scheme, no legacy before the first release | active |
 | [0231](0231-production-deployment-on-exe-dev.md) | Production deployment: ta-granary and the shared ta-metrics stack | active |
 | [0232](0232-cli-never-writes-to-an-unexpected-data-dir.md) | The CLI never writes to an unexpected data dir | active |
+| [0233](0233-deploy-task-and-operations-handbook.md) | `mise run deploy` and the operations handbook | active |

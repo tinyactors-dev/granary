@@ -22,6 +22,8 @@ All tasks are [mise](https://mise.jdx.dev) tasks (`mise tasks ls`):
 | `mise run check` | `svelte-kit sync` + `svelte-check` |
 | `mise run test` | build, then `bun test tests/` (integration tests, ADR 0007) |
 | `mise run prod` | `fnox exec -P prod -- bun build/index.js` (real secrets from 1Password, `prod` profile) |
+| `mise run deploy -- --host <ssh-host> [--dry-run]` | pack HEAD, install on a host, restart, wait for `/healthz` (ADR 0233) |
+| `mise run release -- --channel dev\|latest [--yes]` | pack → verify → publish to npm (dry run without `--yes`; ADR 0186) |
 
 Typical dev loop: `mise run install && mise run up`, then open
 http://localhost:5173. In development, http://localhost:5173/__dev is the
@@ -50,6 +52,34 @@ component previews (`/__dev/ui`).
 - Deploying `build/` needs the production `node_modules` next to it
   (`bun install --production`): runtime `dependencies` such as the native
   `@tinyactors/node` addon are not bundled (ADR 0022).
+
+## Deploying and releasing
+
+The operator manual is [`docs/manual/`](docs/manual/README.md); day-2 tasks are
+in its [operations runbook](docs/manual/operations-runbook.md). Production
+(ADR 0231): `https://granary.tinyactors.dev` on the exe.dev VM `ta-granary`,
+telemetry to the shared `ta-metrics` Grafana.
+
+- **Deploy** a commit: `mise run deploy -- --host ta-granary.exe.xyz`
+  (clean tree; `--dry-run` first; `--tarball`/`--npm` to install something
+  else, e.g. to roll back).
+- **Publish to npm** (`@tinyactors/granary`): the manually triggered GitHub
+  Actions workflow **release** (inputs `channel` = `dev`/`latest`,
+  `dry_run`) runs `tools/release/release.ts` and publishes with provenance via
+  npm trusted publishing. Setup on npmjs.com → the package → *Settings* →
+  *Trusted Publisher* → GitHub Actions: organization `tinyactors-dev`,
+  repository `granary`, workflow `release.yml`, no environment (the workflow
+  uses none). npm's trusted-publisher settings live on the package's page, so
+  the **very first publish** needs a token: either from the laptop
+  (`mise run release -- --channel latest --yes --accept-unverified linux/amd64`,
+  token from fnox's `release` profile, 1Password `granary/npm-token`, no
+  provenance) or once in CI with a temporary `NPM_TOKEN` repository secret;
+  then add the trusted publisher and delete the token.
+- **First release** must be the stable `0.1.0` (npm tags a new package's first
+  version `latest` regardless of `--tag`): date its `CHANGELOG.md` entry, tag
+  `v0.1.0`, push the tag, run the workflow with `channel=latest` and
+  `dry_run=true`, then again with `dry_run=false`. Afterwards `dev` builds
+  (`0.1.0-dev.<epoch>.g<sha>` → dist-tag `dev`) can go out any time.
 
 ## Layout
 

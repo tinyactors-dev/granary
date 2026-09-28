@@ -17,6 +17,24 @@ granary version
 For a personal install, `bun add -g @tinyactors/granary` in your own
 account is enough.
 
+## 2. Before the package is on npm: from a tarball
+
+Until a release is published (or to run an unreleased commit), build a
+tarball with `mise run release:pack` (or `mise run release -- pack --channel
+dev`) in a checkout and install that. Copy it under its **versioned file
+name** and install with **`--force`**: Bun's install cache keys a local
+tarball by its path, so reinstalling a different build from the same path
+(e.g. `/tmp/granary.tgz`) silently keeps the old version.
+
+```sh
+scp release/tinyactors-granary-<version>.tgz host:/tmp/
+ssh host 'sudo BUN_INSTALL=/opt/bun /opt/bun/bin/bun add -g --force /tmp/tinyactors-granary-<version>.tgz \
+  && granary version && rm /tmp/tinyactors-granary-<version>.tgz'
+```
+
+Once the host is set up, [`mise run deploy`](upgrades.md#mise-run-deploy)
+does this (and the restart and checks) for you.
+
 The package contains the built server, the `granary` command and this
 manual. Its only runtime dependencies are `@tinyactors/node`, which ships
 prebuilt native code for Linux and macOS (no compiler needed), and
@@ -61,6 +79,34 @@ it. `--yes-i-stored-the-key` skips that for automation.
 
 Instead of the file you can pass the key as `GRANARY_MASTER_KEY`, for example
 from a secret manager. `init` refuses to run while granary is running.
+
+### Without ever printing the key
+
+If the key shouldn't appear on any terminal, create it yourself and put it in
+place **before** `init`; `init` then uses the existing `master.key` and prints
+nothing. With 1Password (item `granary`, field `master-key`, the reference
+`fnox.toml`'s `prod` profile uses):
+
+```sh
+umask 077
+KEY=$(openssl rand -hex 32)
+jq -n --arg k "$KEY" '{title:"granary", category:"SECURE_NOTE",
+  fields:[{id:"master-key", label:"master-key", type:"CONCEALED", value:$k}]}' > item.json
+op item create --vault Personal --template item.json && rm item.json
+printf '%s\n' "$KEY" | ssh host 'sudo install -o granary -g granary -m 0600 /dev/stdin /var/lib/granary/master.key'
+unset KEY
+# verify by hash, never by value:
+fnox get -P prod GRANARY_MASTER_KEY | tr -d '\n' | shasum -a 256
+ssh host 'sudo cat /var/lib/granary/master.key | tr -d "\n" | sha256sum'
+```
+
+Don't use `fnox set` to store the value: with the 1Password provider it writes
+the **plaintext value into `fnox.toml`** instead of into 1Password. Keep
+`fnox.toml` a reference, and pass secrets to `op` in a 0600 template file,
+never on the command line.
+
+Without the key, stored secrets and every backup are unrecoverable: keep it in
+the password manager, not only on the host.
 
 `granary.env` holds only process settings:
 
@@ -133,5 +179,26 @@ server {
 When the proxy runs on the same machine, set `HOST=127.0.0.1` so granary
 isn't reachable around it. `/webhook` must stay publicly reachable, because
 GitHub delivers webhooks there.
+
+## 7. Settle the public hostname before the GitHub App
+
+The GitHub App granary creates for you has its URLs baked in, all derived from
+`ORIGIN`: homepage, webhook `…/webhook`, OAuth callback `…/auth/callback` and
+setup URL `…/settings/github/installed`. Choose the final hostname **first**:
+
+1. Point DNS at the host. For a subdomain, a `CNAME` to the host (or your
+   proxy). On Cloudflare, set the record to **DNS only (grey cloud)** when the
+   host terminates TLS itself (as exe.dev does); proxying it breaks the host's
+   certificate issuance.
+2. Tell your proxy/hosting about the name (on exe.dev: `ssh exe.dev domain add
+   <vm> <hostname>`; TLS certificates are then issued automatically).
+3. Set `ORIGIN=https://<hostname>` in `granary.env` and `sudo systemctl
+   restart granary`. Check `curl -s https://<hostname>/readyz`.
+
+Sessions are per hostname: after a change, sign in again with a new
+`granary login-link`. If the hostname changes after the app exists, edit these
+fields in the app's settings on GitHub (Settings → Developer settings → GitHub
+Apps → your app): **Homepage URL**, **Webhook URL**, **Callback URL** and
+**Setup URL**, with the new origin and the paths above.
 
 Next: [First run](first-run.md).

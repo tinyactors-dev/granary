@@ -53,6 +53,19 @@ data directory's owner, e.g. `sudo -u granary granary <command> --data
 **"no ORIGIN configured" from `login-link`.** Set `ORIGIN=https://…` (granary's
 public URL) in `granary.env`, restart granary if it runs, and try again.
 
+**After an upgrade the old version still runs.** Check `curl -s
+localhost:3000/healthz`. A local tarball reinstalled from the same path is
+served from Bun's install cache: copy it under its versioned name and use
+`bun add -g --force` (what `mise run deploy` does), then restart.
+
+**"GitHub setup did not finish" after confirming on GitHub.** GitHub created
+the app, but granary didn't get its credentials. Delete that app on GitHub
+(its settings → Advanced → Delete GitHub App) and run the wizard again.
+
+**The hostname answers `421 Misdirected Request`** (exe.dev). The custom
+domain isn't registered for the VM yet: `ssh exe.dev domain add <vm> <hostname>`
+once the CNAME resolves.
+
 **Missed webhooks after an outage.** The catch-up re-sends failed deliveries
 from the last 72 hours every 10 minutes (**Settings → GitHub → Missed
 webhooks**). Older ones can be redelivered by hand from the app's

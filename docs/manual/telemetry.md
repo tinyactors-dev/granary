@@ -61,6 +61,16 @@ Secrets are scrubbed from everything that is exported.
 ## Seeding a sink from the environment
 
 For automated installs a sink can be seeded once with `GRANARY_SEED_OTLP_ENDPOINT`,
-`GRANARY_SEED_OTLP_AUTH` (`none`, `bearer`, `basic`, `exe-vm-token`, …),
-`GRANARY_SEED_OTLP_TOKEN` and `GRANARY_SEED_OTLP_GRAFANA_URL`. After that it is
-edited in the UI like any other sink.
+`GRANARY_SEED_OTLP_AUTH` (`none`, `bearer`, `basic`, `exe-peer`,
+`exe-vm-token`, …), `GRANARY_SEED_OTLP_TOKEN` and `GRANARY_SEED_OTLP_GRAFANA_URL`
+in `granary.env`, before the first start. A seeded sink starts **enabled**
+(you asserted it); one that needs a token starts disabled until the token
+exists. After that it is edited in the UI like any other sink.
+
+## One Grafana for several services
+
+A single `grafana/otel-lgtm` instance can serve all your services: each one
+exports with its own `service.name`, so Loki, Tempo and Prometheus keep them
+apart. [Appendix: exe.dev](appendix-exe-dev.md#2-a-shared-observability-vm)
+shows the setup with a private VM, credential-free VM-to-VM delivery and
+Grafana signing users in via exe.dev.

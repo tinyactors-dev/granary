@@ -28,6 +28,11 @@ just granary.
   `/var/lib/granary/master.key` (0600) before `granary init`; never printed.
 
 ## Consequences
+Public hostname since 2026-09-28: `https://granary.tinyactors.dev`
+(Cloudflare CNAME → `ta-granary.exe.xyz`, DNS only; `ssh exe.dev domain add`;
+`ORIGIN` updated) — set before the GitHub App was created. The GitHub App is
+connected. Deploys: `mise run deploy -- --host ta-granary.exe.xyz` (ADR 0233).
+
 New tinyactors services get telemetry by tagging their VM `tinyactors` and
 pointing OTLP at `https://ta-metrics-otlp.int.exe.xyz`. Upgrades: copy a new
 tarball (later: `bun add -g @tinyactors/granary@<tag>`) and

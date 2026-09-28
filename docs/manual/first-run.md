@@ -47,7 +47,17 @@ On **Settings → GitHub**:
 
 GitHub sends you back to granary, which stores the app's private key,
 webhook secret and client secret encrypted with the master key. Nothing is
-copied by hand. From now on:
+copied by hand.
+
+This wizard is the only way to connect an app. An app registered by hand on
+GitHub can't be imported: its private key, webhook secret and OAuth
+credentials reach granary only through the manifest conversion at the end of
+the wizard. Make sure `ORIGIN` is final first ([Install §7](install.md#7-settle-the-public-hostname-before-the-github-app)).
+
+If the wizard reports *GitHub setup did not finish* **after** you confirmed on
+GitHub, GitHub has already created the app but granary never received its
+credentials. Delete that orphaned app on GitHub (the app's settings →
+**Advanced** → **Delete GitHub App**) before trying again with the same name. From now on:
 
 - the relay authenticates as the app, with short-lived installation tokens
 - signing in to granary uses the app ("Sign in with GitHub")

@@ -25,7 +25,8 @@ first admin and for disaster recovery.
 
 ```sh
 curl -fsSL https://bun.sh/install | sudo BUN_INSTALL=/opt/bun bash
-sudo BUN_INSTALL=/opt/bun /opt/bun/bin/bun add -g @tinyactors/granary   # stable (dist-tag latest)
+sudo BUN_INSTALL=/opt/bun /opt/bun/bin/bun add -g @tinyactors/granary   # stable (dist-tag latest); before the
+#   first npm release: copy a release:pack tarball and `bun add -g --force <file>` (Install §2)
 sudo ln -sf /opt/bun/bin/bun /opt/bun/bin/granary /usr/local/bin/
 sudo useradd --system --home /var/lib/granary --shell /usr/sbin/nologin granary
 sudo install -d -o granary -g granary -m 0700 /var/lib/granary
@@ -38,6 +39,8 @@ sudo -u granary granary login-link <your-github-login> --data /var/lib/granary
 #   → open the printed URL, confirm, and follow Settings → GitHub
 ```
 
+Set the final public hostname (`ORIGIN`) before the next step: the GitHub App
+bakes it into its URLs ([Install §7](install.md#7-settle-the-public-hostname-before-the-github-app)).
 Then, in the browser: create the GitHub App (one click), install it on the
 repositories to guard, add allowed users under **Allowlist**, and add a
 backup destination under **Ops → Destinations**.
@@ -57,6 +60,9 @@ backup destination under **Ops → Destinations**.
 8. [CLI reference](cli.md), generated from the CLI itself
 9. [Troubleshooting](troubleshooting.md): `granary doctor`, `/readyz`,
    common failures
-10. [Appendix: an exe.dev VM](appendix-exe-dev.md): a worked example
+10. [Operations runbook](operations-runbook.md): health, deploys and
+    rollbacks, login links, key rotation, telemetry
+11. [Appendix: an exe.dev VM](appendix-exe-dev.md): a worked example, with a
+    shared observability VM and a custom hostname
 
 Source and issues: <https://github.com/tinyactors-dev/granary>.
