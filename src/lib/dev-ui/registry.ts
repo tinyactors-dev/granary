@@ -12,9 +12,65 @@ import JsonBlockPreview from './previews/JsonBlockPreview.svelte';
 import TraceViewerPreview from './previews/TraceViewerPreview.svelte';
 import TraceViewerDocs from './previews/TraceViewerDocs.svelte';
 
-const jsonDefaults = { mode: 'structure', keymap: 'vim', expandDepth: 2, maxStringLength: 200, theme: 'auto', rootLabel: '$', height: '30rem', json: '' };
+import MessageTemplatePreview from './previews/MessageTemplatePreview.svelte';
+import MessageTemplateDocs from './previews/MessageTemplateDocs.svelte';
+import { TEMPLATE_SAMPLES } from '$lib/schemas/message-template';
+
+const templateDefaults = { kind: 'issue', custom: false, template: '', inherited: '', inheritedLabel: '', label: 'Closing message (issues)', readonly: false, sample: '' };
+
+const jsonDefaults ={ mode: 'structure', keymap: 'vim', expandDepth: 2, maxStringLength: 200, theme: 'auto', rootLabel: '$', height: '30rem', json: '' };
 
 export const PREVIEWS: PreviewEntry[] = [
+	{
+		id: 'message-template',
+		title: 'Closing message editor',
+		description: 'Markdown template for the comment granary posts when it closes an issue or pull request: variables, validation, safe live preview (ADR 0250–0252).',
+		source: 'src/lib/components/message-template/',
+		preview: MessageTemplatePreview,
+		docs: MessageTemplateDocs,
+		canvas: { padded: true },
+		controls: [
+			{ key: 'kind', type: 'select', options: ['issue', 'pull_request'] },
+			{ key: 'custom', type: 'boolean', help: 'Off = inherit (value null).' },
+			{ key: 'template', type: 'text', multiline: true, help: 'The custom template (when custom is on).' },
+			{ key: 'inherited', type: 'text', multiline: true, help: 'What null stands for; empty = the built-in default.' },
+			{ key: 'inheritedLabel', type: 'text' },
+			{ key: 'sample', type: 'select', options: ['', ...TEMPLATE_SAMPLES.map((s) => s.id)], help: 'Preview data.' },
+			{ key: 'label', type: 'text' },
+			{ key: 'readonly', type: 'boolean', help: 'Non-admins see this.' }
+		],
+		stories: [
+			{ id: 'default', title: 'Default template', description: 'Nothing customised: shows the built-in text.', args: { ...templateDefaults } },
+			{
+				id: 'custom',
+				title: 'Custom template',
+				args: {
+					...templateDefaults,
+					custom: true,
+					template:
+						'Hi @{{author}} 👋\n\nThanks for opening **{{title}}**. This repository only accepts issues from approved contributors, so #{{number}} was closed automatically.\n\n- Want to contribute? Start a [discussion](https://github.com/{{repository}}/discussions).\n- Security report? Please use `SECURITY.md`.'
+				}
+			},
+			{ id: 'invalid', title: 'Invalid variable', description: 'Unknown variables and stray braces are reported inline.', args: { ...templateDefaults, custom: true, template: 'Closed {{issue_number}} by {{author} — see {{ url }}' } },
+			{ id: 'pull-request', title: 'Pull request', args: { ...templateDefaults, kind: 'pull_request', label: 'Closing message (pull requests)', sample: 'pr' } },
+			{
+				id: 'repo-override',
+				title: 'Per-repository override',
+				description: 'Inherits the global template until customised.',
+				args: {
+					...templateDefaults,
+					label: 'acme/sandbox · issues',
+					inherited: 'Thanks @{{author}}! Issues here are reserved for maintainers; yours (#{{number}}) was closed.',
+					inheritedLabel: 'the global issue template',
+					custom: true,
+					template: '{{repository}} is a sandbox for the core team — your {{kind}} was closed. 🙏'
+				}
+			},
+			{ id: 'mention', title: 'Mention attempt in the title', description: 'Links, HTML and @-mentions in the title are neutralised.', args: { ...templateDefaults, custom: true, template: 'Closed: {{title}}', sample: 'mention' } },
+			{ id: 'empty', title: 'Empty template', description: 'Only the hidden marker is posted.', args: { ...templateDefaults, custom: true, template: '' } },
+			{ id: 'readonly', title: 'Read-only (non-admin)', args: { ...templateDefaults, readonly: true, custom: true, template: 'Thanks @{{author}}, closed automatically.' } }
+		]
+	},
 	{
 		id: 'json-view',
 		title: 'JSON view',

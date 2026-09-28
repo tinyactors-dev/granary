@@ -8,6 +8,7 @@ export interface SettingsNavItem {
 export const SETTINGS_NAV: SettingsNavItem[] = [
 	{ href: '/settings', label: 'General' },
 	{ href: '/settings/github', label: 'GitHub' },
+	{ href: '/settings/closing-message', label: 'Closing message' },
 	{ href: '/settings/admins', label: 'Admins' },
 	{ href: '/settings/login-links', label: 'Login links', adminOnly: true },
 	{ href: '/settings/audit', label: 'Audit log', adminOnly: true }
@@ -37,5 +38,6 @@ export const AUDIT_LABELS: Record<string, string> = {
 	'github.disconnect': 'GitHub disconnected',
 	'github.repo.enable': 'Repository guarded',
 	'github.repo.disable': 'Repository no longer guarded',
-	'config.set': 'Setting changed'
+	'config.set': 'Setting changed',
+	'closing-message.set': 'Closing message changed'
 };
