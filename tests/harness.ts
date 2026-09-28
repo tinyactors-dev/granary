@@ -41,6 +41,10 @@ export interface HarnessOptions {
 	fakeEnv?: Record<string, string>;
 	/** Readiness timeout per process (ms). Default 30 000. */
 	bootTimeout?: number;
+	/** Also start the load generator (`bun loadgen/server.ts`, ADR 0070). */
+	loadgen?: boolean;
+	/** Extra env for the load generator process. */
+	loadgenEnv?: Record<string, string>;
 }
 
 export interface WaitOptions {
@@ -119,6 +123,10 @@ export class Harness {
 	readonly databasePath = join(this.tmpDir, 'granary.sqlite');
 	readonly appOutput = new Output('app');
 	readonly fakeOutput = new Output('fake-github');
+	readonly loadgenPort = freePort();
+	readonly loadgenUrl: string;
+	readonly loadgenOutput = new Output('loadgen');
+	private loadgen: Subprocess | null = null;
 	private app: Subprocess | null = null;
 	private fake: Subprocess | null = null;
 	private appOutputs: Output[] = [];
@@ -126,6 +134,7 @@ export class Harness {
 	constructor(readonly options: HarnessOptions = {}) {
 		this.fakeUrl = `http://127.0.0.1:${this.fakePort}`;
 		this.appUrl = `http://127.0.0.1:${this.appPort}`;
+		this.loadgenUrl = `http://127.0.0.1:${this.loadgenPort}`;
 		this.fakeGithub = new FakeGithubClient(this.fakeUrl);
 	}
 
@@ -138,7 +147,7 @@ export class Harness {
 		const env: Record<string, string> = {};
 		for (const [k, v] of Object.entries(process.env)) {
 			if (v === undefined) continue;
-			if (/^(GRANARY_|GITHUB_|FAKE_GITHUB_|OTEL_|DATABASE_PATH$|ADMINS$|ORIGIN$|PORT$|HOST$|DAP_PORT$|ALLOWED_USERS_SEED$)/.test(k)) continue;
+			if (/^(GRANARY_|GITHUB_|FAKE_GITHUB_|OTEL_|LOADGEN_|DATABASE_PATH$|ADMINS$|ORIGIN$|PORT$|HOST$|DAP_PORT$|ALLOWED_USERS_SEED$)/.test(k)) continue;
 			env[k] = v;
 		}
 		return env;
@@ -187,7 +196,31 @@ export class Harness {
 		this.collector.start();
 		await this.startFake();
 		await this.startApp();
+		if (this.options.loadgen) await this.startLoadgen();
 		return this;
+	}
+
+	loadgenEnv(): Record<string, string> {
+		return {
+			...this.baseEnv(),
+			LOADGEN_PORT: String(this.loadgenPort),
+			FAKE_GITHUB_URL: this.fakeUrl,
+			LOADGEN_ALLOWLISTED: 'alice',
+			OTEL_EXPORTER_OTLP_ENDPOINT: this.collector.url,
+			...this.options.loadgenEnv
+		};
+	}
+
+	private async startLoadgen() {
+		this.loadgen = Bun.spawn(['bun', 'loadgen/server.ts'], {
+			cwd: ROOT,
+			env: this.loadgenEnv(),
+			stdout: 'pipe',
+			stderr: 'pipe'
+		});
+		void pump(this.loadgen.stdout as ReadableStream<Uint8Array>, this.loadgenOutput);
+		void pump(this.loadgen.stderr as ReadableStream<Uint8Array>, this.loadgenOutput);
+		await waitHttp(`${this.loadgenUrl}/healthz`, this.loadgen, this.loadgenOutput, this.bootTimeout, (r) => r.ok);
 	}
 
 	private async startFake() {
@@ -232,6 +265,12 @@ export class Harness {
 	}
 
 	async stop() {
+		if (this.loadgen) {
+			this.loadgen.kill('SIGTERM');
+			await Promise.race([this.loadgen.exited, Bun.sleep(2000)]);
+			if (this.loadgen.exitCode === null) this.loadgen.kill('SIGKILL');
+			this.loadgen = null;
+		}
 		await this.killApp('SIGTERM').catch(() => undefined);
 		if (this.fake) {
 			this.fake.kill('SIGTERM');
@@ -307,7 +346,8 @@ export class Harness {
 			'--- app output ---',
 			this.appOutput.tail(),
 			'--- fake-github output ---',
-			this.fakeOutput.tail(20)
+			this.fakeOutput.tail(20),
+			...(this.options.loadgen ? ['--- loadgen output ---', this.loadgenOutput.tail(20)] : [])
 		]
 			.filter(Boolean)
 			.join('\n');
