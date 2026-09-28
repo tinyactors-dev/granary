@@ -6,7 +6,6 @@
  */
 import type { ClosingMessages } from '$lib/schemas/message-template';
 import { readClosingMessages, saveClosingMessages } from './closing-messages';
-import { log } from './log';
 import { CLOSING_MESSAGES_SETTING } from '$lib/schemas/message-template';
 import { randomBytes } from 'node:crypto';
 import { LoadgenClient } from './loadgen-client';
@@ -727,7 +726,7 @@ export class RealBackend implements Backend {
 	}
 	async saveClosingMessages(messages: ClosingMessages, actor: string): Promise<ClosingMessages> {
 		const saved = this.#adminCall(() => saveClosingMessages(this.#wal.db, messages, 'ui', actor));
-		log.info(`settings: closing message changed by ${actor}`);
+		log.info('settings: closing message changed', { 'user.login': actor, 'granary.setting': 'messages.closing' });
 		return saved;
 	}
 	async listAdmins(): Promise<Admin[]> {
