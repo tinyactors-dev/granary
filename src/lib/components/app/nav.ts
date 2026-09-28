@@ -6,6 +6,7 @@ import UserCheckIcon from '@lucide/svelte/icons/user-check';
 import CpuIcon from '@lucide/svelte/icons/cpu';
 import BugIcon from '@lucide/svelte/icons/bug';
 import MoonStarIcon from '@lucide/svelte/icons/moon-star';
+import SettingsIcon from '@lucide/svelte/icons/settings';
 import type { Component } from 'svelte';
 
 export interface NavItem {
@@ -24,6 +25,7 @@ export const NAV: NavItem[] = [
 	{ href: '/allowlist', label: 'Allowlist', icon: UserCheckIcon, description: 'Who may open issues' },
 	{ href: '/actors', label: 'Actors', icon: CpuIcon, description: 'Resident actors' },
 	{ href: '/ops', label: 'Ops', icon: MoonStarIcon, description: 'Backups, telemetry and self-healing' },
+	{ href: '/settings', label: 'Settings', icon: SettingsIcon, description: 'GitHub connection, admins, login links' },
 	{ href: '/__dev', label: 'Dev', icon: BugIcon, description: 'Developer console', devOnly: true }
 ];
 
