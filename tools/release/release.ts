@@ -34,7 +34,16 @@ const channel = (opt('--channel') ?? 'dev') as Channel;
 if (!CHANNELS.includes(channel)) die(`--channel must be one of ${CHANNELS.join(', ')}`);
 if (Bun.version !== BUN_VERSION) console.warn(`release: running Bun ${Bun.version}, the project pins ${BUN_VERSION} (.bun-version)`);
 
-const pass = (names: string[]) => names.flatMap((n) => (flag(n) ? [n] : opt(n) !== undefined && !opt(n)!.startsWith('--') ? [n, opt(n)!] : []));
+/** Forward options to a step script: `valued` take the next argument, `booleans` stand alone. */
+const pass = (valued: string[], booleans: string[] = []) => [
+	...valued.flatMap((n) => {
+		const v = opt(n);
+		if (v === undefined) return [];
+		if (v.startsWith('--')) die(`${n} needs a value`);
+		return [n, v];
+	}),
+	...booleans.filter(flag)
+];
 
 async function run(script: string, args: string[]): Promise<void> {
 	console.log(`\n$ bun tools/release/${script} ${args.join(' ')}`);
@@ -43,6 +52,6 @@ async function run(script: string, args: string[]): Promise<void> {
 	if (code !== 0) die(`${script} failed (exit ${code})`, code);
 }
 
-if (step === 'all' || step === 'pack') await run('pack.ts', ['--channel', channel, ...pass(['--version', '--ref', '--working-tree'])]);
-if (step === 'all' || step === 'verify') await run('verify.ts', pass(['--platform', '--out', '--timeout', '--emulated']));
-if (step === 'all' || step === 'publish') await run('publish.ts', ['--channel', channel, ...pass(['--yes', '--provenance', '--accept-unverified'])]);
+if (step === 'all' || step === 'pack') await run('pack.ts', ['--channel', channel, ...pass(['--version', '--ref'], ['--working-tree'])]);
+if (step === 'all' || step === 'verify') await run('verify.ts', pass(['--platform', '--out', '--timeout'], ['--emulated']));
+if (step === 'all' || step === 'publish') await run('publish.ts', ['--channel', channel, ...pass(['--accept-unverified'], ['--yes', '--provenance'])]);
