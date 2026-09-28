@@ -58,7 +58,7 @@ const JSON_OUT: CliOption = { name: 'json', type: 'boolean', description: 'Print
 
 export const CLI_COMMANDS: readonly CliCommand[] = [
 	{ name: 'serve', args: [], transport: 'none', description: 'Run the granary server', options: [DATA, { name: 'host', type: 'string', description: 'Bind address', default: '0.0.0.0' }, { name: 'port', type: 'string', description: 'Port', default: '3000' }] },
-	{ name: 'init', args: [], transport: 'offline', description: 'Create the data dir, generate and confirm the master key, write granary.env', options: [DATA, { name: 'origin', type: 'string', description: 'Public URL, e.g. https://granary.example.com' }, { name: 'yes-i-stored-the-key', type: 'boolean', description: 'Skip the interactive key confirmation' }] },
+	{ name: 'init', args: [], transport: 'offline', description: 'Create the data dir, generate and confirm the master key, write granary.env', options: [DATA, { name: 'origin', type: 'string', description: 'Public URL, e.g. https://granary.example.com' }, { name: 'yes-i-stored-the-key', type: 'boolean', description: 'Skip the interactive key confirmation' }, JSON_OUT] },
 	{ name: 'doctor', args: [], transport: 'socket-or-direct', description: 'Check Bun, data dir, master key, databases, disk, ORIGIN and GitHub', options: [DATA, JSON_OUT] },
 	{ name: 'admin add', args: ['login'], transport: 'socket-or-direct', description: 'Make a GitHub login an admin', options: [DATA, JSON_OUT] },
 	{ name: 'admin remove', args: ['login'], transport: 'socket-or-direct', description: 'Remove an admin (not the last one)', options: [DATA, JSON_OUT] },

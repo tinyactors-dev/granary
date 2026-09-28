@@ -25,7 +25,8 @@ const h: () => Harness = !LIVE
 			appEnv: { ADMINS: 'admin' },
 			/** Offline commands run before the server starts. */
 			prepare: async (harness) => {
-				initOutput = await runCli(harness, ['init', '--origin', harness.appUrl, '--yes-i-stored-the-key', '--json']);
+				// Blank the harness's OPS_MASTER_KEY so init generates (and prints) a new key instead of using the env one (ADR 0157).
+				initOutput = await runCli(harness, ['init', '--origin', harness.appUrl, '--yes-i-stored-the-key', '--json'], { env: { OPS_MASTER_KEY: '' } });
 				const key = /[0-9a-f]{64}/i.exec(initOutput.stdout)?.[0];
 				if (key) harness.extraAppEnv.GRANARY_MASTER_KEY = key;
 				await runCli(harness, ['admin', 'add', 'offline-admin']);

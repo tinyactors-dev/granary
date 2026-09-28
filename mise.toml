@@ -77,6 +77,10 @@ run = "pitchfork logs -t granary/app-real granary/rustfs granary/grafana"
 description = "Alias for `up` (dev daemons via pitchfork)"
 depends = ["up"]
 
+[tasks.cli]
+description = "Build the granary CLI into dist/cli.js (ADR 0159)"
+run = "bun build src/cli/main.ts --target bun --external @tinyactors/node --outfile dist/cli.js"
+
 [tasks.build]
 description = "Production build (svelte-adapter-bun) into build/"
 run = "bun --bun vite build"
@@ -110,3 +114,15 @@ run = "fnox exec -P prod -- bun build/index.js"
 [tools]
 pitchfork = "latest"
 "npm:agent-browser" = "latest"  # interactive browser verification (ADR 0024)
+
+[tasks."release:pack"]
+description = "Build the publishable npm package from a clean git export → release/*.tgz (ADR 0180)"
+run = "bun tools/release/pack.ts"
+
+[tasks."release:verify"]
+description = "Install the packed tarball on clean oven/bun Linux containers (arm64 + amd64) and exercise it (ADR 0181)"
+run = "bun tools/release/verify.ts"
+
+[tasks."release:publish"]
+description = "Publish the verified tarball to npm — dry run unless `-- --yes` (ADR 0182)"
+run = "fnox exec -P release -- bun tools/release/publish.ts"

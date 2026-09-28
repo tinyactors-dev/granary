@@ -112,6 +112,6 @@ export async function loadMasterKeys(opts: {
 	};
 }
 
-/** Generate fresh key material (`granary init`). */
-export const generateMasterKey = (): string => b64(randomBytes(KEY_BYTES));
+/** Generate fresh key material as 64 hex characters (`granary init`; base64 keys stay accepted). */
+export const generateMasterKey = (): string => Buffer.from(randomBytes(KEY_BYTES)).toString('hex');
 export { hex };
