@@ -15,3 +15,7 @@ depends = ["fake-github"]
 run = "mise run loadgen"
 ready_port = 4040
 depends = ["fake-github"]
+
+[daemons.fake-infra]
+run = "mise run fake-infra"
+ready_port = 4090

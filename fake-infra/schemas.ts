@@ -150,10 +150,17 @@ export const FakeOtlpBatch = Type.Object({
 	summary: Type.Array(Type.String())
 });
 
+/**
+ * An injected fault as state reports it. (Was `Intersect([InjectFaultRequest, {id, remaining}])`,
+ * which can never validate because InjectFaultRequest is closed — ADR 0134.)
+ */
+export const FakeFault = Type.Object({ ...InjectFaultRequest.properties, id: Type.String(), remaining: Type.Integer() }, { additionalProperties: false });
+export type FakeFault = Static<typeof FakeFault>;
+
 export const FakeInfraState = Type.Object({
 	buckets: Type.Array(FakeBucket),
 	credentials: Type.Array(Type.Object({ id: Type.String(), kind: Type.String(), scope: Type.Union([Type.String(), Type.Null()]), revoked: Type.Boolean(), label: Type.Union([Type.String(), Type.Null()]) })),
-	faults: Type.Array(Type.Intersect([InjectFaultRequest, Type.Object({ id: Type.String(), remaining: Type.Integer() })])),
+	faults: Type.Array(FakeFault),
 	fidelity: FidelityRequest,
 	clockSkewMs: Type.Integer(),
 	exeProxy: Type.Object({ tokenPort: Type.Union([Type.Integer(), Type.Null()]), peerPort: Type.Union([Type.Integer(), Type.Null()]) }),
