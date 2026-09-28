@@ -145,6 +145,8 @@ export class Harness {
 	readonly appPort = freePort();
 	readonly tmpDir = mkdtempSync(join(tmpdir(), 'granary-test-'));
 	readonly databasePath = join(this.tmpDir, 'granary.sqlite');
+	/** ADR 0203: extra app env set at runtime (e.g. by `prepare` after `granary init`). */
+	readonly extraAppEnv: Record<string, string> = {};
 	readonly appOutput = new Output('app');
 	readonly fakeOutput = new Output('fake-github');
 	readonly loadgenPort = freePort();
@@ -203,8 +205,11 @@ export class Harness {
 			ADMINS: 'admin',
 			ALLOWED_USERS_SEED: 'alice',
 			OTEL_EXPORTER_OTLP_ENDPOINT: this.collector.url,
+			// ADR 0157: the data dir holds granary.sqlite, ops.sqlite, admin.sock.
+			GRANARY_DATA_DIR: this.tmpDir,
 			...(this.options.infra ? this.opsEnv() : {}),
-			...this.options.appEnv
+			...this.options.appEnv,
+			...this.extraAppEnv
 		};
 	}
 
@@ -463,6 +468,41 @@ export class Harness {
 			body
 		});
 	}
+}
+
+/** Result of running the `granary` CLI (ADR 0159). */
+export interface CliResult {
+	code: number;
+	stdout: string;
+	stderr: string;
+}
+
+/**
+ * The CLI entry point E1 builds (`dist/cli.js`), else its source. Null until
+ * the CLI exists (tests that need it are `todo` until then).
+ */
+export function cliEntry(): string | null {
+	for (const p of ['dist/cli.js', 'src/cli/main.ts', 'src/cli/index.ts', 'src/cli.ts']) {
+		if (existsSync(join(ROOT, p))) return join(ROOT, p);
+	}
+	return null;
+}
+
+/** Run `granary <args> --data <tmpDir>` with the app's env (socket or direct mode). */
+export async function runCli(h: Harness, args: string[], opts: { env?: Record<string, string>; stdin?: string; timeout?: number } = {}): Promise<CliResult> {
+	const entry = cliEntry();
+	if (!entry) throw new Error('granary CLI not built yet (E1)');
+	const proc = Bun.spawn(['bun', entry, ...args, '--data', h.tmpDir], {
+		cwd: ROOT,
+		env: { ...h.appEnv(), ...opts.env },
+		stdin: opts.stdin !== undefined ? new TextEncoder().encode(opts.stdin) : 'ignore',
+		stdout: 'pipe',
+		stderr: 'pipe'
+	});
+	const timer = setTimeout(() => proc.kill('SIGKILL'), opts.timeout ?? 20_000);
+	const [stdout, stderr, code] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text(), proc.exited]);
+	clearTimeout(timer);
+	return { code, stdout, stderr };
 }
 
 export function signBody(body: string, secret: string = TEST_SECRETS.webhookSecret): string {

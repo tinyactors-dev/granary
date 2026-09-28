@@ -74,3 +74,94 @@ export async function installationToken(h: Harness, app: CreatedApp, installatio
 	if (r.status !== 201) throw new Error(`access_tokens: ${r.status} ${await r.text()}`);
 	return (await r.json()) as { token: string; expires_at: string };
 }
+
+// ---------------------------------------------------------------------------
+// granary side (ADR 0159, 0160, 0161)
+// ---------------------------------------------------------------------------
+
+const decodeEntities = (s: string) =>
+	s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/** Cookie header value from a response's Set-Cookie headers. */
+export function cookiesOf(res: Response): string {
+	return res.headers
+		.getSetCookie()
+		.map((c) => c.split(';')[0])
+		.join('; ');
+}
+
+/**
+ * Consume a login link like a browser (GET confirm page, POST it) and return
+ * the session cookie plus where granary redirected (ADR 0161).
+ */
+export async function consumeLoginLink(h: Harness, linkUrl: string): Promise<{ cookie: string; location: string | null }> {
+	const url = new URL(linkUrl);
+	const path = `${url.pathname}${url.search}`;
+	const page = await h.fetchApp(path);
+	if (page.status !== 200) throw new Error(`login link page: ${page.status}`);
+	const res = await h.fetchApp(path, {
+		method: 'POST',
+		headers: { Origin: h.appUrl, 'Content-Type': 'application/x-www-form-urlencoded' },
+		body: ''
+	});
+	const cookie = cookiesOf(res);
+	if (!cookie.includes('granary_session=')) throw new Error(`login link POST: ${res.status}, no session cookie`);
+	return { cookie, location: res.headers.get('location') };
+}
+
+/**
+ * Walk the in-product setup: GET /settings/github as an admin, submit the
+ * manifest form to the fake (auto-confirm), follow GitHub's redirect back to
+ * granary's callback. Returns the app the fake created.
+ */
+export async function setupGitHubApp(h: Harness, cookie: string): Promise<{ appId: number; slug: string; callbackStatus: number; callbackLocation: string | null }> {
+	const page = await h.fetchApp('/settings/github', { headers: { Cookie: cookie } });
+	const html = await page.text();
+	const manifest = /name="manifest"[^>]*value="([^"]*)"|value="([^"]*)"[^>]*name="manifest"/.exec(html);
+	const action = /<form[^>]*action="([^"]*\/settings\/apps\/new[^"]*)"/.exec(html);
+	if (!manifest || !action) throw new Error(`no manifest form on /settings/github (status ${page.status})`);
+	const postUrl = new URL(decodeEntities(action[1]!));
+	postUrl.searchParams.set('auto', '1');
+	postUrl.searchParams.set('login', 'admin');
+	const created = await fetch(postUrl, {
+		method: 'POST',
+		body: new URLSearchParams({ manifest: decodeEntities((manifest[1] ?? manifest[2])!) }),
+		redirect: 'manual'
+	});
+	if (created.status !== 302) throw new Error(`fake manifest POST: ${created.status} ${await created.text()}`);
+	const back = new URL(created.headers.get('location')!);
+	const cb = await h.fetchApp(`${back.pathname}${back.search}`, { headers: { Cookie: cookie } });
+	const apps = (await h.fakeGithub.state()).apps ?? [];
+	const app = apps[apps.length - 1]!;
+	return { appId: app.id, slug: app.slug, callbackStatus: cb.status, callbackLocation: cb.headers.get('location') };
+}
+
+/** granary env with no GitHub config at all (setup happens in-product). */
+export const APP_MODE_ENV: Record<string, string> = {
+	GITHUB_TOKEN: '',
+	GITHUB_WEBHOOK_SECRET: '',
+	GITHUB_OAUTH_CLIENT_ID: '',
+	GITHUB_OAUTH_CLIENT_SECRET: '',
+	GRANARY_MASTER_KEY: 'b1'.repeat(32)
+};
+
+/**
+ * Bring a fresh granary into app mode: login link for `admin` (CLI), manifest
+ * setup, install on `account` (all repos). Returns the admin cookie and app.
+ */
+export async function setupAppMode(h: Harness, account: string): Promise<{ cookie: string; appId: number; slug: string }> {
+	const { runCli } = await import('./harness');
+	const link = await runCli(h, ['login-link', 'admin', '--json']);
+	if (link.code !== 0) throw new Error(`login-link: ${link.stderr || link.stdout}`);
+	const { cookie } = await consumeLoginLink(h, (JSON.parse(link.stdout) as { url: string }).url);
+	const { appId, slug } = await setupGitHubApp(h, cookie);
+	await h.fakeGithub.installApp(appId, { account });
+	await h.waitFor(
+		async () => {
+			const s = JSON.parse((await runCli(h, ['github', 'status', '--json'])).stdout) as { installations?: { account: string }[] };
+			return s.installations?.some((i) => i.account === account);
+		},
+		{ message: 'installation synced', timeout: 20_000 }
+	);
+	return { cookie, appId, slug };
+}
