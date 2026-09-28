@@ -29,6 +29,10 @@ export interface DecodedLog {
 	body: unknown;
 	eventName: string;
 	attributes: Record<string, unknown>;
+	/** OTLP/JSON logs only (ADR 0234): trace correlation (hex) and SeverityNumber. */
+	traceId?: string;
+	spanId?: string;
+	severityNumber?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -293,10 +297,10 @@ export class Collector {
 
 	/** OTLP/JSON logs (the ops module sends its event log this way, ADR 0121). */
 	private addJsonLogs(bytes: Uint8Array) {
-		type KV = { key: string; value?: { stringValue?: string; intValue?: string | number; boolValue?: boolean } };
-		const val = (v: KV['value']) => v?.stringValue ?? (v?.intValue !== undefined ? Number(v.intValue) : v?.boolValue);
+		type KV = { key: string; value?: { stringValue?: string; intValue?: string | number; doubleValue?: number; boolValue?: boolean } };
+		const val = (v: KV['value']) => v?.stringValue ?? (v?.intValue !== undefined ? Number(v.intValue) : v?.doubleValue !== undefined ? Number(v.doubleValue) : v?.boolValue);
 		const doc = JSON.parse(new TextDecoder().decode(bytes)) as {
-			resourceLogs?: { resource?: { attributes?: KV[] }; scopeLogs?: { logRecords?: { timeUnixNano?: string; severityText?: string; body?: KV['value']; eventName?: string; attributes?: KV[] }[] }[] }[];
+			resourceLogs?: { resource?: { attributes?: KV[] }; scopeLogs?: { logRecords?: { timeUnixNano?: string; severityNumber?: number; severityText?: string; body?: KV['value']; eventName?: string; attributes?: KV[]; traceId?: string; spanId?: string }[] }[] }[];
 		};
 		for (const rl of doc.resourceLogs ?? []) {
 			const service = String(rl.resource?.attributes?.find((a) => a.key === 'service.name')?.value?.stringValue ?? 'unknown');
@@ -309,7 +313,10 @@ export class Collector {
 						severityText: r.severityText ?? '',
 						body: val(r.body),
 						eventName: r.eventName ?? '',
-						attributes: Object.fromEntries((r.attributes ?? []).map((a) => [a.key, val(a.value)]))
+						attributes: Object.fromEntries((r.attributes ?? []).map((a) => [a.key, val(a.value)])),
+						traceId: r.traceId || undefined,
+						spanId: r.spanId || undefined,
+						severityNumber: r.severityNumber
 					});
 		}
 		this.notify();
