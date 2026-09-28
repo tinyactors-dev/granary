@@ -3,9 +3,11 @@
 @import "shadcn-svelte/tailwind.css";
 @import "@fontsource-variable/inter";
 
-@custom-variant dark (&:is(.dark *));
+/* `.theme-light` forces light inside a dark page (UI preview canvases, ADR 0077). */
+@custom-variant dark (&:is(.dark *):not(:is(.theme-light *)));
 
-:root {
+:root,
+.theme-light {
 	--background: oklch(1 0 0);
 	--foreground: oklch(0.141 0.005 285.823);
 	--card: oklch(1 0 0);

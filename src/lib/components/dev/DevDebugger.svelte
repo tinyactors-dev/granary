@@ -74,7 +74,7 @@
 
 <Card.Root id="debugger">
 	<Card.Header>
-		<Card.Title>3 · Debugger</Card.Title>
+		<Card.Title>Debugger</Card.Title>
 		<Card.Description>
 			The app runs a DAP server on <code>{dapHost}:{dapPort}</code>. Attach VS Code to any resident actor.
 		</Card.Description>

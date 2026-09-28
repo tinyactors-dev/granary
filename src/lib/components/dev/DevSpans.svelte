@@ -5,7 +5,7 @@
 
 <Card.Root id="spans">
 	<Card.Header>
-		<Card.Title>4 · Traces</Card.Title>
+		<Card.Title>Traces</Card.Title>
 		<Card.Description>
 			The app's in-memory trace buffer as Jaeger-style span trees: pick a trace, expand the tree, click a span for its
 			attributes, events, links and cause.

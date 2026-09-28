@@ -42,7 +42,7 @@
 
 <Card.Root id="login">
 	<Card.Header>
-		<Card.Title>1 · Log in as</Card.Title>
+		<Card.Title>Log in as</Card.Title>
 		<Card.Description>
 			Creates a session directly, without OAuth. Currently
 			{#if user}signed in as <strong>{user.login}</strong>{user.isAdmin ? ' (admin)' : ' (read-only)'}.{:else}anonymous.{/if}

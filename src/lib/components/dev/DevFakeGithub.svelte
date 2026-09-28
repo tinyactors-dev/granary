@@ -73,7 +73,7 @@
 
 <Card.Root id="fake-github">
 	<Card.Header>
-		<Card.Title>2 · Fake GitHub</Card.Title>
+		<Card.Title>Fake GitHub</Card.Title>
 		<Card.Description>
 			Trigger actions on the fake GitHub at <code>{info.fakeGithubUrl}</code>. Webhooks it sends go to this app.
 		</Card.Description>

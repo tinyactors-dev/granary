@@ -896,8 +896,11 @@
 		font-size: 12.5px;
 		overflow: hidden;
 	}
-	:global(.dark) .jv {
+	:global(.dark .jv:not(.theme-light .jv)) {
 		color-scheme: dark;
+	}
+	:global(.theme-light .jv) {
+		color-scheme: light;
 	}
 
 	button {

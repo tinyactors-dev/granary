@@ -86,7 +86,8 @@ function describeAction(a: ActionSpec): string[] {
 			if (to) parts.push(`to ${to}`);
 			const via = str(s.type);
 			if (via) parts.push(`via ${via}`);
-			const delay = str(s.delay);
+			// A computed delay (e.g. a persona's think time) reads better as a word than as its source.
+			const delay = s.delay?.kind === 'expr' ? '(computed delay)' : str(s.delay);
 			if (delay) parts.push(`after ${delay}`);
 			if (s.id?.kind === 'literal') parts.push(`id=${s.id.literal}`);
 			return [parts.join(' ')];
