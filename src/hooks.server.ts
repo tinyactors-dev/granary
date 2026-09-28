@@ -14,6 +14,7 @@ import { hasBackend, getBackend, setBackend } from '$lib/server/backend';
 import { SESSION_COOKIE } from '$lib/server/auth';
 import { hasOpsBackend, setOpsBackend } from '$lib/ops/contract';
 import type { SetupState } from '$lib/schemas/admins';
+import { adminCapabilities, isAdminPath, type AdminCapabilities } from '$lib/schemas/admin';
 import { log } from '$lib/server/log';
 import { observeRequest, safePath } from '$lib/server/request-log';
 
@@ -36,6 +37,38 @@ async function setupState(): Promise<SetupState> {
 
 /** Health probes: no session lookup, no setup redirects (ADR 0163). */
 const PROBES = new Set(['/healthz', '/readyz']);
+
+/** Admin-section capabilities (ADR 0290), from configuration; computed once. */
+let capsCache: AdminCapabilities | null = null;
+function capabilities(devMode: boolean): AdminCapabilities {
+	if (capsCache && capsCache.devMode === devMode) return capsCache;
+	let simulation = { fakeGithub: false, fakeInfra: false, loadgen: false };
+	let debuggerOn = false;
+	try {
+		const config = loadConfig(env);
+		simulation = config.simulation;
+		debuggerOn = config.debugger;
+	} catch {
+		/* invalid config fails at boot; here, fall back to "nothing extra" */
+	}
+	capsCache = adminCapabilities({ devMode, debugger: debuggerOn, simulation });
+	return capsCache;
+}
+
+/**
+ * Moved pages (ADR 0290, 0291): the dev console became /admin, actor
+ * internals moved into it, deliveries/effects/verdicts became Activity and
+ * the allowlist + closing message became Policy. 308 keeps the method.
+ */
+function movedTo(path: string): string | null {
+	if (path === '/__dev' || path.startsWith('/__dev/')) return '/admin' + path.slice('/__dev'.length);
+	if (path === '/actors' || path.startsWith('/actors/')) return '/admin' + path;
+	if (path === '/ops/actors') return '/admin/actors';
+	if (path === '/deliveries' || path === '/effects' || path === '/verdicts') return '/activity';
+	if (path === '/allowlist') return '/policy';
+	if (path === '/settings/closing-message') return '/policy/closing-message';
+	return null;
+}
 
 export const init: ServerInit = async () => {
 	// /ops UI development without the real ops module (ADR 0110, 0140).
@@ -70,6 +103,7 @@ export const handle: Handle = ({ event, resolve }) => observeRequest(event, () =
 
 const handleRequest: Handle = async ({ event, resolve }) => {
 	event.locals.devMode = isDevMode({ dev, env });
+	event.locals.admin = capabilities(event.locals.devMode);
 	event.locals.sessionId = null;
 	event.locals.user = null;
 	event.locals.setupState = 'ready';
@@ -82,8 +116,14 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 			event.locals.user = user;
 		}
 	}
-	if (event.url.pathname.startsWith('/__dev') && !event.locals.devMode) {
-		return new Response('Not Found', { status: 404 });
+	const moved = movedTo(event.url.pathname);
+	if (moved) return new Response(null, { status: 308, headers: { location: moved + event.url.search } });
+	// The admin section (ADR 0290): admins everywhere; in development mode also
+	// anonymous visitors (they sign in there). Signed-out visitors in production
+	// get the sign-in page from the root layout; signed-in non-admins get 404.
+	if (isAdminPath(event.url.pathname) && !event.locals.devMode) {
+		if (event.url.pathname.startsWith('/admin/api/') && !event.locals.admin.devApi) return new Response('Not Found', { status: 404 });
+		if (event.locals.user && !event.locals.user.isAdmin) return new Response('Not Found', { status: 404 });
 	}
 	if (hasBackend()) {
 		event.locals.setupState = await setupState();

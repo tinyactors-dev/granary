@@ -10,8 +10,10 @@ declare global {
 			user: SessionUser | null;
 			/** The resolved `granary_session` cookie value, or null. */
 			sessionId: string | null;
-			/** `isDevMode({ dev, env })` (ADR 0005/0009). Gates /__dev and dev remote functions. */
+			/** `isDevMode({ dev, env })` (ADR 0005/0009). */
 			devMode: boolean;
+			/** What the admin section may do here (ADR 0290). */
+			admin: import('$lib/schemas/admin').AdminCapabilities;
 			/** First-run state (ADR 0161): `needs-github` until a GitHub connection exists. */
 			setupState: import('$lib/schemas/admins').SetupState;
 		}

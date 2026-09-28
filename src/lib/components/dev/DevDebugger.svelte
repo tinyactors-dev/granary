@@ -24,9 +24,9 @@
 	import { actorHref } from '$lib/components/actors/inspect';
 	import LaunchConfig from './LaunchConfig.svelte';
 
-	let { dapHost, dapPort, signedIn }: { dapHost: string; dapPort: number; signedIn: boolean } = $props();
+	let { dapHost, dapPort }: { dapHost: string; dapPort: number } = $props();
 
-	const actors = $derived(signedIn ? listActors() : null);
+	const actors = listActors();
 	let expanded = $state<string | null>(null);
 
 	// "send event" form (a command, so plain local state)
@@ -97,11 +97,6 @@
 			</Alert.Description>
 		</Alert.Root>
 
-		{#if !actors}
-			<p class="text-muted-foreground text-sm">
-				Listing actors needs a signed-in user — <a href="#login" class="text-foreground underline underline-offset-4">log in above</a>. You can still send events by address below, or <a href="/actors/allowlist/main" class="text-foreground underline underline-offset-4">inspect <code>allowlist/main</code></a> (any actor: <code>/actors/&lt;family&gt;/&lt;name&gt;</code>).
-			</p>
-		{:else}
 			<svelte:boundary>
 				{@const list = await actors}
 				<ul class="divide-y rounded-lg border" data-testid="dev-actors">
@@ -141,7 +136,6 @@
 				</ul>
 				{#snippet failed(error, reset)}<ErrorAlert {error} retry={() => { void actors.refresh(); reset(); }} />{/snippet}
 			</svelte:boundary>
-		{/if}
 
 		<form id="send-event" class="space-y-3 rounded-lg border p-4" onsubmit={send} data-testid="send-event-form">
 			<h3 class="flex items-center gap-2 text-sm font-semibold"><BugIcon class="size-4" /> Send an event</h3>

@@ -9,6 +9,8 @@ import {
 	ListDeliveriesInput,
 	ListEffectsInput,
 	ListVerdictsInput,
+	ListActivityInput,
+	type ActivityItem,
 	type DeliverySummary,
 	type EffectSummary,
 	type IssueDetail,
@@ -49,6 +51,15 @@ export const listVerdicts = query(
 	async (input): Promise<Page<VerdictSummary>> => {
 		requireUser();
 		return withBackend((b) => b.listVerdicts({ ...input, limit: input.limit ?? DEFAULT_PAGE_SIZE }));
+	}
+);
+
+/** Activity: one row per issue or pull request, newest first (ADR 0291). */
+export const listActivity = query(
+	standard(ListActivityInput),
+	async (input): Promise<Page<ActivityItem>> => {
+		requireUser();
+		return withBackend((b) => b.listActivity({ ...input, limit: input.limit ?? DEFAULT_PAGE_SIZE }));
 	}
 );
 

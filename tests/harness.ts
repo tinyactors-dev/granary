@@ -50,7 +50,7 @@ export interface HarnessOptions {
 	/**
 	 * Also start fake-infra (`bun fake-infra/server.ts`, ADR 0130) and wire the
 	 * app's operations module to it (ADR 0150): R2 seed destination on the fake
-	 * R2, dev mode for the `/__dev/api/ops` surface, fast test timings.
+	 * R2, dev mode for the `/admin/api/ops` surface, fast test timings.
 	 * `opsSink` picks where the seeded OTLP sink goes: the harness collector
 	 * (default; granary + granary-ops traces arrive there) or fake-infra's
 	 * exe.dev token front (telemetry scenarios).

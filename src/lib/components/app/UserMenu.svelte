@@ -52,7 +52,7 @@
 			</DropdownMenu.Label>
 			<DropdownMenu.Separator />
 			{#if data.devMode}
-				<DropdownMenu.Item onSelect={() => goto('/__dev')}><BugIcon /> Switch user (dev)</DropdownMenu.Item>
+				<DropdownMenu.Item onSelect={() => goto('/admin')}><BugIcon /> Switch user (dev)</DropdownMenu.Item>
 			{/if}
 			<DropdownMenu.Item onSelect={signOut}><LogOutIcon /> Log out</DropdownMenu.Item>
 		</DropdownMenu.Content>

@@ -495,6 +495,41 @@ export class Wal {
 		});
 	}
 
+	/**
+	 * Activity (ADR 0291): one row per item (issue or pull request) that has a
+	 * delivery, an action or a decision, newest activity first. `outcome` is the
+	 * decision when there is one; otherwise `closing` while an action exists,
+	 * `ignored` when every delivery was ignored, else `pending`.
+	 */
+	listActivity(filter: { outcome?: string; kind?: 'issue' | 'pull_request' }, limit: number, offset: number): { issueKey: string; updatedAt: number; outcome: string; kind: 'issue' | 'pull_request' }[] {
+		const rows = this.#q(
+			`WITH items AS (
+				SELECT issue_key AS k FROM inbox WHERE issue_key IS NOT NULL
+				UNION SELECT issue_key FROM outbox
+				UNION SELECT issue_key FROM verdicts
+			), agg AS (
+				SELECT i.k AS issue_key,
+					MAX(
+						COALESCE((SELECT MAX(received_at) FROM inbox WHERE issue_key = i.k), 0),
+						COALESCE((SELECT MAX(updated_at) FROM outbox WHERE issue_key = i.k), 0),
+						COALESCE(v.decided_at, 0)
+					) AS updated_at,
+					CASE
+						WHEN v.verdict IS NOT NULL THEN v.verdict
+						WHEN EXISTS (SELECT 1 FROM outbox WHERE issue_key = i.k) THEN 'closing'
+						WHEN NOT EXISTS (SELECT 1 FROM inbox WHERE issue_key = i.k AND state <> 'ignored') THEN 'ignored'
+						ELSE 'pending'
+					END AS outcome,
+					CASE WHEN EXISTS (SELECT 1 FROM inbox WHERE issue_key = i.k AND event = 'pull_request') THEN 'pull_request' ELSE 'issue' END AS kind
+				FROM items i LEFT JOIN verdicts v ON v.issue_key = i.k
+			)
+			SELECT * FROM agg
+			WHERE ($outcome IS NULL OR outcome = $outcome) AND ($kind IS NULL OR kind = $kind)
+			ORDER BY updated_at DESC, issue_key DESC LIMIT $limit OFFSET $offset`
+		).all({ outcome: filter.outcome ?? null, kind: filter.kind ?? null, limit, offset }) as { issue_key: string; updated_at: number; outcome: string; kind: 'issue' | 'pull_request' }[];
+		return rows.map((r) => ({ issueKey: r.issue_key, updatedAt: r.updated_at, outcome: r.outcome, kind: r.kind }));
+	}
+
 	listVerdicts(verdict: VerdictValue | undefined, limit: number, offset: number): VerdictRow[] {
 		const sql = verdict
 			? `SELECT * FROM verdicts WHERE verdict = $verdict ORDER BY decided_at DESC, issue_key DESC LIMIT $limit OFFSET $offset`

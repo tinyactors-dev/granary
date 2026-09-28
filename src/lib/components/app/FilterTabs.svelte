@@ -9,8 +9,10 @@
 	let {
 		param = 'state',
 		values,
-		current
-	}: { param?: string; values: readonly string[]; current: string | null } = $props();
+		current,
+		labels = {},
+		allLabel = 'all'
+	}: { param?: string; values: readonly string[]; current: string | null; labels?: Record<string, string>; allLabel?: string } = $props();
 
 	function href(value: string | null) {
 		const url = new URL(page.url);
@@ -35,7 +37,7 @@
 				current === value
 					? 'bg-background text-foreground shadow-sm dark:bg-input/30'
 					: 'hover:text-foreground'
-			)}>{value ?? 'all'}</a
+			)}>{value === null ? allLabel : (labels[value] ?? value)}</a
 		>
 	{/each}
 </nav>

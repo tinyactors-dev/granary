@@ -11,8 +11,8 @@
  * is then re-encoded and handed to the ops module's telemetry sink
  * (`attachSink`, ADR 0121), which fans it out to the configured OTLP sinks
  * (seeded with `GRANARY_SEED_OTLP_*`, ADR 0230). Without an ops sink (ops
- * failed to start) nothing is exported. In dev mode the last SPAN_BUFFER_SIZE spans are kept
- * in memory for `/__dev` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
+ * failed to start) nothing is exported. The last SPAN_BUFFER_SIZE spans are kept (for /admin/traces, ADR 0290)
+ * in memory for `/admin` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
  */
 import { applyFamilySpanName, spanKindOf } from '../trace/span-name';
 import { decodeTraces, stepSpanID, type ActorInspection, type DecodedSpan, type System } from '@tinyactors/node';

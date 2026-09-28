@@ -26,8 +26,8 @@
 			<img src="/brand/granary.svg" alt="" class="mx-auto mb-2 size-12 rounded-[22%] dark:ring-1 dark:ring-white/10" width="48" height="48" />
 			<Card.Title class="text-xl">Sign in to granary</Card.Title>
 			<Card.Description>
-				granary closes GitHub issues opened by people who are not on the allowlist. Sign in to watch
-				deliveries, effects and verdicts, and to manage the allowlist.
+				granary closes GitHub issues and pull requests opened by people who are not on the allowlist.
+				Sign in to follow its activity and manage the policy.
 			</Card.Description>
 		</Card.Header>
 		<Card.Content class="flex flex-col gap-2">
@@ -35,7 +35,7 @@
 				<LogInIcon /> Sign in with GitHub
 			</Button>
 			{#if devMode}
-				<Button href="/__dev" variant="outline" size="lg" class="w-full">
+				<Button href="/admin" variant="outline" size="lg" class="w-full">
 					<BugIcon /> Developer console
 				</Button>
 			{/if}

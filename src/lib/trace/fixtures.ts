@@ -1,6 +1,6 @@
 /**
  * Realistic fake spans (ADR 0054): used by the StubBackend's trace buffer and,
- * as static fixtures, by the trace viewer's UI stories (/__dev/ui). Browser-safe.
+ * as static fixtures, by the trace viewer's UI stories (/admin/ui). Browser-safe.
  * Shapes mirror what the real app emits (ADR 0042): a webhook trace with
  * spawn + bootstrap + `issue.opened` → `allowlist.check` → `allowlist.verdict`
  * (cross-actor parent/child), a separate relay-reply trace, a `destroyed`

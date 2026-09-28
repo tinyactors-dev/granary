@@ -2,7 +2,7 @@
 	import { cn } from '$lib/utils';
 	import { toneOf, type Tone } from './format';
 
-	let { state, tone, class: className = '' }: { state: string; tone?: Tone; class?: string } = $props();
+	let { state, tone, label, class: className = '' }: { state: string; tone?: Tone; label?: string; class?: string } = $props();
 
 	const TONE_CLASS: Record<Tone, string> = {
 		success: 'bg-emerald-500/12 text-emerald-700 dark:text-emerald-400 border-emerald-500/25',
@@ -23,5 +23,5 @@
 	)}
 >
 	<span class="size-1.5 rounded-full bg-current opacity-80"></span>
-	{state}
+	{label ?? state}
 </span>

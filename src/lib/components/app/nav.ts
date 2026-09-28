@@ -1,36 +1,32 @@
+/** Main navigation (ADR 0050, restructured in ADR 0291). */
 import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
-import InboxIcon from '@lucide/svelte/icons/inbox';
-import SendIcon from '@lucide/svelte/icons/send';
-import GavelIcon from '@lucide/svelte/icons/gavel';
-import UserCheckIcon from '@lucide/svelte/icons/user-check';
-import CpuIcon from '@lucide/svelte/icons/cpu';
-import BugIcon from '@lucide/svelte/icons/bug';
+import ListChecksIcon from '@lucide/svelte/icons/list-checks';
+import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
 import MoonStarIcon from '@lucide/svelte/icons/moon-star';
 import SettingsIcon from '@lucide/svelte/icons/settings';
+import WrenchIcon from '@lucide/svelte/icons/wrench';
 import type { Component } from 'svelte';
 
 export interface NavItem {
 	href: string;
 	label: string;
 	icon: Component;
-	description: string;
-	devOnly?: boolean;
+	/** Only for admins (and everyone in development mode): the admin section. */
+	adminOnly?: boolean;
 }
 
 export const NAV: NavItem[] = [
-	{ href: '/', label: 'Overview', icon: LayoutDashboardIcon, description: 'System at a glance' },
-	{ href: '/deliveries', label: 'Deliveries', icon: InboxIcon, description: 'Webhook inbox' },
-	{ href: '/effects', label: 'Effects', icon: SendIcon, description: 'GitHub outbox' },
-	{ href: '/verdicts', label: 'Verdicts', icon: GavelIcon, description: 'Decisions per issue' },
-	{ href: '/allowlist', label: 'Allowlist', icon: UserCheckIcon, description: 'Who may open issues' },
-	{ href: '/actors', label: 'Actors', icon: CpuIcon, description: 'Resident actors' },
-	{ href: '/ops', label: 'Ops', icon: MoonStarIcon, description: 'Backups, telemetry and self-healing' },
-	{ href: '/settings', label: 'Settings', icon: SettingsIcon, description: 'GitHub connection, admins, login links' },
-	{ href: '/__dev', label: 'Dev', icon: BugIcon, description: 'Developer console', devOnly: true }
+	{ href: '/', label: 'Overview', icon: LayoutDashboardIcon },
+	{ href: '/activity', label: 'Activity', icon: ListChecksIcon },
+	{ href: '/policy', label: 'Policy', icon: ShieldCheckIcon },
+	{ href: '/ops', label: 'Ops', icon: MoonStarIcon },
+	{ href: '/settings', label: 'Settings', icon: SettingsIcon },
+	{ href: '/admin', label: 'Admin', icon: WrenchIcon, adminOnly: true }
 ];
 
 export function isActive(pathname: string, href: string): boolean {
 	if (href === '/') return pathname === '/';
-	if (href === '/deliveries' && pathname.startsWith('/issues/')) return false;
+	// Item detail pages belong to Activity.
+	if (href === '/activity' && pathname.startsWith('/issues/')) return true;
 	return pathname === href || pathname.startsWith(href + '/');
 }

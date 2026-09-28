@@ -8,7 +8,6 @@ export interface SettingsNavItem {
 export const SETTINGS_NAV: SettingsNavItem[] = [
 	{ href: '/settings', label: 'General' },
 	{ href: '/settings/github', label: 'GitHub' },
-	{ href: '/settings/closing-message', label: 'Closing message' },
 	{ href: '/settings/admins', label: 'Admins' },
 	{ href: '/settings/login-links', label: 'Login links', adminOnly: true },
 	{ href: '/settings/audit', label: 'Audit log', adminOnly: true }

@@ -1,6 +1,6 @@
 /**
- * Dev-only remote functions backing `/__dev` (ADR 0009, ADR 0031).
- * Every function calls `requireDev()` first → 404 outside dev mode.
+ * Dev-only remote functions backing `/admin` (ADR 0009, ADR 0031).
+ * Every function calls `requireAdminArea(<capability>)` first (ADR 0290): admins in every environment; 404 where the area isn't available.
  * They do not require a signed-in user (the dev page is how you sign in).
  */
 import { command, form, getRequestEvent, query, requested } from '$app/server';
@@ -27,7 +27,7 @@ import {
 	type SpanSummary,
 	type TraceSummary
 } from '$lib/schemas/dev';
-import { requireDev, safeRedirectPath, setSessionCookie } from '$lib/server/auth';
+import { requireAdminArea, safeRedirectPath, setSessionCookie } from '$lib/server/auth';
 import { backendErrorStatus, getBackend, isBackendError } from '$lib/server/backend';
 import { withBackend } from '$lib/server/remote-helpers';
 import { getIssue, getOverview, listDeliveries } from './dashboard.remote';
@@ -38,13 +38,13 @@ const DEFAULT_TRACE_LIMIT = 50;
 
 /** DAP port, fake GitHub URL + state (users, repos, issues, deliveries, faults), admins. */
 export const getDevInfo = query(async (): Promise<DevInfo> => {
-	requireDev();
+	requireAdminArea();
 	return withBackend((b) => b.getDevInfo());
 });
 
 /** Every UI worth opening (granary pages, fakes, Grafana, storage consoles) with reachability (ADR 0154). */
 export const getDevTools = query(async (): Promise<DevTool[]> => {
-	requireDev();
+	requireAdminArea();
 	return withBackend((b) => b.getDevTools());
 });
 
@@ -53,7 +53,7 @@ export const getDevTools = query(async (): Promise<DevTool[]> => {
  * set the `granary_session` cookie, then 303 to `redirectTo` (default `/`).
  */
 export const devLoginAs = form(standard(DevLoginAsInput), async ({ login, redirectTo }): Promise<never> => {
-	requireDev();
+	requireAdminArea('impersonate');
 	const { cookies, url, locals } = getRequestEvent();
 	const session = await withBackend((b) => b.createSession({ login }));
 	setSessionCookie(cookies, session.sessionId, session.expiresAt, url);
@@ -69,7 +69,7 @@ export const devLoginAs = form(standard(DevLoginAsInput), async ({ login, redire
 export const devOpenIssue = form(
 	standard(DevOpenIssueInput),
 	async (input): Promise<DevOpenIssueResult> => {
-		requireDev();
+		requireAdminArea('fakeGithub');
 		let result: DevOpenIssueResult;
 		try {
 			result = await getBackend().devOpenIssue(input);
@@ -88,7 +88,7 @@ export const devOpenIssue = form(
 export const devReopenIssue = command(
 	standard(DevReopenIssueInput),
 	async (input): Promise<DevReopenIssueResult> => {
-		requireDev();
+		requireAdminArea('fakeGithub');
 		const result = await withBackend((b) => b.devReopenIssue(input));
 		await Promise.all([getDevInfo().refresh(), getOverview().refresh()]);
 		return result;
@@ -99,7 +99,7 @@ export const devReopenIssue = command(
 export const devRedeliver = command(
 	standard(DevRedeliverInput),
 	async ({ deliveryId }): Promise<DevRedeliverResult> => {
-		requireDev();
+		requireAdminArea('fakeGithub');
 		const result = await withBackend((b) => b.devRedeliver(deliveryId));
 		await Promise.all([getDevInfo().refresh(), getOverview().refresh()]);
 		return result;
@@ -113,7 +113,7 @@ export const devRedeliver = command(
 export const devInjectFault = form(
 	standard(DevInjectFaultInput),
 	async (input): Promise<DevInjectFaultResult> => {
-		requireDev();
+		requireAdminArea('fakeGithub');
 		const result = await withBackend((b) => b.devInjectFault(input));
 		await getDevInfo().refresh();
 		return result;
@@ -122,7 +122,7 @@ export const devInjectFault = form(
 
 /** Command: `POST /__control/reset` on the fake GitHub (app DB untouched). */
 export const devReset = command(async (): Promise<{ ok: true }> => {
-	requireDev();
+	requireAdminArea('fakeGithub');
 	await withBackend((b) => b.devReset());
 	await getDevInfo().refresh();
 	return { ok: true };
@@ -135,7 +135,7 @@ export const devReset = command(async (): Promise<{ ok: true }> => {
 export const devSendEvent = command(
 	standard(DevSendEventInput),
 	async ({ address, event, data }): Promise<DevSendEventResult> => {
-		requireDev();
+		requireAdminArea('debugger');
 		let parsed: unknown = undefined;
 		if (data !== undefined && data.trim() !== '') {
 			try {
@@ -158,7 +158,7 @@ export const devSendEvent = command(
 export const getRecentSpans = query(
 	standard(GetRecentSpansInput),
 	async (input): Promise<SpanSummary[]> => {
-		requireDev();
+		requireAdminArea();
 		return withBackend((b) => b.getRecentSpans({ ...input, limit: input.limit ?? DEFAULT_SPAN_LIMIT }));
 	}
 );
@@ -167,7 +167,7 @@ export const getRecentSpans = query(
 export const listRecentTraces = query(
 	standard(ListRecentTracesInput),
 	async (input): Promise<TraceSummary[]> => {
-		requireDev();
+		requireAdminArea();
 		return withBackend((b) => b.listRecentTraces({ ...input, limit: input.limit ?? DEFAULT_TRACE_LIMIT }));
 	}
 );
@@ -176,7 +176,7 @@ export const listRecentTraces = query(
 export const getDapLaunchConfig = query(
 	standard(GetDapLaunchConfigInput),
 	async ({ address }): Promise<DapLaunchConfig> => {
-		requireDev();
+		requireAdminArea('debugger');
 		return withBackend((b) => b.getDapLaunchConfig(address));
 	}
 );

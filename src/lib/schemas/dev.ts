@@ -1,5 +1,5 @@
 /**
- * DTOs of the dev-only remote functions (`/__dev`, ADR 0009, ADR 0031).
+ * DTOs of the dev-only remote functions (`/admin`, ADR 0009, ADR 0031).
  * Fake GitHub control shapes are re-used from `fake-github/schemas.ts`.
  */
 import { Type, type Static } from '@sinclair/typebox';

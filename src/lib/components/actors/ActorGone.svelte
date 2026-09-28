@@ -21,6 +21,6 @@
 				<a class="text-foreground underline underline-offset-4" href={issueHref(name)}>open issue {name}</a>.
 			</p>
 		{/if}
-		<p><a class="text-foreground underline underline-offset-4" href="/actors">Back to resident actors</a></p>
+		<p><a class="text-foreground underline underline-offset-4" href="/admin/actors">Back to resident actors</a></p>
 	</Alert.Description>
 </Alert.Root>

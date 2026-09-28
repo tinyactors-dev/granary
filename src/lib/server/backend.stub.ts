@@ -31,6 +31,9 @@ import type {
 	ListDeliveriesInput,
 	ListEffectsInput,
 	ListVerdictsInput,
+	ListActivityInput,
+	ActivityItem,
+	ActivityOutcome,
 	Overview,
 	Page,
 	RemoveAllowedUserResult,
@@ -353,6 +356,37 @@ export class StubBackend implements Backend {
 		return page(rows, q.limit, q.before);
 	}
 
+	async listActivity(q: Resolved<ListActivityInput>): Promise<Page<ActivityItem>> {
+		const keys = new Set<string>([
+			...this.deliveries.map((d) => d.issueKey).filter((k): k is string => k !== null),
+			...this.effects.map((e) => e.issueKey),
+			...this.verdicts.map((v) => v.issueKey)
+		]);
+		const items: ActivityItem[] = [...keys].map((key) => {
+			const deliveries = this.deliveries.filter((d) => d.issueKey === key).sort((a, b) => b.receivedAt - a.receivedAt);
+			const effect = this.effects.find((e) => e.issueKey === key) ?? null;
+			const verdict = this.verdicts.find((v) => v.issueKey === key) ?? null;
+			const found = this.issues.find((i) => issueKey(i.repoId, i.number) === key);
+			const issue = found ? summary(found) : null;
+			const outcome: ActivityOutcome = verdict ? verdict.verdict : effect ? 'closing' : deliveries.length && deliveries.every((d) => d.state === 'ignored') ? 'ignored' : 'pending';
+			const latest = deliveries[0] ?? null;
+			return {
+				issueKey: key,
+				kind: issue?.kind ?? 'issue',
+				outcome,
+				updatedAt: Math.max(latest?.receivedAt ?? 0, effect?.updatedAt ?? 0, verdict?.decidedAt ?? 0),
+				issue,
+				decision: verdict ? { verdict: verdict.verdict, reason: verdict.reason, decidedAt: verdict.decidedAt } : null,
+				action: effect ? { state: effect.state, attempts: effect.attempts, lastError: effect.lastError, updatedAt: effect.updatedAt } : null,
+				latestDelivery: latest ? { deliveryId: latest.deliveryId, event: latest.event, action: latest.action, state: latest.state, ignoreReason: latest.ignoreReason, receivedAt: latest.receivedAt } : null
+			};
+		});
+		const rows = items
+			.filter((i) => (!q.outcome || i.outcome === q.outcome) && (!q.kind || i.kind === q.kind))
+			.sort((a, b) => b.updatedAt - a.updatedAt);
+		return page(rows, q.limit, q.before);
+	}
+
 	async getIssue(key: string): Promise<IssueDetail | null> {
 		const { repoId, number } = parseIssueKey(key);
 		const deliveries = this.deliveries.filter((d) => d.issueKey === key);
@@ -553,10 +587,10 @@ export class StubBackend implements Backend {
 	async getDevTools(): Promise<DevTool[]> {
 		return [
 			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
-			{ id: 'dap', name: `Debugger (DAP 127.0.0.1:${this.dapPort})`, url: '/__dev/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
+			{ id: 'dap', name: `Debugger (DAP 127.0.0.1:${this.dapPort})`, url: '/admin/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
 			{ id: 'fake-github', name: 'Fake GitHub', url: `${this.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: true, external: true },
 			{ id: 'fake-infra', name: 'Fake infra', url: 'http://localhost:4090/', description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: false, external: true },
-			{ id: 'loadgen', name: 'Load generator', url: '/__dev/load', description: 'Scenarios and personas (API http://localhost:4040)', group: 'fakes', up: true, external: false },
+			{ id: 'loadgen', name: 'Load generator', url: '/admin/load', description: 'Scenarios and personas (API http://localhost:4040)', group: 'fakes', up: true, external: false },
 			{ id: 'sink:seed-otlp', name: 'Grafana (OTLP (seeded))', url: 'http://localhost:3300/explore', description: 'Logs (Loki), traces (Tempo), metrics (Prometheus)', group: 'ops targets', up: true, external: true, login: { username: 'admin', password: 'admin' } },
 			{ id: 'dest:seed-s3', name: 'Storage console (S3-compatible (seed))', url: 'http://localhost:9001/rustfs/console/browser/?bucket=granary-backups&key=granary%2F', description: 'Backups of destination seed-s3', group: 'ops targets', up: true, external: true, login: { username: 'granary-dev', password: 'granary-dev-secret' } }
 		];

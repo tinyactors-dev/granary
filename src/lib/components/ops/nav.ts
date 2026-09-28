@@ -13,8 +13,7 @@ export const OPS_NAV: OpsNavItem[] = [
 	{ href: '/ops/drills', label: 'Restore drills' },
 	{ href: '/ops/telemetry', label: 'Telemetry' },
 	{ href: '/ops/secrets', label: 'Secrets' },
-	{ href: '/ops/settings', label: 'Budgets & config' },
-	{ href: '/ops/actors', label: 'Actors' }
+	{ href: '/ops/settings', label: 'Budgets & config' }
 ];
 
 export function opsActive(pathname: string, href: string): boolean {

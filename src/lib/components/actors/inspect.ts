@@ -2,7 +2,7 @@
  * Actor inspector helpers (ADR 0056): links and a small JSON diff.
  */
 export function actorHref(address: { family: string; name: string }): string {
-	return `/actors/${encodeURIComponent(address.family)}/${encodeURIComponent(address.name)}`;
+	return `/admin/actors/${encodeURIComponent(address.family)}/${encodeURIComponent(address.name)}`;
 }
 
 export interface DataChange {

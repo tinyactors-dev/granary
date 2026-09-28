@@ -161,6 +161,40 @@ export interface VerdictSummary {
 	issue: IssueSummary | null;
 }
 
+/**
+ * Activity (ADR 0291): one row per item (issue or pull request). `outcome` is
+ * the decision (`allowed` | `closed` | `failed`) once made; before that
+ * `closing` while the GitHub action is under way, `ignored` when every
+ * delivery was ignored, else `pending`.
+ */
+export const ACTIVITY_OUTCOMES = ['allowed', 'closed', 'failed', 'closing', 'pending', 'ignored'] as const;
+export const ActivityOutcome = Type.Union(ACTIVITY_OUTCOMES.map((o) => Type.Literal(o)));
+export type ActivityOutcome = (typeof ACTIVITY_OUTCOMES)[number];
+export const ItemKind = Type.Union([Type.Literal('issue'), Type.Literal('pull_request')]);
+export type ItemKind = Static<typeof ItemKind>;
+
+export const ListActivityInput = Type.Object(
+	{ outcome: Type.Optional(ActivityOutcome), kind: Type.Optional(ItemKind), limit: Type.Optional(Limit), before: Type.Optional(Cursor) },
+	closed
+);
+export type ListActivityInput = Static<typeof ListActivityInput>;
+
+export interface ActivityItem {
+	issueKey: string;
+	kind: ItemKind;
+	outcome: ActivityOutcome;
+	/** Latest delivery, action or decision. */
+	updatedAt: number;
+	/** From the item's `issues` / `pull_request` delivery, if any. */
+	issue: IssueSummary | null;
+	/** The decision (verdicts row), once made. */
+	decision: { verdict: VerdictValue; reason: string; decidedAt: number } | null;
+	/** The GitHub action (outbox row: comment + close), if any. */
+	action: { state: OutboxState; attempts: number; lastError: string | null; updatedAt: number } | null;
+	/** The newest delivery for the item. */
+	latestDelivery: { deliveryId: string; event: string; action: string | null; state: InboxState; ignoreReason: string | null; receivedAt: number } | null;
+}
+
 /** `limit` after defaults: what the Backend receives. */
 export type Resolved<T extends { limit?: number }> = Omit<T, 'limit'> & { limit: number };
 

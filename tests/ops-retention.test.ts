@@ -60,7 +60,7 @@ describe('ops retention and budgets', () => {
 	}, 90_000);
 
 	test('a 1 GiB/month egress budget stretches the backup interval', async () => {
-		const res = await h().fetchApp('/__dev/api/ops/budgets', {
+		const res = await h().fetchApp('/admin/api/ops/budgets', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ r2EgressBytesPerMonth: GiB })

@@ -2,7 +2,7 @@
   The presentational half of the trace explorer (ADR 0054): legend, trace
   list, and the selected trace's Jaeger-style timeline. It takes plain data,
   so the live explorer (remote queries) and the UI stories (static fixtures,
-  /__dev/ui/trace-viewer) render the same component. Selection and
+  /admin/ui/trace-viewer) render the same component. Selection and
   expansion state live here and survive data refreshes.
 -->
 <script lang="ts">

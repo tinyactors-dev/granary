@@ -131,7 +131,8 @@ export async function bootBackend(config: Config, opts: { devMode: boolean }): P
 	onShutdown(() => closeGranarySecrets());
 	if (config.devGithubAutoconnect) onShutdown(startDevGithubAutoconnect(runtime.github, config));
 	await startOps(runtime, config, opts);
-	if (opts.devMode) {
+	// The debugger (ADR 0290): always 127.0.0.1; in production only with GRANARY_DEBUGGER=1.
+	if (opts.devMode || config.debugger) {
 		startDapServer(runtime.system, config.dapPort);
 		onShutdown(() => stopDapServer());
 	}

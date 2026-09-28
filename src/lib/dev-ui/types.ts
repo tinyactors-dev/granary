@@ -1,6 +1,6 @@
 /**
  * Component preview registry types (ADR 0077): a Storybook-style catalogue
- * under /__dev/ui. An entry names a component, the wrapper that renders it
+ * under /admin/ui. An entry names a component, the wrapper that renders it
  * from `args`, its stories (named arg sets) and controls (editable args).
  */
 import type { Component } from 'svelte';
@@ -22,7 +22,7 @@ export interface StoryDef {
 }
 
 export interface PreviewEntry {
-	/** URL segment: /__dev/ui/<id>. */
+	/** URL segment: /admin/ui/<id>. */
 	id: string;
 	title: string;
 	description: string;

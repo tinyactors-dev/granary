@@ -1,5 +1,5 @@
 /**
- * Group buffered spans into trace summaries for the /__dev trace explorer
+ * Group buffered spans into trace summaries for the /admin trace explorer
  * (ADR 0054). Pure; shared by the real Tracer and the StubBackend.
  */
 import type { ListRecentTracesInput, SpanSummary, TraceSummary } from '../schemas/dev';

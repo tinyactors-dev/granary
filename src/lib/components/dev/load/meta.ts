@@ -58,5 +58,5 @@ export function duration(ms: number | null | undefined): string {
 }
 
 export const personaHref = (kind: string, name: string) =>
-	`/__dev/load/personas/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
-export const scenarioHref = (id: string) => `/__dev/load?scenario=${encodeURIComponent(id)}`;
+	`/admin/load/personas/${encodeURIComponent(kind)}/${encodeURIComponent(name)}`;
+export const scenarioHref = (id: string) => `/admin/load?scenario=${encodeURIComponent(id)}`;

@@ -8,7 +8,7 @@
 		The Jaeger-style trace viewer (ADR 0054). <code class="font-mono">&lt;TraceBrowser&gt;</code> is presentational: it takes
 		trace summaries (<code class="font-mono">summarizeTraces</code> from <code class="font-mono">$lib/trace/summary</code>) and the
 		spans of the selected trace, and keeps selection and expansion state across refreshes. The live
-		<code class="font-mono">&lt;TraceExplorer&gt;</code> on <a class="underline" href="/__dev/traces">/__dev/traces</a> wraps it with filters and polling.
+		<code class="font-mono">&lt;TraceExplorer&gt;</code> on <a class="underline" href="/admin/traces">/admin/traces</a> wraps it with filters and polling.
 	</p>
 	<pre class="bg-muted overflow-auto rounded-md p-3 font-mono text-xs">{`<TraceBrowser traces={summaries} spans={spansOfSelected}
   bind:selectedTraceId onFilterAddress={(a) => (address = a)} />`}</pre>

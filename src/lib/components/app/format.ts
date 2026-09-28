@@ -35,9 +35,10 @@ const TONES: Record<string, Tone> = {
 	// outbox
 	inflight: 'info',
 	dead: 'danger',
-	// verdicts
+	// verdicts / activity outcomes (ADR 0291)
 	allowed: 'success',
 	closed: 'info',
+	closing: 'warning',
 	// actors
 	running: 'warning',
 	idle: 'muted',

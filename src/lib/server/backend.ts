@@ -33,6 +33,8 @@ import type {
 	ListDeliveriesInput,
 	ListEffectsInput,
 	ListVerdictsInput,
+	ListActivityInput,
+	ActivityItem,
 	Overview,
 	Page,
 	RemoveAllowedUserResult,
@@ -119,6 +121,8 @@ export interface Backend {
 	listDeliveries(query: Resolved<ListDeliveriesInput>): Promise<Page<DeliverySummary>>;
 	listEffects(query: Resolved<ListEffectsInput>): Promise<Page<EffectSummary>>;
 	listVerdicts(query: Resolved<ListVerdictsInput>): Promise<Page<VerdictSummary>>;
+	/** One row per item (issue or pull request), newest activity first (ADR 0291). */
+	listActivity(query: Resolved<ListActivityInput>): Promise<Page<ActivityItem>>;
 	/** null when the key appears in no table and no actor is resident. */
 	getIssue(issueKey: string): Promise<IssueDetail | null>;
 

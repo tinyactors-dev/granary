@@ -8,17 +8,26 @@
 	import SignInLanding from '$lib/components/app/SignInLanding.svelte';
 	import OpsBanner from '$lib/components/ops/OpsBanner.svelte';
 	import SetupBanner from '$lib/components/settings/SetupBanner.svelte';
+	import { isAdminPath } from '$lib/schemas/admin';
 
 	let { data, children } = $props();
 
-	/** `/__dev` is where you sign in during development, so it never needs a user. */
 	const path: string = $derived(page.url.pathname);
-	const isDevRoute = $derived(path === '/__dev' || path.startsWith('/__dev/'));
-	/** In dev mode the actor inspector (ADR 0056) is reachable from /__dev without signing in. */
-	const isInspector = $derived(path.startsWith('/actors/'));
-	const showApp = $derived(data.user !== null || ((isDevRoute || isInspector) && data.devMode) || page.error !== null);
+	/** In development mode the admin section is where you sign in, so it never needs a user (ADR 0290). */
+	const showApp = $derived(data.user !== null || (isAdminPath(path) && data.devMode) || page.error !== null);
 	/** One-time sign-in links (ADR 0161) render their own confirm page for anonymous visitors. */
 	const isLoginLink = $derived(path.startsWith('/auth/link/'));
+	/**
+	 * Banners (ADR 0291): at most one per page. The setup banner while GitHub
+	 * isn't connected (not on /settings, which shows the checklist, nor /admin);
+	 * otherwise "While you were away" on the Overview only, and only when
+	 * something needs attention (/ops says the same in its hero).
+	 */
+	const banner = $derived.by<'setup' | 'ops' | null>(() => {
+		if (!data.user || isAdminPath(path)) return null;
+		if (data.setupState === 'needs-github') return path.startsWith('/settings') ? null : 'setup';
+		return path === '/' ? 'ops' : null;
+	});
 </script>
 
 <ModeWatcher />
@@ -26,10 +35,7 @@
 <Tooltip.Provider delayDuration={200}>
 	{#if showApp}
 		<AppShell>
-			<!-- "While you were away" (ADR 0100, 0104): signed-in users, outside the dev portal. -->
-			<!-- First run (ADR 0161, 0210): until GitHub is connected. -->
-			{#if data.user && !isDevRoute}<SetupBanner />{/if}
-			{#if data.user && !isDevRoute}<OpsBanner />{/if}
+			{#if banner === 'setup'}<SetupBanner />{:else if banner === 'ops'}<OpsBanner />{/if}
 			{@render children()}
 		</AppShell>
 	{:else if isLoginLink}

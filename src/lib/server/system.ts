@@ -184,7 +184,8 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		}
 	});
 
-	tracer = new Tracer({ system, keepRecent: opts.devMode });
+	// The last SPAN_BUFFER_SIZE spans stay in memory for /admin/traces in every environment (ADR 0290).
+	tracer = new Tracer({ system, keepRecent: true });
 	tracer.install();
 
 	const issueDefinition = system.define(issueChart());

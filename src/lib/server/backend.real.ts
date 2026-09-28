@@ -31,6 +31,9 @@ import type {
 	ListDeliveriesInput,
 	ListEffectsInput,
 	ListVerdictsInput,
+	ListActivityInput,
+	ActivityItem,
+	ActivityOutcome,
 	Overview,
 	Page,
 	RemoveAllowedUserResult,
@@ -172,10 +175,6 @@ export class RealBackend implements Backend {
 		return { login, avatarUrl, isAdmin: this.#admins.isAdmin(login) };
 	}
 
-	#requireDev(): void {
-		if (!this.#rt.devMode) throw new BackendError('unavailable', 'Dev mode is off');
-	}
-
 	// -- sessions -----------------------------------------------------------------
 
 	async resolveSession(sessionId: string): Promise<SessionUser | null> {
@@ -315,6 +314,29 @@ export class RealBackend implements Backend {
 		const offset = cursorOffset(q.before);
 		const rows = this.#wal.listVerdicts(q.verdict, q.limit + 1, offset);
 		return offsetPage(rows.map((r) => this.#verdict(r)), q.limit, offset);
+	}
+
+	async listActivity(q: Resolved<ListActivityInput>): Promise<Page<ActivityItem>> {
+		const offset = cursorOffset(q.before);
+		const rows = this.#wal.listActivity({ ...(q.outcome ? { outcome: q.outcome } : {}), ...(q.kind ? { kind: q.kind } : {}) }, q.limit + 1, offset);
+		const items = rows.map((r): ActivityItem => {
+			const verdict = this.#wal.getVerdict(r.issueKey);
+			const outbox = this.#wal.outboxForIssue(r.issueKey);
+			const latest = this.#wal.inboxForIssue(r.issueKey)[0] ?? null;
+			return {
+				issueKey: r.issueKey,
+				kind: r.kind,
+				outcome: r.outcome as ActivityOutcome,
+				updatedAt: r.updatedAt,
+				issue: this.#issueSummary(this.#wal.latestIssuesInbox(r.issueKey)),
+				decision: verdict ? { verdict: verdict.verdict, reason: verdict.reason, decidedAt: verdict.decided_at } : null,
+				action: outbox ? { state: outbox.state, attempts: outbox.attempts, lastError: outbox.last_error, updatedAt: outbox.updated_at } : null,
+				latestDelivery: latest
+					? { deliveryId: latest.delivery_id, event: latest.event, action: latest.action, state: latest.state, ignoreReason: latest.ignore_reason ?? null, receivedAt: latest.received_at }
+					: null
+			};
+		});
+		return offsetPage(items, q.limit, offset);
 	}
 
 	async getIssue(key: string): Promise<IssueDetail | null> {
@@ -495,7 +517,6 @@ export class RealBackend implements Backend {
 	// -- dev ------------------------------------------------------------------------------
 
 	async #control<S extends TSchema>(method: 'GET' | 'POST', path: string, schema: S, body?: unknown): Promise<Static<S>> {
-		this.#requireDev();
 		const url = `${this.#rt.config.fakeGithubUrl}${path}`;
 		let res: Response;
 		try {
@@ -533,14 +554,13 @@ export class RealBackend implements Backend {
 	}
 
 	async getDevTools(): Promise<DevTool[]> {
-		this.#requireDev();
 		const c = this.#rt.config;
 		const tools: DevTool[] = [
 			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
-			{ id: 'dap', name: `Debugger (DAP ${DAP_HOST}:${c.dapPort})`, url: '/__dev/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
+			{ id: 'dap', name: `Debugger (DAP ${DAP_HOST}:${c.dapPort})`, url: '/admin/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
 			{ id: 'fake-github', name: 'Fake GitHub', url: `${c.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: null, external: true },
 			{ id: 'fake-infra', name: 'Fake infra', url: `${c.fakeInfraUrl}/`, description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: null, external: true },
-			{ id: 'loadgen', name: 'Load generator', url: '/__dev/load', description: `Scenarios and personas (API ${c.loadgenUrl})`, group: 'fakes', up: null, external: false }
+			{ id: 'loadgen', name: 'Load generator', url: '/admin/load', description: `Scenarios and personas (API ${c.loadgenUrl})`, group: 'fakes', up: null, external: false }
 		];
 		const probes: Record<string, string> = { 'fake-github': `${c.fakeGithubUrl}/`, 'fake-infra': `${c.fakeInfraUrl}/`, loadgen: `${c.loadgenUrl}/api/status` };
 		if (hasOpsBackend()) {
@@ -585,7 +605,6 @@ export class RealBackend implements Backend {
 	}
 
 	async getDevInfo(): Promise<DevInfo> {
-		this.#requireDev();
 		const base = {
 			dapHost: DAP_HOST,
 			dapPort: this.#rt.config.dapPort,
@@ -638,7 +657,6 @@ export class RealBackend implements Backend {
 	}
 
 	async devSendEvent(input: DevSendEvent): Promise<DevSendEventResult> {
-		this.#requireDev();
 		const system = this.#rt.system;
 		try {
 			const result = await system.send(input.address, input.event, input.data, { until: 'completed', timeout: 5000 });
@@ -662,17 +680,14 @@ export class RealBackend implements Backend {
 	}
 
 	async getRecentSpans(q: Resolved<GetRecentSpansInput>): Promise<SpanSummary[]> {
-		this.#requireDev();
 		return this.#rt.tracer.recent(q);
 	}
 
 	async listRecentTraces(q: Resolved<ListRecentTracesInput>): Promise<TraceSummary[]> {
-		this.#requireDev();
 		return this.#rt.tracer.traces(q);
 	}
 
 	async getDapLaunchConfig(address: ActorAddress): Promise<DapLaunchConfig> {
-		this.#requireDev();
 		const a = formatAddress(address);
 		return { type: 'tinyactors', request: 'attach', name: `granary: ${a}`, port: this.#rt.config.dapPort, address: a };
 	}
@@ -681,7 +696,6 @@ export class RealBackend implements Backend {
 
 	#loadgenClient: LoadgenClient | null = null;
 	get #loadgen(): LoadgenClient {
-		this.#requireDev();
 		return (this.#loadgenClient ??= new LoadgenClient(this.#rt.config.loadgenUrl));
 	}
 
@@ -815,7 +829,6 @@ export class RealBackend implements Backend {
 
 	#fakeInfraClient: FakeInfraClient | null = null;
 	get #fakeInfra(): FakeInfraClient {
-		this.#requireDev();
 		return (this.#fakeInfraClient ??= new FakeInfraClient(this.#rt.config.fakeInfraUrl));
 	}
 	getFakeInfraStatus(): Promise<FakeInfraInfo> {

@@ -6,7 +6,7 @@ navigation, and clipboard integration. Rows are virtualized, so documents with
 tens of thousands of nodes stay smooth.
 
 It depends only on `svelte`. Nothing here imports app code, so the folder can
-be copied into another project as is. Playground: `/__dev/components/json-view`
+be copied into another project as is. Playground: `/admin/components/json-view`
 (dev mode only). Decision record: `docs/adr/0057-json-view-component.md`.
 
 ```svelte

@@ -35,6 +35,21 @@ export function requireDev(): void {
 	if (!locals.devMode) error(404, 'Not Found');
 }
 
+/**
+ * The admin section (ADR 0290): admins in every environment (in development
+ * mode also anonymous visitors, who sign in there). With `capability`, 404
+ * unless that area is available here (e.g. a simulation service configured).
+ */
+export function requireAdminArea(capability?: import('$lib/schemas/admin').AdminCapability): SessionUser | null {
+	const { locals } = getRequestEvent();
+	if (!locals.devMode) {
+		if (!locals.user) error(401, 'Sign in required');
+		if (!locals.user.isAdmin) error(404, 'Not Found');
+	}
+	if (capability && !locals.admin[capability]) error(404, `Not available here: ${capability}`);
+	return locals.user;
+}
+
 /** The signed-in user or null (never throws). */
 export function currentUser(): SessionUser | null {
 	return getRequestEvent().locals.user;

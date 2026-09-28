@@ -1,6 +1,6 @@
 /**
  * Datasets for the JSON view stories (ADR 0077), lifted from the former
- * /__dev/components/json-view playground (ADR 0057).
+ * /admin/components/json-view playground (ADR 0057).
  */
 export type Dataset = { id: string; label: string; make: () => unknown };
 

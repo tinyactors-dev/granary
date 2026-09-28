@@ -1,8 +1,8 @@
 /**
  * The component preview registry (ADR 0077). Add a component: write a
  * wrapper in `previews/` that renders it from `args`, optionally a docs
- * component, and an entry here. /__dev/ui lists entries; the generic page
- * /__dev/ui/<id>/<story> renders stories, controls and docs.
+ * component, and an entry here. /admin/ui lists entries; the generic page
+ * /admin/ui/<id>/<story> renders stories, controls and docs.
  */
 import type { PreviewEntry } from './types';
 import { JSON_DATASETS } from './fixtures/json';

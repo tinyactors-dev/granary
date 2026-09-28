@@ -9,7 +9,7 @@
 	<p>
 		<code>&lt;MessageTemplateEditor bind:value inherited kind label readonly bind:sampleId /&gt;</code> —
 		<code>value</code> is the template or <code>null</code> for “inherit” (the built-in default, or the global template when used as a
-		per-repository override). Used on <code>/settings/closing-message</code>.
+		per-repository override). Used on <code>/policy/closing-message</code>.
 	</p>
 	<p>
 		Syntax: Markdown with <code>{'{{variable}}'}</code> placeholders — no logic. Unknown variables and stray braces are errors at save

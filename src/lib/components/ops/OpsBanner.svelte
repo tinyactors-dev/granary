@@ -1,8 +1,8 @@
 <!--
-	"While you were away" (ADR 0100, 0104): on every page for signed-in users,
-	summarising what ops handled since the last visit and what needs a human
-	when convenient. Calm by design — nothing here is urgent. Renders nothing
-	when the ops module isn't running (the query returns null).
+	"While you were away" (ADR 0100, 0104, 0291): on the Overview only, and only
+	when something needs a human (what ops handled by itself is on /ops). Calm
+	by design — nothing here is urgent. Renders nothing when the ops module
+	isn't running (the query returns null).
 -->
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button/index.js';
@@ -32,7 +32,7 @@
 
 <svelte:boundary>
 	{@const b = await banner}
-	{#if b?.show && !hidden}
+	{#if b?.show && b.attention.length > 0 && !hidden}
 		<aside
 			class="flex items-start gap-3 rounded-xl border border-sky-600/20 bg-sky-600/[0.06] px-4 py-3 text-sm dark:border-sky-400/20 dark:bg-sky-400/[0.07]"
 			data-testid="ops-banner"

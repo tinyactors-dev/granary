@@ -1,6 +1,6 @@
 /**
  * Ops scenario helpers (ADR 0150): a client for the app's dev-only
- * `/__dev/api/ops` JSON surface and a typed client for fake-infra's
+ * `/admin/api/ops` JSON surface and a typed client for fake-infra's
  * `/__control` API. Responses are checked against the pinned schemas.
  */
 import { Value } from '@sinclair/typebox/value';
@@ -30,11 +30,11 @@ export class OpsClient {
 	constructor(private readonly h: Harness) {}
 
 	private async get(path: string): Promise<unknown> {
-		return asJson(await this.h.fetchApp(`/__dev/api/ops/${path}`), `GET ops/${path}`);
+		return asJson(await this.h.fetchApp(`/admin/api/ops/${path}`), `GET ops/${path}`);
 	}
 	private async post(path: string, body: unknown): Promise<unknown> {
 		return asJson(
-			await this.h.fetchApp(`/__dev/api/ops/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
+			await this.h.fetchApp(`/admin/api/ops/${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
 			`POST ops/${path}`
 		);
 	}

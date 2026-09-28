@@ -79,7 +79,7 @@
 				{#if !isTerminal(s.state)}
 					<Button size="sm" variant="destructive" disabled={acting !== null} onclick={() => act('stop')}><SquareIcon /> Stop</Button>
 				{/if}
-				<Button size="sm" variant="outline" href="/__dev/load/personas?scenario={encodeURIComponent(s.id)}"><UsersIcon /> Personas</Button>
+				<Button size="sm" variant="outline" href="/admin/load/personas?scenario={encodeURIComponent(s.id)}"><UsersIcon /> Personas</Button>
 			</div>
 		</div>
 
@@ -153,7 +153,7 @@
 								{#each d.personaCounts as c (c.kind)}
 									<tr class="border-t">
 										<td class="py-1.5">
-											<a href="/__dev/load/personas?scenario={encodeURIComponent(s.id)}&kind={c.kind}" class="inline-flex items-center gap-1.5 underline-offset-4 hover:underline">
+											<a href="/admin/load/personas?scenario={encodeURIComponent(s.id)}&kind={c.kind}" class="inline-flex items-center gap-1.5 underline-offset-4 hover:underline">
 												<KindIcon kind={c.kind} class="text-muted-foreground size-4" />{KIND_LABEL[c.kind]}
 											</a>
 										</td>

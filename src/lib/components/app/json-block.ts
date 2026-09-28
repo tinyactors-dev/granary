@@ -1,4 +1,4 @@
-/** Sizing rules for JsonBlock (ADR 0058). Pure; shared with the /__dev/ui story. */
+/** Sizing rules for JsonBlock (ADR 0058). Pure; shared with the /admin/ui story. */
 
 export type JsonBlockPreset = 'inline' | 'compact' | 'panel';
 
