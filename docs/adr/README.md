@@ -12,6 +12,7 @@ superseded by N`) and the newer ADR says what changed.
 - **GitHub:** granary connects only as a GitHub App (0160, 0190–0194, 0230).
 - **Databases:** one baseline migration each for granary.sqlite and
   ops.sqlite (0230).
+- **Production:** ta-granary.exe.xyz, telemetry to the shared ta-metrics stack (0231).
 
 | ADR | Title | State |
 |---|---|---|
@@ -170,3 +171,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0221](0221-catch-up-health-and-ignore-reasons.md) | Catch-up health in ops; stored ignore reasons | active |
 | [0222](0222-manual-walkthrough-findings.md) | The manual is verified by walking through it | active |
 | [0230](0230-one-naming-scheme-no-legacy-before-first-release.md) | One naming scheme, no legacy before the first release | active |
+| [0231](0231-production-deployment-on-exe-dev.md) | Production deployment: ta-granary and the shared ta-metrics stack | active |
