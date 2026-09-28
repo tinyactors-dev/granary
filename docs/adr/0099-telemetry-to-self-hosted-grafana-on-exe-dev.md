@@ -1,6 +1,6 @@
 # 99. Telemetry to self-hosted Grafana on an exe.dev VM
 
-Date: 2026-09-28 · Status: proposed · Partially supersedes 85 (sink targets and auth)
+Date: 2026-09-28 · Status: proposed · Partially superseded by 107 (volume control) · Partially supersedes 85 (sink targets and auth)
 
 ## Context — exe.dev facts (retrieved 2026-09-28)
 - HTTP proxy (<https://exe.dev/docs/proxy.md>): `https://vmname.exe.xyz/`

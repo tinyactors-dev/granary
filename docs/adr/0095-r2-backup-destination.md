@@ -1,6 +1,6 @@
 # 95. Cloudflare R2 is the backup destination (S3-generic underneath)
 
-Date: 2026-09-28 · Status: proposed · Partially supersedes 84 (destination kinds, test connection, bucket prerequisites)
+Date: 2026-09-28 · Status: proposed · Partially superseded by 106 (endpoint derivation) · Partially supersedes 84 (destination kinds, test connection, bucket prerequisites)
 
 ## Context
 The user picked **Cloudflare R2**. Facts from Cloudflare's docs (retrieved

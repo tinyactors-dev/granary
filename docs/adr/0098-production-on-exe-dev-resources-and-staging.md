@@ -1,6 +1,6 @@
 # 98. Production on an exe.dev VM: resource facts, thresholds, backup staging
 
-Date: 2026-09-28 · Status: proposed · Partially supersedes 83 (space precondition, sealing into spool)
+Date: 2026-09-28 · Status: proposed · Partially superseded by 107 (egress budget) · Partially supersedes 83 (space precondition, sealing into spool)
 
 ## Context — what exe.dev's docs say (retrieved 2026-09-28)
 - **Persistent disk**: "virtual machines, with persistent disks"

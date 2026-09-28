@@ -6,16 +6,16 @@
 > **Nothing ever wakes you.**
 
 `src/lib/ops/` is a separate domain module inside the granary app process on
-an **exe.dev VM**. It backs up the SQLite databases (always encrypted) to
-**Cloudflare R2** with a hard size bound, exports telemetry over OTLP to a
-**self-hosted Grafana (otel-lgtm) on a second exe.dev VM**, and runs a
+an **exe.dev VM in FRA (EU)**. It backs up the SQLite databases (always encrypted) to
+**Cloudflare R2 (EU jurisdiction bucket)** with a hard size bound, exports telemetry over OTLP to a
+**self-hosted Grafana (otel-lgtm) on a second exe.dev VM, also FRA**, and runs a
 watchdog that is a control loop, not an alarm. Everything is configured in
 the product (`/ops`); env vars only seed. **Status: planned.**
 
 ## Topology
 
 ```
- exe.dev VM "granary" (public proxy port = granary, for GitHub webhooks)
+ exe.dev VM "granary", region FRA (public proxy port = granary, for GitHub webhooks)
  ┌──────────────────────────────────────────────────────────────────────────────────────┐
  │ granary System (issues)            │ ops System (service.name=granary-ops)            │
  │                                    │                                                  │
@@ -29,17 +29,17 @@ the product (`/ops`); env vars only seed. **Status: planned.**
  │ /ops UI + banner ─ OpsBackend ─────┼─ ops.sqlite (config, envelope-encrypted secrets, runs,     │
  │                                    │               conditions, ops_events, admin_visits)       │
  └────────────────────────────────────┴───────────────────────────────────────────────────┼────┘
-        │ http://grafana-otlp.int.exe.xyz  (exe.dev peer integration: key injected        │ S3 API
-        │  at the edge, granary stores no credential)                                     ▼
-        ▼                                                         Cloudflare R2  (region auto,
- exe.dev VM "granary-grafana": grafana/otel-lgtm                   bucket-scoped Object R&W token,
-   :4318 OTLP (private) → Loki · Tempo · Prometheus                 caps: ≤ 82 backups/db, ≤ 8 GiB)
-   :3000 Grafana UI (private, exe.dev login)
+        │ http://grafana-otlp.int.exe.xyz  (exe.dev peer integration: key injected        │ S3 API (billed egress)
+        │  at the edge, granary stores no credential; VM↔VM traffic is not billed)        ▼
+        ▼                                                          Cloudflare R2, EU jurisdiction
+ exe.dev VM "granary-grafana" (FRA): grafana/otel-lgtm              <account>.eu.r2.cloudflarestorage.com
+   :4318 OTLP (private) → Loki · Tempo · Prometheus                  region auto, bucket-scoped Object R&W token
+   :3000 Grafana UI (private, exe.dev login)                         caps: ≤ 82 backups/db, ≤ 8 GiB
 ```
 
 ## A backup, step by step
-1. `backup-plan/<plan>` ticks (hourly, stretched automatically if the egress
-   budget would be exceeded) → commits a run row → `backup-run/<run>`.
+1. `backup-plan/<plan>` ticks (hourly, stretched automatically if R2 upload
+   egress — the only billed traffic — would exceed 20 GiB/month) → commits a run row → `backup-run/<run>`.
 2. Snapshot Worker: `VACUUM INTO` the spool → `integrity_check` → row counts.
 3. `retention/<dest>` makes room first (caps always hold).
 4. `upload/<run>.<dest>`: stream zstd → AES-256-GCM (per-artifact key wrapped
@@ -77,17 +77,26 @@ Current:
 - [0093 Feedback loops & redaction](../adr/0093-telemetry-feedback-loops-and-redaction.md)
 - [0100 No paging: self-heal, wait until morning](../adr/0100-no-paging-problems-wait-until-morning.md)
 - [0102 Configuration & seeds](../adr/0102-ops-configuration-and-seeds-revision.md)
-- [0105 Implementation plan](../adr/0105-ops-implementation-plan-revision.md)
+- [0105 Implementation plan](../adr/0105-ops-implementation-plan-revision.md) + [0109 M0 scope](../adr/0109-m0-scope-clarifications.md)
+- [0106 EU region & R2 jurisdiction](../adr/0106-eu-region-and-r2-jurisdiction.md)
+- [0107 Egress accounting](../adr/0107-egress-accounting.md)
+- [0108 Confirmed defaults & contract tests](../adr/0108-confirmed-defaults-and-contract-tests.md)
 
 Superseded: [0087](../adr/0087-in-product-configuration-and-seed-env.md) → 0102,
 [0088](../adr/0088-watchdog-signals-and-alerting.md) → 0100,
 [0094](../adr/0094-ops-implementation-plan.md) → 0105.
 
+## Budgets (confirmed, ADR 0108)
+| Budget | Default | Counts |
+|---|---|---|
+| R2 retention per destination | 8 GiB, 82 backups per database | sealed artifacts + manifests |
+| R2 upload egress (billed by exe.dev) | 20 GiB / month | every byte uploaded to R2 |
+| Telemetry volume (Grafana VM disk) | 5 GiB / month | OTLP bytes to the Grafana VM (VM↔VM, not billed) |
+
+Region: both VMs in exe.dev **FRA**; R2 bucket in the **EU jurisdiction**
+(ADR 0106). Contract tests for the exe.dev proxy and R2 conditional
+presigned PUT are agreed (ADR 0108).
+
 ## Open questions
-- Does exe.dev's proxy accept large protobuf POSTs to a private port and a
-  peer integration target on :4318? (Contract test; fallback: VM token.)
-- Does R2 honour an unsigned `If-None-Match: *` on a presigned PUT?
-  (Contract test; fallback: HEAD-then-PUT.)
-- Is VM→VM traffic via `*.int.exe.xyz` billed as outbound? (Assumed yes.)
-- Default 8 GiB / 82-backup caps and 20 GiB/month backup egress — OK?
-- Which exe.dev region for both VMs (FRA/LON vs US) — affects R2 latency only.
+None blocking. Contract-test results (ADR 0108) may flip the manifest write
+to HEAD-then-PUT or the telemetry auth to the VM-token mode.
