@@ -665,22 +665,22 @@ export class RealBackend implements Backend {
 		return this.#admins.listAudit(limit);
 	}
 
-	// -- GitHub connection (ADR 0160, 0162): implemented by fork E3 ---------------------
+	// -- GitHub connection (ADR 0160, 0162): src/lib/server/github/connection.ts -------------
 
 	async getGitHubStatus(): Promise<GitHubStatus> {
-		return this.#pending('E3');
+		return this.#rt.github.status();
 	}
-	async beginGitHubAppManifest(_input: BeginManifestInput, _requestedBy: string): Promise<ManifestFormData> {
-		return this.#pending('E3');
+	async beginGitHubAppManifest(input: BeginManifestInput, requestedBy: string): Promise<ManifestFormData> {
+		return this.#rt.github.beginManifest(input, requestedBy);
 	}
-	async completeGitHubAppManifest(_code: string, _state: string, _actor: string): Promise<CompleteManifestResult> {
-		return this.#pending('E3');
+	async completeGitHubAppManifest(code: string, state: string, actor: string): Promise<CompleteManifestResult> {
+		return this.#rt.github.completeManifest(code, state, actor);
 	}
-	async refreshGitHubInstallations(_actor: string): Promise<InstallationSummary[]> {
-		return this.#pending('E3');
+	async refreshGitHubInstallations(actor: string): Promise<InstallationSummary[]> {
+		return this.#rt.github.refreshInstallations(actor);
 	}
-	async setRepoEnabled(_input: SetRepoEnabledInput, _actor: string): Promise<RepoSummary> {
-		return this.#pending('E3');
+	async setRepoEnabled(input: SetRepoEnabledInput, actor: string): Promise<RepoSummary> {
+		return this.#rt.github.setRepoEnabled(input, actor);
 	}
 
 	// -- fake-infra (ADR 0139) ---------------------------------------------------

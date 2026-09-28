@@ -35,52 +35,98 @@ export function parseRetryAfter(header: string | null, now = Date.now()): number
 	return Number.isNaN(at) ? null : Math.max(0, at - now);
 }
 
-export interface GitHubClientOptions {
+/** A bearer token, or a provider called per request (installation tokens, ADR 0191). */
+export type TokenSource = string | (() => Promise<string>);
+
+export interface GitHubRequestOptions {
 	apiUrl: string;
+	/** Sent as `Authorization: Bearer …`. */
 	token: string;
 	/** Per-request timeout; default 15 s. */
 	timeoutMs?: number;
 	userAgent?: string;
+	signal?: AbortSignal;
+	/** Sees the response headers of a successful call (e.g. `Link` for cursor paging). */
+	onHeaders?: (headers: Headers) => void;
+}
+
+/**
+ * One GitHub REST call: JSON in, parsed JSON (or null) out; non-2xx throws
+ * GitHubHttpError with `Retry-After`. Shared by the issue client and the
+ * app-level calls (JWT / installation tokens).
+ */
+export async function githubRequest(opts: GitHubRequestOptions, method: string, path: string, body?: unknown): Promise<unknown> {
+	const timeout = AbortSignal.timeout(opts.timeoutMs ?? 15_000);
+	const res = await fetch(`${opts.apiUrl.replace(/\/+$/, '')}${path}`, {
+		method,
+		headers: {
+			Accept: 'application/vnd.github+json',
+			Authorization: `Bearer ${opts.token}`,
+			'User-Agent': opts.userAgent ?? 'granary',
+			'X-GitHub-Api-Version': '2022-11-28',
+			...(body !== undefined ? { 'Content-Type': 'application/json' } : {})
+		},
+		body: body !== undefined ? JSON.stringify(body) : undefined,
+		signal: opts.signal ? AbortSignal.any([opts.signal, timeout]) : timeout
+	});
+	const text = await res.text();
+	if (!res.ok) {
+		throw new GitHubHttpError(method, path, res.status, text, parseRetryAfter(res.headers.get('retry-after')));
+	}
+	opts.onHeaders?.(res.headers);
+	if (!text) return null;
+	try {
+		return JSON.parse(text);
+	} catch {
+		throw new Error(`${method} ${path}: response is not JSON`);
+	}
+}
+
+/** The `rel="next"` URL of a `Link` header, or null. */
+export function nextLink(link: string | null): string | null {
+	if (!link) return null;
+	for (const part of link.split(',')) {
+		const m = /<([^>]+)>\s*;\s*rel="?next"?/.exec(part);
+		if (m) return m[1]!;
+	}
+	return null;
+}
+
+export interface GitHubClientOptions {
+	apiUrl: string;
+	/** A PAT (token mode) or an installation-token provider (app mode). */
+	token: TokenSource;
+	/** Per-request timeout; default 15 s. */
+	timeoutMs?: number;
+	userAgent?: string;
+	/** Called when GitHub answers 401, e.g. to drop a cached installation token. */
+	onUnauthorized?: () => void;
 }
 
 const seg = encodeURIComponent;
 
 export class GitHubClient {
 	readonly #api: string;
-	readonly #token: string;
+	readonly #token: TokenSource;
 	readonly #timeoutMs: number;
 	readonly #ua: string;
+	readonly #onUnauthorized: (() => void) | undefined;
 
 	constructor(opts: GitHubClientOptions) {
 		this.#api = opts.apiUrl.replace(/\/+$/, '');
 		this.#token = opts.token;
 		this.#timeoutMs = opts.timeoutMs ?? 15_000;
 		this.#ua = opts.userAgent ?? 'granary';
+		this.#onUnauthorized = opts.onUnauthorized;
 	}
 
 	async #request(method: string, path: string, body?: unknown, signal?: AbortSignal): Promise<unknown> {
-		const timeout = AbortSignal.timeout(this.#timeoutMs);
-		const res = await fetch(`${this.#api}${path}`, {
-			method,
-			headers: {
-				Accept: 'application/vnd.github+json',
-				Authorization: `Bearer ${this.#token}`,
-				'User-Agent': this.#ua,
-				'X-GitHub-Api-Version': '2022-11-28',
-				...(body !== undefined ? { 'Content-Type': 'application/json' } : {})
-			},
-			body: body !== undefined ? JSON.stringify(body) : undefined,
-			signal: signal ? AbortSignal.any([signal, timeout]) : timeout
-		});
-		const text = await res.text();
-		if (!res.ok) {
-			throw new GitHubHttpError(method, path, res.status, text, parseRetryAfter(res.headers.get('retry-after')));
-		}
-		if (!text) return null;
+		const token = typeof this.#token === 'string' ? this.#token : await this.#token();
 		try {
-			return JSON.parse(text);
-		} catch {
-			throw new Error(`${method} ${path}: response is not JSON`);
+			return await githubRequest({ apiUrl: this.#api, token, timeoutMs: this.#timeoutMs, userAgent: this.#ua, signal }, method, path, body);
+		} catch (e) {
+			if (e instanceof GitHubHttpError && e.status === 401) this.#onUnauthorized?.();
+			throw e;
 		}
 	}
 

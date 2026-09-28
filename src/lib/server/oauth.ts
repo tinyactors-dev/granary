@@ -1,6 +1,7 @@
 /**
- * GitHub OAuth web flow helpers (ADR 0034): the state cookie and the two
- * calls `/auth/callback` makes.
+ * GitHub OAuth web flow helpers (ADR 0034, ADR 0160): the state cookie, the
+ * client credentials (the GitHub App's own OAuth client in app mode, the
+ * separate OAuth app in token mode) and the two calls `/auth/callback` makes.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { Type } from '@sinclair/typebox';
@@ -13,6 +14,23 @@ import {
 } from '$lib/schemas/github';
 import { check } from '$lib/schemas/standard';
 import type { Config } from '$lib/schemas/config';
+import { getRuntime } from './system';
+
+export interface OAuthCredentials {
+	clientId: string;
+	clientSecret: string;
+}
+
+/**
+ * The OAuth client for UI sign-in, from the GitHub connection; null while
+ * GitHub is not connected (sign in with `granary login-link` then). Without a
+ * booted runtime (stub backend) the legacy config values are used.
+ */
+export async function oauthCredentials(config: Config): Promise<OAuthCredentials | null> {
+	const rt = getRuntime();
+	if (rt && !rt.closed) return rt.github.oauthCredentials();
+	return config.oauthClientId && config.oauthClientSecret ? { clientId: config.oauthClientId, clientSecret: config.oauthClientSecret } : null;
+}
 
 const OAuthStateCookie = Type.Object(
 	{ state: Type.String({ minLength: 1 }), redirect: Type.String() },
@@ -52,10 +70,10 @@ export class OAuthFailure extends Error {
 }
 
 /** `POST {GITHUB_WEB_URL}/login/oauth/access_token` → access token. */
-export async function exchangeCode(config: Config, code: string, redirectUri: string): Promise<string> {
+export async function exchangeCode(config: Config, creds: OAuthCredentials, code: string, redirectUri: string): Promise<string> {
 	const body: OAuthAccessTokenRequest = {
-		client_id: config.oauthClientId,
-		client_secret: config.oauthClientSecret,
+		client_id: creds.clientId,
+		client_secret: creds.clientSecret,
 		code,
 		redirect_uri: redirectUri
 	};

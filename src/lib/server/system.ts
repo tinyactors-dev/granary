@@ -22,8 +22,12 @@ import { check } from '../schemas/standard';
 import { parseOutboxPayload } from '../schemas/wal';
 import { allowlistChart } from './actors/allowlist';
 import { issueChart } from './actors/issue';
-import { GitHubClient } from './github-client';
+import { deliveryCatchupChart, type DeliveryCatchupData } from './actors/delivery-catchup';
+import { CATCHUP_ADDRESS, CATCHUP_EVENTS, CATCHUP_IO_TYPE, catchupProcessor } from './github/catchup';
+import { GitHubConnection } from './github/connection';
+import { GitHubStore } from './github/store';
 import { issueOpenedFromInbox } from './inbound';
+import { granarySecretsOrNull } from './secrets';
 import { GITHUB_IO_TYPE, githubProcessor } from './io/github';
 import { log } from './log';
 import { Relay } from './relay';
@@ -40,6 +44,8 @@ export interface Runtime {
 	wal: Wal;
 	system: System;
 	relay: Relay;
+	/** The GitHub connection: mode, secrets, auth, installations (ADR 0160). */
+	github: GitHubConnection;
 	tracer: Tracer;
 	startedAt: number;
 	issueDefinition: Definition<IssueActorData>;
@@ -115,13 +121,18 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		if (wal.addAllowedUser(login, 'seed').added) log.info(`allowlist: seeded ${login}`);
 	}
 
+	// 1b. GitHub connection (ADR 0160, 0193): mode + seeds; secrets resolved at use.
+	const github = new GitHubConnection({ config, store: new GitHubStore(wal.db), secrets: granarySecretsOrNull });
+	github.seed();
+
 	// 2. System (the relay and tracer are created right after; hooks reach them late-bound)
 	let relay: Relay | null = null;
 	let tracer: Tracer | null = null;
 	const stats = { deadLetters: 0 };
 	const system = createSystem({
 		io: {
-			[GITHUB_IO_TYPE]: githubProcessor({ wal, kickRelay: () => relay?.kick() })
+			[GITHUB_IO_TYPE]: githubProcessor({ wal, kickRelay: () => relay?.kick() }),
+			[CATCHUP_IO_TYPE]: catchupProcessor({ connection: () => github, wal })
 		},
 		done(record) {
 			const inspection = record.actor.inspect();
@@ -192,11 +203,32 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	// 5. relay
 	relay = new Relay({
 		wal,
-		github: new GitHubClient({ apiUrl: config.githubApiUrl, token: config.githubToken }),
+		github: (payload) => github.clientForRepo({ owner: payload.owner, repo: payload.repo, repoId: payload.repoId }),
 		system,
 		baseDelayMs: config.relayBaseDelayMs
 	});
 	relay.start();
+
+	// 5b. delivery-catchup/main (ADR 0162): app mode only; spawned when the mode becomes `app`.
+	const catchupDefinition = system.define(deliveryCatchupChart());
+	const catchupTiming = catchupTimingFromEnv();
+	const spawnCatchup = () => {
+		if (github.mode() !== 'app' || system.closed || system.findActor(CATCHUP_ADDRESS)) return;
+		const actor = system.spawn(catchupDefinition, { address: CATCHUP_ADDRESS, binding: catchupTiming });
+		tracer!.noteActor(actor.inspect());
+		log.info('github: delivery catch-up started');
+	};
+	spawnCatchup();
+	github.onModeChange((mode) => {
+		if (mode === 'app') {
+			spawnCatchup();
+			try {
+				system.post(CATCHUP_ADDRESS, CATCHUP_EVENTS.runNow);
+			} catch {
+				/* not resident */
+			}
+		}
+	});
 
 	const postIssueOpened = (data: IssueOpenedData): boolean => {
 		try {
@@ -242,6 +274,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		wal,
 		system,
 		relay,
+		github,
 		tracer,
 		startedAt: Date.now(),
 		issueDefinition,
@@ -285,6 +318,14 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 			`traces=${config.otlpTracesUrl ?? 'off'} dev=${opts.devMode}`
 	);
 	return runtime;
+}
+
+/** Test/ops knobs for the catch-up cadence (ADR 0194); defaults 30 s / 10 min. */
+function catchupTimingFromEnv(): Partial<DeliveryCatchupData> {
+	const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
+	const firstDelayMs = num(process.env.GRANARY_CATCHUP_FIRST_DELAY_MS);
+	const intervalMs = num(process.env.GRANARY_CATCHUP_INTERVAL_MS);
+	return { ...(firstDelayMs !== undefined ? { firstDelayMs } : {}), ...(intervalMs !== undefined ? { intervalMs } : {}) };
 }
 
 const shutdownHooks: (() => void | Promise<void>)[] = [];

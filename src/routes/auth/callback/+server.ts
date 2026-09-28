@@ -11,7 +11,7 @@ import { check } from '$lib/schemas/standard';
 import { OAUTH_STATE_COOKIE, safeRedirectPath, setSessionCookie } from '$lib/server/auth';
 import { getBackend } from '$lib/server/backend';
 import { getConfig } from '$lib/server/config';
-import { OAuthFailure, decodeOAuthState, exchangeCode, fetchUser, sameState } from '$lib/server/oauth';
+import { OAuthFailure, decodeOAuthState, exchangeCode, fetchUser, oauthCredentials, sameState } from '$lib/server/oauth';
 
 export const GET: RequestHandler = async ({ url, cookies }) => {
 	const config = getConfig();
@@ -24,7 +24,9 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	const origin = config.origin ?? url.origin;
 	let user;
 	try {
-		const token = await exchangeCode(config, query.code, `${origin}/auth/callback`);
+		const creds = await oauthCredentials(config);
+		if (!creds) error(503, 'GitHub sign-in is not set up yet');
+		const token = await exchangeCode(config, creds, query.code, `${origin}/auth/callback`);
 		user = await fetchUser(config, token);
 	} catch (e) {
 		if (e instanceof OAuthFailure) error(e.status, e.message);

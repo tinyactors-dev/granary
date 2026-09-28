@@ -17,14 +17,17 @@
 import type { System } from '@tinyactors/node';
 import { EVENTS, MAX_EFFECT_ATTEMPTS, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
 import { CLOSING_COMMENT, commentMarker } from '../schemas/github';
-import { parseOutboxPayload, parseReplyTo, type OutboxRow } from '../schemas/wal';
+import { parseOutboxPayload, parseReplyTo, type OutboxPayload, type OutboxRow } from '../schemas/wal';
 import { GitHubHttpError, type GitHubClient } from './github-client';
 import { log } from './log';
 import type { Wal } from './wal';
 
+/** A fixed client, or one resolved per effect (app mode: the repo's installation token, ADR 0191). */
+export type RelayGitHub = GitHubClient | ((payload: OutboxPayload) => Promise<GitHubClient>);
+
 export interface RelayOptions {
 	wal: Wal;
-	github: GitHubClient;
+	github: RelayGitHub;
 	system: System;
 	/** Max effects in flight; default 4. */
 	concurrency?: number;
@@ -37,7 +40,7 @@ export interface RelayOptions {
 
 export class Relay {
 	readonly #wal: Wal;
-	readonly #github: GitHubClient;
+	readonly #github: RelayGitHub;
 	readonly #system: System;
 	readonly #concurrency: number;
 	readonly #baseDelayMs: number;
@@ -145,16 +148,17 @@ export class Relay {
 		}
 		const signal = this.#abort.signal;
 		try {
+			const github = typeof this.#github === 'function' ? await this.#github(payload) : this.#github;
 			let commentId = row.comment_id;
 			if (commentId === null) {
 				const marker = commentMarker(key);
 				if (row.attempts > 1) {
-					const comments = await this.#github.listComments(payload.owner, payload.repo, payload.number, signal);
+					const comments = await github.listComments(payload.owner, payload.repo, payload.number, signal);
 					commentId = comments.find((c) => c.body.includes(marker))?.id ?? null;
 					if (commentId !== null) this.#wal.setCommentId(key, commentId);
 				}
 				if (commentId === null) {
-					const comment = await this.#github.createComment(
+					const comment = await github.createComment(
 						payload.owner,
 						payload.repo,
 						payload.number,
@@ -165,7 +169,7 @@ export class Relay {
 					this.#wal.setCommentId(key, commentId);
 				}
 			}
-			await this.#github.closeIssue(payload.owner, payload.repo, payload.number, signal);
+			await github.closeIssue(payload.owner, payload.repo, payload.number, signal);
 			this.#wal.markOutboxDone(key);
 			log.info(`relay: ${key} done (comment ${commentId}, attempt ${row.attempts})`);
 			this.#reply(replyTo, EVENTS.githubClosed, { effectKey: key, commentId } satisfies GitHubClosedData);
