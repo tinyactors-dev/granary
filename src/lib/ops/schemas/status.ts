@@ -7,7 +7,7 @@ export const OpsMode = Type.Union([
 	Type.Literal('ok'),
 	/** e.g. master key missing: config readable, nothing needing secrets runs. */
 	Type.Literal('degraded'),
-	/** Ops not started / M0 no-op module. */
+	/** Ops not started (or failed to start). */
 	Type.Literal('inactive')
 ]);
 

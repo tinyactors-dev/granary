@@ -1,6 +1,6 @@
 /**
  * Disk facts and the backup space rule (ADR 0098).
- * `OPS_TEST_STATFS_OVERRIDE=<free>/<total>` replaces statfs in tests (ADR 0103).
+ * `GRANARY_TEST_STATFS_OVERRIDE=<free>/<total>` replaces statfs in tests (ADR 0103).
  */
 import { statfs } from 'node:fs/promises';
 import type { Budgets } from '../schemas/budgets';
@@ -12,7 +12,7 @@ export interface DiskFacts {
 }
 
 export async function diskFacts(dir: string, env: Record<string, string | undefined>): Promise<DiskFacts> {
-	const o = env.OPS_TEST_STATFS_OVERRIDE;
+	const o = env.GRANARY_TEST_STATFS_OVERRIDE;
 	if (o && /^\d+\/\d+$/.test(o)) {
 		const [free, total] = o.split('/').map(Number) as [number, number];
 		return { freeBytes: free, totalBytes: total, overridden: true };

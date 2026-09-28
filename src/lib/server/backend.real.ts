@@ -632,7 +632,7 @@ export class RealBackend implements Backend {
 		return this.#loadgen.reset();
 	}
 
-	// -- setup, admins, login links (ADR 0161): pinned by ADR 0166, implemented by fork E1 --
+	// -- setup, admins, login links (ADR 0161) --
 
 	#pending(fork: string): never {
 		throw new BackendError('unavailable', `not implemented yet (ADR 0166, fork ${fork})`);

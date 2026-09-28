@@ -73,10 +73,6 @@ run = "pitchfork logs -t granary/app granary/fake-github granary/loadgen granary
 description = "Tail logs of the real local stack"
 run = "pitchfork logs -t granary/app-real granary/rustfs granary/grafana"
 
-[tasks."dev:all"]
-description = "Alias for `up` (dev daemons via pitchfork)"
-depends = ["up"]
-
 [tasks.cli]
 description = "Build the granary CLI into dist/cli.js (ADR 0159)"
 run = "bun build src/cli/main.ts --target bun --external @tinyactors/node --outfile dist/cli.js"
@@ -99,7 +95,7 @@ description = "Type-check (svelte-kit sync + svelte-check)"
 run = ["bunx svelte-kit sync", "bunx svelte-check --tsconfig ./tsconfig.json --output human"]
 
 [tasks."ops:restore"]
-description = "Restore an ops backup to a file and verify it (ADR 0116). Needs OPS_MASTER_KEY: `fnox exec -P prod -- mise run ops:restore -- --ops-db data/ops.sqlite --dest seed-r2 --latest --out restored.sqlite`"
+description = "Restore an ops backup to a file and verify it (ADR 0116). Needs GRANARY_MASTER_KEY: `fnox exec -P prod -- mise run ops:restore -- --ops-db data/ops.sqlite --dest seed-r2 --latest --out restored.sqlite`"
 run = "bun src/lib/ops/cli/restore.ts"
 
 [tasks."check:boundaries"]
@@ -107,8 +103,8 @@ description = "Module boundary rules: granary ↔ ops ↔ fake-infra (ADR 0080, 
 run = ["ast-grep scan", "tools/check-svelte-boundaries.sh"]
 
 [tasks.test]
-description = "Integration tests against the built app (ADR 0007)"
-depends = ["build"]
+description = "Integration tests against the built app and CLI (ADR 0007)"
+depends = ["build", "cli"]
 run = "bun test --parallel=4 ./tests/"
 
 [tasks.prod]

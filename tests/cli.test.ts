@@ -14,11 +14,10 @@ const T = 60_000;
 let initOutput: { code: number; stdout: string; stderr: string } | null = null;
 
 const h: () => Harness = useHarness({
-			appEnv: { ADMINS: 'admin' },
 			/** Offline commands run before the server starts. */
 			prepare: async (harness) => {
-				// Blank the harness's OPS_MASTER_KEY so init generates (and prints) a new key instead of using the env one (ADR 0157).
-				initOutput = await runCli(harness, ['init', '--origin', harness.appUrl, '--yes-i-stored-the-key', '--json'], { env: { OPS_MASTER_KEY: '' } });
+				// Blank the harness's GRANARY_MASTER_KEY so init generates (and prints) a new key instead of using the env one (ADR 0157).
+				initOutput = await runCli(harness, ['init', '--origin', harness.appUrl, '--yes-i-stored-the-key', '--json'], { env: { GRANARY_MASTER_KEY: '' } });
 				const key = /[0-9a-f]{64}/i.exec(initOutput.stdout)?.[0];
 				if (key) harness.extraAppEnv.GRANARY_MASTER_KEY = key;
 				await runCli(harness, ['admin', 'add', 'offline-admin']);

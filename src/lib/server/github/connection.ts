@@ -3,11 +3,9 @@
  * where its secrets come from, how REST calls authenticate, the manifest
  * flow, installation/repo sync and the per-repo policy.
  *
- * Secrets live in the platform secret store (ADR 0158) under
- * GITHUB_SECRET_REFS. Until a store is attached (or while it has no master
- * key), token mode falls back to the legacy env values from Config — so a
- * deployment configured only by env keeps working, and so do the tests
- * (ADR 0193).
+ * granary talks to GitHub only as a GitHub App (ADR 0230): mode `none`
+ * until the app is created in-product, then `app`. The app's credentials
+ * live in the platform secret store (ADR 0158) under GITHUB_SECRET_REFS.
  */
 import { randomBytes } from 'node:crypto';
 import { BackendError } from '../backend';
@@ -71,7 +69,6 @@ export class GitHubConnection {
 	readonly #config: Config;
 	readonly #store: GitHubStore;
 	#secrets: () => PlatformSecrets | null;
-	#seedsCopied = false;
 	#tokens: InstallationTokenCache;
 	#auth: GitHubStatus['auth'] = { ok: null, checkedAt: null, error: null };
 	#modeListeners = new Set<(mode: GitHubMode) => void>();
@@ -90,17 +87,12 @@ export class GitHubConnection {
 	/** Replace the secret-store lookup (tests / alternative wiring). */
 	attachSecrets(secrets: () => PlatformSecrets | null): void {
 		this.#secrets = secrets;
-		this.#seedsCopied = false;
 		this.#tokens.clear();
 	}
 
 	#secretsReady(): PlatformSecrets | null {
 		const store = this.#secrets();
 		if (!store || store.keyStatus() !== 'ok') return null;
-		if (!this.#seedsCopied) {
-			this.#seedsCopied = true;
-			void this.#copySeedSecrets(store).catch((e) => log.error('github: copying seed secrets failed', e));
-		}
 		return store;
 	}
 
@@ -144,44 +136,14 @@ export class GitHubConnection {
 		return () => this.#modeListeners.delete(listener);
 	}
 
-	/**
-	 * Seeds (ADR 0193), run at boot: a never-configured instance with the
-	 * legacy env (`GITHUB_TOKEN` + `GITHUB_WEBHOOK_SECRET`) becomes `token`
-	 * mode; with a usable secret store the env secrets are copied into it
-	 * (never overwriting). Otherwise the mode stays `none` (setup required).
-	 */
+	/** At boot: a never-configured instance starts in mode `none` (setup required). */
 	seed(): void {
-		const c = this.#config;
-		if (this.#store.getMode(GITHUB_SETTING_KEYS.mode) === null) {
-			if (c.githubToken && c.webhookSecret) {
-				this.#setMode('token', 'seed');
-			} else {
-				this.#setMode('none', 'seed');
-			}
-		}
-		if (this.mode() === 'token' && c.oauthClientId && !this.#store.getConfigValue(GITHUB_SETTING_KEYS.tokenOauthClientId)) {
-			this.#store.setConfigValue(GITHUB_SETTING_KEYS.tokenOauthClientId, c.oauthClientId, 'seed');
-		}
-		this.#secretsReady(); // copies env secrets into the store when it is already open
+		if (this.#store.getMode(GITHUB_SETTING_KEYS.mode) === null) this.#setMode('none', 'seed');
 		this.refreshMode('seed');
 	}
 
-	/** Token mode: copy the legacy env secrets into the store once (never overwriting). */
-	async #copySeedSecrets(store: PlatformSecrets): Promise<void> {
-		if (this.mode() !== 'token') return;
-		const c = this.#config;
-		const copies: [string, string, string, string][] = [
-			[GITHUB_SECRET_REFS.token, 'GitHub token (seed)', 'github-token', c.githubToken],
-			[GITHUB_SECRET_REFS.tokenWebhookSecret, 'GitHub webhook secret (seed)', 'github-webhook-secret', c.webhookSecret],
-			[GITHUB_SECRET_REFS.tokenOauthClientSecret, 'GitHub OAuth client secret (seed)', 'github-oauth-client-secret', c.oauthClientSecret]
-		];
-		for (const [id, name, kind, value] of copies) {
-			if (value && !store.has(id)) await store.set({ id, name, kind, value }, 'seed');
-		}
-	}
-
-	/** A secret from the store, else (token mode only) the legacy env value, else null. */
-	async #secret(id: string, purpose: string, envFallback?: string): Promise<string | null> {
+	/** A secret from the store, or null. */
+	async #secret(id: string, purpose: string): Promise<string | null> {
 		const store = this.#secretsReady();
 		if (store?.has(id)) {
 			try {
@@ -194,28 +156,20 @@ export class GitHubConnection {
 				return null;
 			}
 		}
-		return envFallback ? envFallback : null;
+		return null;
 	}
 
 	// -- inbound -------------------------------------------------------------------
 
 	/** The HMAC secret `/webhook` verifies against, or null (→ 503). */
 	async webhookSecret(): Promise<string | null> {
-		switch (this.mode()) {
-			case 'app':
-				return this.#secret(GITHUB_SECRET_REFS.appWebhookSecret, 'webhook verification');
-			case 'token':
-				return this.#secret(GITHUB_SECRET_REFS.tokenWebhookSecret, 'webhook verification', this.#config.webhookSecret);
-			default:
-				return null;
-		}
+		return this.mode() === 'app' ? this.#secret(GITHUB_SECRET_REFS.appWebhookSecret, 'webhook verification') : null;
 	}
 
 	/**
 	 * Per-repo policy for an `issues` webhook (ADR 0192). Disabled repos are
-	 * ignored in every mode. In app mode an unknown repo is registered when
-	 * the (signed) delivery names its installation, else ignored; token mode
-	 * has no repo inventory, so unknown repos are guarded.
+	 * ignored. An unknown repo is registered when the (signed) delivery
+	 * names its installation, else ignored.
 	 */
 	repoPolicy(repoId: number, fullName: string, installationId: number | null): RepoPolicy {
 		const repo = this.#store.getRepo(repoId);
@@ -226,7 +180,6 @@ export class GitHubConnection {
 			}
 			return { guarded: true };
 		}
-		if (this.mode() !== 'app') return { guarded: true };
 		if (installationId === null) return { guarded: false, reason: 'unknown repo (no installation)' };
 		this.#store.upsertRepo(repoId, fullName, installationId);
 		log.info(`github: registered ${fullName} (#${repoId}) from a webhook of installation ${installationId}`);
@@ -297,44 +250,23 @@ export class GitHubConnection {
 		return res.id;
 	}
 
-	/** The REST client for effects on one repo (relay), by mode. */
+	/** The REST client for effects on one repo (relay): an installation token. */
 	async clientForRepo(target: { owner: string; repo: string; repoId: number }): Promise<GitHubClient> {
-		const apiUrl = this.#config.githubApiUrl;
-		switch (this.mode()) {
-			case 'token': {
-				const token = await this.#secret(GITHUB_SECRET_REFS.token, 'relay', this.#config.githubToken);
-				if (!token) throw new Error('GitHub token is not configured');
-				return new GitHubClient({ apiUrl, token });
-			}
-			case 'app': {
-				const installationId = await this.#installationFor(target.owner, target.repo, target.repoId);
-				return new GitHubClient({
-					apiUrl,
-					token: () => this.#tokens.get(installationId),
-					onUnauthorized: () => this.#tokens.invalidate(installationId)
-				});
-			}
-			default:
-				throw new Error('GitHub is not connected (setup required)');
-		}
+		if (this.mode() !== 'app') throw new Error('GitHub is not connected (setup required)');
+		const installationId = await this.#installationFor(target.owner, target.repo, target.repoId);
+		return new GitHubClient({
+			apiUrl: this.#config.githubApiUrl,
+			token: () => this.#tokens.get(installationId),
+			onUnauthorized: () => this.#tokens.invalidate(installationId)
+		});
 	}
 
-	/** OAuth client for UI sign-in: the app's (app mode) or the separate OAuth app (token mode). */
+	/** OAuth client for UI sign-in: the GitHub App's user-to-server credentials. */
 	async oauthCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
-		switch (this.mode()) {
-			case 'app': {
-				const app = this.#store.getApp();
-				const secret = app ? await this.#secret(GITHUB_SECRET_REFS.appClientSecret, 'oauth') : null;
-				return app && secret ? { clientId: app.client_id, clientSecret: secret } : null;
-			}
-			case 'token': {
-				const clientId = this.#store.getConfigValue(GITHUB_SETTING_KEYS.tokenOauthClientId) || this.#config.oauthClientId;
-				const secret = await this.#secret(GITHUB_SECRET_REFS.tokenOauthClientSecret, 'oauth', this.#config.oauthClientSecret);
-				return clientId && secret ? { clientId, clientSecret: secret } : null;
-			}
-			default:
-				return null;
-		}
+		if (this.mode() !== 'app') return null;
+		const app = this.#store.getApp();
+		const secret = app ? await this.#secret(GITHUB_SECRET_REFS.appClientSecret, 'oauth') : null;
+		return app && secret ? { clientId: app.client_id, clientSecret: secret } : null;
 	}
 
 	// -- manifest flow (ADR 0160) -----------------------------------------------------------
@@ -557,17 +489,12 @@ export class GitHubConnection {
 	async #checkAuth(): Promise<void> {
 		const now = Date.now();
 		if (this.#auth.checkedAt && now - this.#auth.checkedAt < AUTH_CHECK_TTL_MS) return;
-		const mode = this.mode();
+		if (this.mode() !== 'app') {
+			this.#auth = { ok: null, checkedAt: null, error: null };
+			return;
+		}
 		try {
-			if (mode === 'app') await this.appRequest('GET', '/app');
-			else if (mode === 'token') {
-				const token = await this.#secret(GITHUB_SECRET_REFS.token, 'status', this.#config.githubToken);
-				if (!token) throw new Error('GitHub token is not configured');
-				await githubRequest({ apiUrl: this.#config.githubApiUrl, token }, 'GET', '/user');
-			} else {
-				this.#auth = { ok: null, checkedAt: null, error: null };
-				return;
-			}
+			await this.appRequest('GET', '/app');
 			this.#auth = { ok: true, checkedAt: now, error: null };
 		} catch (e) {
 			const message = e instanceof GitHubHttpError ? `HTTP ${e.status}` : (e as Error).message;

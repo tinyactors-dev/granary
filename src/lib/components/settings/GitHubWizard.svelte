@@ -3,7 +3,7 @@
 	manifest. The server stores a nonce and returns the manifest; the browser
 	then POSTs a real form to GitHub (`manifest` field, `state` in the URL), as
 	GitHub's manifest flow requires. GitHub sends the admin back to
-	/settings/github/callback (fork E3), which stores the app.
+	/settings/github/callback, which stores the app.
 -->
 <script lang="ts">
 	import { tick } from 'svelte';

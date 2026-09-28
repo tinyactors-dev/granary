@@ -1,8 +1,8 @@
 /**
  * `granary config get|set|seed` (ADR 0159): in-product settings by dotted
  * key, all in the platform `settings` kv (ADR 0157), JSON-encoded. That
- * includes the GitHub connection's `github.mode` and token-mode OAuth
- * client id (ADR 0220: one source of truth). The connection's internal
+ * includes the GitHub connection's `github.mode` (ADR 0220: one source of
+ * truth). The connection's internal
  * state (`github.catchup.checkpoint`, …) lives in `github_settings` and is
  * read-only here. No SvelteKit imports: the CLI's offline mode uses this.
  */
@@ -45,7 +45,7 @@ export function configSet(db: Database, key: string, value: unknown, source: Set
 	const admins = new AdminStore(db);
 	if (GITHUB_INTERNAL_KEYS.has(key)) throw new AdminStoreError('invalid', `${key} is internal state of the GitHub connection and cannot be set`);
 	if (key === GITHUB_SETTING_KEYS.mode) {
-		if (!check(GitHubMode, value)) throw new AdminStoreError('invalid', `github.mode must be one of none, app, token (got ${JSON.stringify(value)})`);
+		if (!check(GitHubMode, value)) throw new AdminStoreError('invalid', `github.mode must be one of none, app (got ${JSON.stringify(value)})`);
 		const s = admins.setSetting(key, value, source, by, { action: 'github.mode.set', details: { mode: value } });
 		return { key: s.key, value: s.value };
 	}

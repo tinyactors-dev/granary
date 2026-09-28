@@ -6,7 +6,7 @@ declare global {
 		// interface Error {}
 		/** Filled by hooks.server.ts `handle` on every request (ADR 0031, ADR 0034). */
 		interface Locals {
-			/** The signed-in user, or null. `isAdmin` is computed from ADMINS per request. */
+			/** The signed-in user, or null. `isAdmin` is computed from the admins table per request. */
 			user: SessionUser | null;
 			/** The resolved `granary_session` cookie value, or null. */
 			sessionId: string | null;

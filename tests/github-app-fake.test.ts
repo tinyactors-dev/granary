@@ -1,6 +1,6 @@
 /**
  * The fake GitHub's App surface as a contract (ADR 0164, ADR 0203): what
- * granary's GitHub App backend (E3) can rely on. Runs against the running
+ * granary's GitHub App backend can rely on. Runs against the running
  * fake; granary's own behaviour is covered in github-app.test.ts.
  */
 import { describe, expect, test } from 'bun:test';

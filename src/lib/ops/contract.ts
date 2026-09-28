@@ -67,7 +67,7 @@ export interface OpsHost {
 	health(): HostHealthSnapshot;
 	telemetry: TelemetrySource;
 	log: OpsLogger;
-	/** OPS_* seeds, OPS_MASTER_KEY(_PREVIOUS), OTEL_* legacy seed (see schemas/env.ts). */
+	/** GRANARY_SEED_* seeds, GRANARY_MASTER_KEY(_PREVIOUS), GRANARY_TEST_* knobs (see schemas/env.ts). */
 	env: Record<string, string | undefined>;
 	/** Where ops.sqlite, the spool and local copies live. */
 	dataDir: string;

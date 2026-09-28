@@ -50,8 +50,9 @@ export class FakeGithubClient {
 		return parse(schema, JSON.parse(text), `${method} ${path} response`);
 	}
 
-	reset() {
-		return this.call(ResetResponse, 'POST', CONTROL_PATHS.reset);
+	/** Keeps registered GitHub Apps by default, so granary stays connected (ADR 0230). */
+	reset(opts: { keepApps?: boolean } = { keepApps: true }) {
+		return this.call(ResetResponse, 'POST', CONTROL_PATHS.reset, opts);
 	}
 	ensureUser(body: EnsureUserRequest) {
 		return this.call(EnsureUserResponse, 'POST', CONTROL_PATHS.users, body);

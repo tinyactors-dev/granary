@@ -44,7 +44,7 @@ export const R2Settings = Type.Object(
 		accessKeyId: Type.String({ minLength: 1, maxLength: 128 }),
 		secretAccessKey: SecretRef,
 		/**
-		 * Dev/test only (agent A, ADR 0112): talk to a stand-in (fake-infra,
+		 * Dev/test only (ADR 0112): talk to a stand-in (fake-infra,
 		 * e.g. `http://localhost:4090/s3/eu`) instead of the derived R2 endpoint.
 		 */
 		endpointOverride: Type.Optional(Type.String({ pattern: '^https?://[^\\s]+$' }))

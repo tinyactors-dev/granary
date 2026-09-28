@@ -10,5 +10,5 @@ import { getRuntime } from './system';
 let fallback: Config | null = null;
 
 export function getConfig(): Config {
-	return getRuntime()?.config ?? (fallback ??= loadConfig(env, { requireSecrets: false }));
+	return getRuntime()?.config ?? (fallback ??= loadConfig(env));
 }

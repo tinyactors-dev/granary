@@ -1,20 +1,17 @@
-# Production secrets for granary (ADR 0005, ADR 0020).
-# These are 1Password *references* (item/field in the Personal vault via the
-# global `1password` provider), never values. Create the 1Password item
+# Production secrets for granary (ADR 0157, 0230): only the master key; the
+# GitHub App's credentials are created in-product and stored encrypted under
+# it. These are 1Password *references* (item/field in the Personal vault via
+# the global `1password` provider), never values. Create the 1Password item
 # "granary" with these fields before running `mise run prod`.
-# Dev/test uses fake values from config/dev.env instead.
+# Dev uses fake values from config/dev.env instead.
 #
 # They live in the `prod` profile (not the default one) so that shell
 # activation (`fnox activate`) does not try to resolve them on every `cd`
 # into the project (ADR 0025). Use: `fnox exec -P prod -- …` / `mise run prod`.
 
 [profiles.prod.secrets]
-GITHUB_TOKEN = { provider = "1password", value = "granary/github-token", description = "GitHub token used by the outbox relay (issues: write)" }
-GITHUB_WEBHOOK_SECRET = { provider = "1password", value = "granary/webhook-secret", description = "HMAC secret for X-Hub-Signature-256" }
-GITHUB_OAUTH_CLIENT_ID = { provider = "1password", value = "granary/oauth-client-id", description = "GitHub OAuth app client id (UI login)" }
-GITHUB_OAUTH_CLIENT_SECRET = { provider = "1password", value = "granary/oauth-client-secret", description = "GitHub OAuth app client secret (UI login)" }
-OPS_MASTER_KEY = { provider = "1password", value = "granary/ops-master-key", description = "Ops master key (32 bytes, base64 or hex) wrapping secrets and backup keys (ADR 0086, 0097)" }
-OPS_MASTER_KEY_PREVIOUS = { provider = "1password", value = "granary/ops-master-key-previous", description = "Previous ops master key during rotation only; remove once rewrapped (ADR 0086)", if_missing = "ignore" }
+GRANARY_MASTER_KEY = { provider = "1password", value = "granary/master-key", description = "Master key (32 bytes, base64 or hex) wrapping all stored secrets and backup keys (ADR 0086, 0157)" }
+GRANARY_MASTER_KEY_PREVIOUS = { provider = "1password", value = "granary/master-key-previous", description = "Previous master key during rotation only; remove once rewrapped (ADR 0086)", if_missing = "ignore" }
 
 # Release credentials (ADR 0182): a separate profile so the publish token is
 # never injected into the running server (`prod`). Used by

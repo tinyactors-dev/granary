@@ -40,9 +40,9 @@ export interface BackupsFeatureHandle extends BackupsFeature {
 export function backupsOptionsFromEnv(env: Record<string, string | undefined>): Partial<BackupsOptions> {
 	const n = (k: string) => (env[k] && /^\d+$/.test(env[k]!) ? Number(env[k]) : undefined);
 	const o: Partial<BackupsOptions> = {};
-	const retry = n('OPS_TEST_RETRY_BASE_MS');
+	const retry = n('GRANARY_TEST_RETRY_BASE_MS');
 	if (retry !== undefined) o.retryBaseMs = retry;
-	const retention = n('OPS_TEST_RETENTION_INTERVAL_MS');
+	const retention = n('GRANARY_TEST_RETENTION_INTERVAL_MS');
 	if (retention !== undefined) o.retentionIntervalMs = retention;
 	return o;
 }
@@ -175,7 +175,7 @@ export function createBackupsFeature(options: Partial<BackupsOptions> = {}): Bac
 			rt.repo = new BackupsRepo(ctx.db, ctx.now);
 			const store = await secretStore(ctx);
 			const keys = rt.keys!;
-			if (keys.status === 'missing') ctx.host.log.warn('ops/backups: OPS_MASTER_KEY is missing — backups will not run (ADR 0097)');
+			if (keys.status === 'missing') ctx.host.log.warn('ops/backups: GRANARY_MASTER_KEY is missing — backups will not run (ADR 0097)');
 			const rewrap = await store.rewrapAndExpire();
 			if (rewrap.rewrapped) rt.r.event('handled', `re-wrapped ${rewrap.rewrapped} secret(s) under the current master key`, rewrap);
 			if (rewrap.unreadable) ctx.host.log.warn(`ops/backups: ${rewrap.unreadable} secret(s) are wrapped by a master key that is not configured`);

@@ -61,7 +61,7 @@
 	}
 
 	const reopen = (owner: string, repo: string, number: number, actor: string) =>
-		run(`reopen:${owner}/${repo}#${number}`, () => devReopenIssue({ owner, repo, number, actor }), (r) => `Reopened ${owner}/${repo}#${number} (delivery ${r.deliveryId.slice(0, 8)}…)`);
+		run(`reopen:${owner}/${repo}#${number}`, () => devReopenIssue({ owner, repo, number, actor }), (r) => `Reopened ${owner}/${repo}#${number} (${r.deliveryId ? `delivery ${r.deliveryId.slice(0, 8)}…` : 'no GitHub App covers it: nothing delivered'})`);
 
 	const redeliver = (deliveryId: string) =>
 		run(`redeliver:${deliveryId}`, () => devRedeliver({ deliveryId }), (r) => `Redelivered ${r.deliveryId.slice(0, 8)}… → ${r.responseCode ?? 'unreachable'}`);
@@ -109,7 +109,7 @@
 					try {
 						if (await submit()) {
 							const r = devOpenIssue.result;
-							if (r) toast.success(`Opened issue #${r.number}`, { description: `Key ${r.issueKey}, delivery ${r.deliveryId.slice(0, 8)}…`, action: { label: 'View', onClick: () => (location.href = issueHref(r.issueKey)) } });
+							if (r) toast.success(`Opened issue #${r.number}`, { description: `Key ${r.issueKey}, ${r.deliveryId ? `delivery ${r.deliveryId.slice(0, 8)}…` : 'not delivered (no GitHub App covers the repo)'}`, action: { label: 'View', onClick: () => (location.href = issueHref(r.issueKey)) } });
 						}
 					} catch (e) {
 						toast.error('Could not open the issue', { description: describeError(e).message });

@@ -114,7 +114,8 @@ describe('policy', () => {
 			await h().waitForSpan(actorFinished(i.address, 'closed'));
 			await waitClosedOnGithub(h(), i);
 			const { deliveryId } = await h().fakeGithub.reopen({ owner: i.owner, repo: i.repo, number: i.number, actor: 'acme' });
-			const d = await h().fakeGithub.delivery(deliveryId);
+			expect(deliveryId).not.toBeNull();
+			const d = await h().fakeGithub.delivery(deliveryId!);
 			expect(d?.status).toBe('delivered');
 			await settle();
 			const issue = await fakeIssue(h(), i);

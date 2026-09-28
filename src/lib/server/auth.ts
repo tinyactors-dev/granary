@@ -22,7 +22,7 @@ export function requireUser(): SessionUser {
 	return locals.user;
 }
 
-/** 401 unless signed in, 403 unless the login is in ADMINS. */
+/** 401 unless signed in, 403 unless the login is an admin (admins table). */
 export function requireAdmin(): SessionUser {
 	const user = requireUser();
 	if (!user.isAdmin) error(403, 'Admins only');

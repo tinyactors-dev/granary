@@ -3,17 +3,17 @@
  * Bun's S3 client cannot create buckets, so the local "real" stack
  * (`mise run up:real`, ADR 0027) uses this to prepare RustFS.
  *
- * Usage: bun tools/dev/s3-create-bucket.ts   (reads OPS_SEED_S3_* from env)
+ * Usage: bun tools/dev/s3-create-bucket.ts   (reads GRANARY_SEED_S3_* from env)
  */
 import { createHash, createHmac } from 'node:crypto';
 
-const endpoint = process.env.OPS_SEED_S3_ENDPOINT;
-const bucket = process.env.OPS_SEED_S3_BUCKET;
-const ak = process.env.OPS_SEED_S3_ACCESS_KEY_ID;
-const sk = process.env.OPS_SEED_S3_SECRET_ACCESS_KEY;
-const region = process.env.OPS_SEED_S3_REGION ?? 'us-east-1';
+const endpoint = process.env.GRANARY_SEED_S3_ENDPOINT;
+const bucket = process.env.GRANARY_SEED_S3_BUCKET;
+const ak = process.env.GRANARY_SEED_S3_ACCESS_KEY_ID;
+const sk = process.env.GRANARY_SEED_S3_SECRET_ACCESS_KEY;
+const region = process.env.GRANARY_SEED_S3_REGION ?? 'us-east-1';
 if (!endpoint || !bucket || !ak || !sk) {
-	console.error('s3-create-bucket: OPS_SEED_S3_{ENDPOINT,BUCKET,ACCESS_KEY_ID,SECRET_ACCESS_KEY} are required');
+	console.error('s3-create-bucket: GRANARY_SEED_S3_{ENDPOINT,BUCKET,ACCESS_KEY_ID,SECRET_ACCESS_KEY} are required');
 	process.exit(2);
 }
 

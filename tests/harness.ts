@@ -5,8 +5,11 @@
  *  1. an in-process OTLP/HTTP collector (`otlp.ts`),
  *  2. the fake GitHub (`bun fake-github/server.ts`) as a subprocess,
  *  3. the BUILT app (`bun build/index.js`, from `mise run build`) as a
- *     subprocess with a temp DATABASE_PATH and fake credentials,
- * on free ports, and waits for both to answer HTTP.
+ *     subprocess with a temp GRANARY_DATA_DIR,
+ * on free ports, and waits for both to answer HTTP. By default the app
+ * connects to the fake GitHub as a GitHub App by itself
+ * (`GRANARY_DEV_GITHUB_AUTOCONNECT`, ADR 0230) and the harness waits for
+ * that; `github: 'manual'` leaves it unconnected (setup tests).
  *
  * ```ts
  * const h = useHarness();                     // beforeAll/afterAll
@@ -27,14 +30,13 @@ import { APP_SERVICE, TraceIndex, type SpanPredicate } from './traces';
 
 export const ROOT = resolve(import.meta.dir, '..');
 
-export const TEST_SECRETS = {
-	githubToken: 'test-token',
-	webhookSecret: 'test-webhook-secret',
-	oauthClientId: 'test-client',
-	oauthClientSecret: 'test-client-secret'
-} as const;
-
 export interface HarnessOptions {
+	/**
+	 * `auto` (default): the app connects to the fake GitHub as a GitHub App at
+	 * boot and the fake installs it on every account with repo activity.
+	 * `manual`: GitHub stays unconnected until the test sets it up in-product.
+	 */
+	github?: 'auto' | 'manual';
 	/** Extra env for the app process. */
 	appEnv?: Record<string, string>;
 	/** Extra env for the fake GitHub process. */
@@ -91,7 +93,7 @@ class Output {
 			this.lines.push(`[${this.label}] ${line}`);
 			if (this.lines.length > this.max) this.lines.shift();
 		}
-		if (process.env.HARNESS_VERBOSE === '1') process.stderr.write(chunk.replace(/^/gm, `[${this.label}] `));
+		if (process.env.GRANARY_TEST_VERBOSE === '1') process.stderr.write(chunk.replace(/^/gm, `[${this.label}] `));
 	}
 	tail(n = 60) {
 		return this.lines.slice(-n).join('\n');
@@ -116,7 +118,7 @@ export function freePort(): number {
 	return port;
 }
 
-async function waitHttp(url: string, proc: Subprocess, out: Output, timeout: number, ok: (res: Response) => boolean) {
+async function waitHttp(url: string, proc: Subprocess, out: Output, timeout: number, ok: (res: Response, body: string) => boolean) {
 	const deadline = Date.now() + timeout;
 	let last = '';
 	while (Date.now() < deadline) {
@@ -125,8 +127,8 @@ async function waitHttp(url: string, proc: Subprocess, out: Output, timeout: num
 		}
 		try {
 			const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(2000) });
-			await res.arrayBuffer().catch(() => undefined);
-			if (ok(res)) return;
+			const body = await res.text().catch(() => '');
+			if (ok(res, body)) return;
 			last = `HTTP ${res.status}`;
 		} catch (e) {
 			last = (e as Error).message;
@@ -181,7 +183,7 @@ export class Harness {
 		const env: Record<string, string> = {};
 		for (const [k, v] of Object.entries(process.env)) {
 			if (v === undefined) continue;
-			if (/^(GRANARY_|GITHUB_|FAKE_GITHUB_|FAKE_INFRA_|OPS_|OTEL_|LOADGEN_|DATABASE_PATH$|ADMINS$|ORIGIN$|PORT$|HOST$|DAP_PORT$|ALLOWED_USERS_SEED$)/.test(k)) continue;
+			if (/^(GRANARY_|FAKE_GITHUB_|FAKE_INFRA_|LOADGEN_|ORIGIN$|PORT$|HOST$)/.test(k)) continue;
 			env[k] = v;
 		}
 		return env;
@@ -194,19 +196,17 @@ export class Harness {
 			PORT: String(this.appPort),
 			HOST: '127.0.0.1',
 			ORIGIN: this.appUrl,
-			DATABASE_PATH: this.databasePath,
-			GITHUB_API_URL: this.fakeUrl,
-			GITHUB_WEB_URL: this.fakeUrl,
-			FAKE_GITHUB_URL: this.fakeUrl,
-			GITHUB_TOKEN: TEST_SECRETS.githubToken,
-			GITHUB_WEBHOOK_SECRET: TEST_SECRETS.webhookSecret,
-			GITHUB_OAUTH_CLIENT_ID: TEST_SECRETS.oauthClientId,
-			GITHUB_OAUTH_CLIENT_SECRET: TEST_SECRETS.oauthClientSecret,
-			ADMINS: 'admin',
-			ALLOWED_USERS_SEED: 'alice',
-			OTEL_EXPORTER_OTLP_ENDPOINT: this.collector.url,
 			// ADR 0157: the data dir holds granary.sqlite, ops.sqlite, admin.sock.
 			GRANARY_DATA_DIR: this.tmpDir,
+			GRANARY_MASTER_KEY: OPS_TEST.masterKey,
+			GRANARY_GITHUB_API_URL: this.fakeUrl,
+			GRANARY_GITHUB_WEB_URL: this.fakeUrl,
+			...(this.githubMode === 'auto' ? { GRANARY_DEV_GITHUB_AUTOCONNECT: '1' } : {}),
+			FAKE_GITHUB_URL: this.fakeUrl,
+			GRANARY_SEED_ADMINS: 'admin',
+			GRANARY_SEED_ALLOWLIST: 'alice',
+			GRANARY_SEED_OTLP_ENDPOINT: this.collector.url,
+			GRANARY_SEED_OTLP_AUTH: 'none',
 			...(this.options.infra ? this.opsEnv() : {}),
 			...this.options.appEnv,
 			...this.extraAppEnv
@@ -217,22 +217,21 @@ export class Harness {
 	opsEnv(): Record<string, string> {
 		const sink: Record<string, string> =
 			this.options.opsSink === 'exe-token'
-				? { OPS_SEED_OTLP_ENDPOINT: `http://127.0.0.1:${this.infraTokenPort}`, OPS_SEED_OTLP_AUTH: 'exe-vm-token', OPS_SEED_OTLP_TOKEN: OPS_TEST.exeToken }
-				: { OPS_SEED_OTLP_ENDPOINT: this.collector.url, OPS_SEED_OTLP_AUTH: 'none' };
+				? { GRANARY_SEED_OTLP_ENDPOINT: `http://127.0.0.1:${this.infraTokenPort}`, GRANARY_SEED_OTLP_AUTH: 'exe-vm-token', GRANARY_SEED_OTLP_TOKEN: OPS_TEST.exeToken }
+				: { GRANARY_SEED_OTLP_ENDPOINT: this.collector.url, GRANARY_SEED_OTLP_AUTH: 'none' };
 		return {
 			GRANARY_DEV: '1',
-			DAP_PORT: String(this.dapPort),
-			OPS_MASTER_KEY: OPS_TEST.masterKey,
-			OPS_SEED_R2_ACCOUNT_ID: OPS_TEST.accountId,
-			OPS_SEED_R2_JURISDICTION: 'eu',
-			OPS_SEED_R2_BUCKET: OPS_TEST.bucket,
-			OPS_SEED_R2_ACCESS_KEY_ID: OPS_TEST.accessKeyId,
-			OPS_SEED_R2_SECRET_ACCESS_KEY: OPS_TEST.secretAccessKey,
-			OPS_SEED_R2_ENDPOINT_OVERRIDE: `${this.infraUrl}/s3/eu`,
-			OPS_WATCHDOG_INTERVAL_MS: '300',
-			OPS_TEST_GRACE_SCALE: '0.0001',
-			OPS_TEST_RETRY_BASE_MS: '150',
-			OPS_TEST_RETENTION_INTERVAL_MS: '2000',
+			GRANARY_DAP_PORT: String(this.dapPort),
+			GRANARY_SEED_R2_ACCOUNT_ID: OPS_TEST.accountId,
+			GRANARY_SEED_R2_JURISDICTION: 'eu',
+			GRANARY_SEED_R2_BUCKET: OPS_TEST.bucket,
+			GRANARY_SEED_R2_ACCESS_KEY_ID: OPS_TEST.accessKeyId,
+			GRANARY_SEED_R2_SECRET_ACCESS_KEY: OPS_TEST.secretAccessKey,
+			GRANARY_SEED_R2_ENDPOINT_OVERRIDE: `${this.infraUrl}/s3/eu`,
+			GRANARY_TEST_WATCHDOG_INTERVAL_MS: '300',
+			GRANARY_TEST_GRACE_SCALE: '0.0001',
+			GRANARY_TEST_RETRY_BASE_MS: '150',
+			GRANARY_TEST_RETENTION_INTERVAL_MS: '2000',
 			...sink
 		};
 	}
@@ -264,11 +263,7 @@ export class Harness {
 			...this.baseEnv(),
 			FAKE_GITHUB_PORT: String(this.fakePort),
 			FAKE_GITHUB_URL: this.fakeUrl,
-			FAKE_GITHUB_WEBHOOK_URL: `${this.appUrl}/webhook`,
-			GITHUB_WEBHOOK_SECRET: TEST_SECRETS.webhookSecret,
-			GITHUB_OAUTH_CLIENT_ID: TEST_SECRETS.oauthClientId,
-			GITHUB_OAUTH_CLIENT_SECRET: TEST_SECRETS.oauthClientSecret,
-			OTEL_EXPORTER_OTLP_ENDPOINT: this.collector.url,
+			FAKE_GITHUB_OTLP_ENDPOINT: this.collector.url,
 			...this.options.fakeEnv
 		};
 	}
@@ -292,7 +287,7 @@ export class Harness {
 			LOADGEN_PORT: String(this.loadgenPort),
 			FAKE_GITHUB_URL: this.fakeUrl,
 			LOADGEN_ALLOWLISTED: 'alice',
-			OTEL_EXPORTER_OTLP_ENDPOINT: this.collector.url,
+			LOADGEN_OTLP_ENDPOINT: this.collector.url,
 			...this.options.loadgenEnv
 		};
 	}
@@ -332,8 +327,21 @@ export class Harness {
 		});
 		void pump(this.app.stdout as ReadableStream<Uint8Array>, out);
 		void pump(this.app.stderr as ReadableStream<Uint8Array>, out);
-		// /readyz answers 200 once the database, actor system and backend are up (ADR 0163).
-		await waitHttp(`${this.appUrl}/readyz`, this.app, out, this.bootTimeout, (r) => r.ok);
+		// /readyz answers 200 once the database, actor system and backend are up (ADR 0163);
+		// with `github: 'auto'` also wait until the GitHub App connection is made.
+		await waitHttp(`${this.appUrl}/readyz`, this.app, out, this.bootTimeout, (r, text) => {
+			if (!r.ok) return false;
+			if (this.githubMode !== 'auto') return true;
+			try {
+				return (JSON.parse(text) as { checks?: { github?: string } }).checks?.github === 'ready';
+			} catch {
+				return false;
+			}
+		});
+	}
+
+	get githubMode(): 'auto' | 'manual' {
+		return this.options.github ?? 'auto';
 	}
 
 	/** Kill the app (default SIGKILL) and start it again on the same port and DB. */
@@ -481,17 +489,16 @@ export interface CliResult {
  * The CLI entry point E1 builds (`dist/cli.js`), else its source. Null until
  * the CLI exists (tests that need it are `todo` until then).
  */
-export function cliEntry(): string | null {
-	for (const p of ['dist/cli.js', 'src/cli/main.ts', 'src/cli/index.ts', 'src/cli.ts']) {
-		if (existsSync(join(ROOT, p))) return join(ROOT, p);
-	}
-	return null;
+/** The built CLI (`mise run cli`; `mise run test` builds it first). */
+export function cliEntry(): string {
+	const entry = join(ROOT, 'dist/cli.js');
+	if (!existsSync(entry)) throw new Error('dist/cli.js missing — run `mise run cli` (or `mise run test`, which builds it)');
+	return entry;
 }
 
 /** Run `granary <args> --data <tmpDir>` with the app's env (socket or direct mode). */
 export async function runCli(h: Harness, args: string[], opts: { env?: Record<string, string>; stdin?: string; timeout?: number } = {}): Promise<CliResult> {
 	const entry = cliEntry();
-	if (!entry) throw new Error('granary CLI not built yet (E1)');
 	const proc = Bun.spawn(['bun', entry, ...args, '--data', h.tmpDir], {
 		cwd: ROOT,
 		env: { ...h.appEnv(), ...opts.env },
@@ -505,7 +512,7 @@ export async function runCli(h: Harness, args: string[], opts: { env?: Record<st
 	return { code, stdout, stderr };
 }
 
-export function signBody(body: string, secret: string = TEST_SECRETS.webhookSecret): string {
+export function signBody(body: string, secret: string): string {
 	const h = new Bun.CryptoHasher('sha256', secret);
 	h.update(body);
 	return `sha256=${h.digest('hex')}`;

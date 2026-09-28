@@ -39,8 +39,7 @@ export const TelemetrySinkConfig = Type.Object(
 		grafanaUrl: Type.Optional(Type.String({ pattern: '^https?://' })),
 		/**
 		 * Also export ops' own telemetry (`service.name=granary-ops`) to this sink.
-		 * Absent = true. The legacy `OTEL_EXPORTER_OTLP_ENDPOINT` seed sets it
-		 * false so that endpoint keeps receiving exactly what it did before (ADR 0122).
+		 * Absent = true; false sends only granary's own telemetry (ADR 0122).
 		 */
 		exportOps: Type.Optional(Type.Boolean()),
 		lastTest: Type.Union([Type.Null(), Type.Object({ at: Type.Integer(), ok: Type.Boolean(), versionTested: Type.Integer() })])

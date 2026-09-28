@@ -312,6 +312,6 @@ export class AdminStore {
 	 */
 	setupState(): SetupState {
 		const mode = readGitHubMode(this.db);
-		return mode === 'app' || mode === 'token' ? 'ready' : 'needs-github';
+		return mode === 'app' ? 'ready' : 'needs-github';
 	}
 }

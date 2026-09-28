@@ -1,7 +1,7 @@
 /**
  * GitHub OAuth web flow helpers (ADR 0034, ADR 0160): the state cookie, the
- * client credentials (the GitHub App's own OAuth client in app mode, the
- * separate OAuth app in token mode) and the two calls `/auth/callback` makes.
+ * client credentials (the GitHub App's own user-to-server OAuth client) and
+ * the two calls `/auth/callback` makes.
  */
 import { timingSafeEqual } from 'node:crypto';
 import { Type } from '@sinclair/typebox';
@@ -23,13 +23,12 @@ export interface OAuthCredentials {
 
 /**
  * The OAuth client for UI sign-in, from the GitHub connection; null while
- * GitHub is not connected (sign in with `granary login-link` then). Without a
- * booted runtime (stub backend) the legacy config values are used.
+ * GitHub is not connected, or without a booted runtime (stub backend): sign
+ * in with `granary login-link` then.
  */
-export async function oauthCredentials(config: Config): Promise<OAuthCredentials | null> {
+export async function oauthCredentials(): Promise<OAuthCredentials | null> {
 	const rt = getRuntime();
-	if (rt && !rt.closed) return rt.github.oauthCredentials();
-	return config.oauthClientId && config.oauthClientSecret ? { clientId: config.oauthClientId, clientSecret: config.oauthClientSecret } : null;
+	return rt && !rt.closed ? rt.github.oauthCredentials() : null;
 }
 
 const OAuthStateCookie = Type.Object(
@@ -69,7 +68,7 @@ export class OAuthFailure extends Error {
 	}
 }
 
-/** `POST {GITHUB_WEB_URL}/login/oauth/access_token` → access token. */
+/** `POST {GRANARY_GITHUB_WEB_URL}/login/oauth/access_token` → access token. */
 export async function exchangeCode(config: Config, creds: OAuthCredentials, code: string, redirectUri: string): Promise<string> {
 	const body: OAuthAccessTokenRequest = {
 		client_id: creds.clientId,
@@ -101,7 +100,7 @@ export async function exchangeCode(config: Config, creds: OAuthCredentials, code
 	return parsed.access_token;
 }
 
-/** `GET {GITHUB_API_URL}/user` with the user's token. */
+/** `GET {GRANARY_GITHUB_API_URL}/user` with the user's token. */
 export async function fetchUser(config: Config, token: string): Promise<AuthenticatedUser> {
 	let res: Response;
 	try {

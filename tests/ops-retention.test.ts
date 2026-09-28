@@ -45,7 +45,7 @@ describe('ops retention and budgets', () => {
 		}
 		await infra().seedObjects(objects);
 
-		// The retention actor runs every OPS_TEST_RETENTION_INTERVAL_MS (2 s in tests).
+		// The retention actor runs every GRANARY_TEST_RETENTION_INTERVAL_MS (2 s in tests).
 		const settled = await h().waitFor(
 			async () => {
 				const objs = (await infra().objects()).filter((o) => o.key.startsWith('granary/granary/'));

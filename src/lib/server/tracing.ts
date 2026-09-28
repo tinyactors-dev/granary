@@ -9,11 +9,9 @@
  * known actors are renamed `<family> <kind> …` (ADR 0155), keeping the original
  * name in `tinyactors.span.name` and the kind in `tinyactors.span.kind`. The batch
  * is then re-encoded and handed to the ops module's telemetry sink
- * (`attachSink`, ADR 0121), which fans it out to the configured OTLP sinks;
- * `OTEL_EXPORTER_OTLP_ENDPOINT` is seeded as one of them (ADR 0122). Without
- * an ops sink (ops failed to start) it falls back to POSTing
- * (fire-and-forget) to `OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces` and
- * `/v1/logs` directly, as before. In dev mode the last SPAN_BUFFER_SIZE spans are kept
+ * (`attachSink`, ADR 0121), which fans it out to the configured OTLP sinks
+ * (seeded with `GRANARY_SEED_OTLP_*`, ADR 0230). Without an ops sink (ops
+ * failed to start) nothing is exported. In dev mode the last SPAN_BUFFER_SIZE spans are kept
  * in memory for `/__dev` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
  */
 import { applyFamilySpanName, spanKindOf } from '../trace/span-name';
@@ -51,22 +49,18 @@ export function addressOfInspection(i: ActorInspection): ActorAddress | null {
 
 export interface TracerOptions {
 	system: System;
-	otlpTracesUrl: string | null;
 	/** Keep the last 200 decoded spans (dev mode). */
 	keepRecent: boolean;
 }
 
 export class Tracer {
 	readonly #system: System;
-	readonly #tracesUrl: string | null;
-	readonly #logsUrl: string | null;
 	readonly #keepRecent: boolean;
 	/** session id (decimal) → address; entries of destroyed actors are pruned lazily. */
 	#sessions = new Map<string, ActorAddress>();
 	/** session id → done-data, consumed when its `scxml.finished` span passes. */
 	#done = new Map<string, IssueDoneData>();
 	#recent: SpanSummary[] = [];
-	#lastPostError = 0;
 	#closed = false;
 	#installed = false;
 	/** The ops module's fan-out; when set, granary never POSTs itself. */
@@ -74,15 +68,13 @@ export class Tracer {
 
 	constructor(opts: TracerOptions) {
 		this.#system = opts.system;
-		this.#tracesUrl = opts.otlpTracesUrl;
-		this.#logsUrl = opts.otlpTracesUrl ? opts.otlpTracesUrl.replace(/\/v1\/traces$/, '/v1/logs') : null;
 		this.#keepRecent = opts.keepRecent;
 	}
 
 	/** Installs the sink when there is somewhere for spans to go. */
 	install(): boolean {
 		if (this.#installed) return true;
-		if (!this.#tracesUrl && !this.#keepRecent && !this.#sink) return false;
+		if (!this.#keepRecent && !this.#sink) return false;
 		this.#installed = true;
 		this.#system.setTraceSink((traces, logs) => this.#onBatch(traces, logs), {
 			resource: { 'service.name': SERVICE_NAME },
@@ -127,7 +119,7 @@ export class Tracer {
 	#onBatch(traces: Uint8Array, logs?: Uint8Array): void {
 		if (this.#closed) return;
 		const sink = this.#sink;
-		const exporting = sink ? (sink.active?.() ?? true) : !!this.#tracesUrl;
+		const exporting = sink ? (sink.active?.() ?? true) : false;
 		if (!exporting && !this.#keepRecent) {
 			// Nobody wants spans right now; keep the lookup maps bounded.
 			if (this.#sessions.size > 10_000) this.#sessions.clear();
@@ -151,12 +143,7 @@ export class Tracer {
 	}
 
 	#export(signal: 'traces' | 'logs', bytes: Uint8Array): void {
-		if (this.#sink) {
-			this.#sink.write({ signal, contentType: 'application/x-protobuf', bytes, service: SERVICE_NAME, producedAt: Date.now() });
-			return;
-		}
-		const url = signal === 'traces' ? this.#tracesUrl : this.#logsUrl;
-		if (url) this.#post(url, bytes);
+		this.#sink?.write({ signal, contentType: 'application/x-protobuf', bytes, service: SERVICE_NAME, producedAt: Date.now() });
 	}
 
 	#enrich(spans: DecodedSpan[]): void {
@@ -190,26 +177,6 @@ export class Tracer {
 			this.#sessions.delete(key);
 			this.#done.delete(key);
 		}
-	}
-
-	#post(url: string, body: Uint8Array): void {
-		fetch(url, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-protobuf' },
-			body: body.slice()
-		})
-			.then(async (res) => {
-				if (!res.ok) this.#postFailed(url, `HTTP ${res.status}`);
-				await res.arrayBuffer().catch(() => undefined);
-			})
-			.catch((e) => this.#postFailed(url, e));
-	}
-
-	#postFailed(url: string, why: unknown): void {
-		const now = Date.now();
-		if (now - this.#lastPostError < 10_000) return; // at most one line per 10 s
-		this.#lastPostError = now;
-		log.error(`tracing: POST ${url} failed`, why);
 	}
 
 	#remember(spans: DecodedSpan[]): void {

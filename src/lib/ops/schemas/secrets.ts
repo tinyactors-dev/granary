@@ -20,7 +20,7 @@ export const SecretMeta = Type.Object(
 		/** e.g. "…a1b2 · 3f9c02" (last 4 chars + keyed-hash prefix). */
 		fingerprint: Type.String(),
 		kekId: Type.String({ pattern: '^[0-9a-f]{16}$' }),
-		/** false → still wrapped by OPS_MASTER_KEY_PREVIOUS (rewrap pending). */
+		/** false → still wrapped by GRANARY_MASTER_KEY_PREVIOUS (rewrap pending). */
 		kekCurrent: Type.Boolean(),
 		createdAt: Timestamp,
 		updatedAt: Timestamp,

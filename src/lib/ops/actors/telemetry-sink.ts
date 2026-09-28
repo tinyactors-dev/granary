@@ -59,7 +59,7 @@ export interface TelemetrySinkData {
 	lastSuccessAt: number | null;
 	lastFailureAt: number | null;
 	openedAt: number | null;
-	/** Test hook (OPS_TEST_GRACE_SCALE, ADR 0150): scales backoff and probe delays; 1 in production. */
+	/** Test hook (GRANARY_TEST_GRACE_SCALE, ADR 0150): scales backoff and probe delays; 1 in production. */
 	timeScale: number;
 }
 

@@ -9,7 +9,7 @@
  * logs it and keeps going.
  */
 import { mkdirSync } from 'node:fs';
-import { join, isAbsolute } from 'node:path';
+import { join } from 'node:path';
 import type { Database } from 'bun:sqlite';
 import { OpsBackendError, type CreateOps, type OpsBackend, type OpsModule, type OpsStatus, type TelemetryBatch } from './contract';
 import type { BackupsFeature, OpsContext, OpsFeature, SecretReader } from './feature';
@@ -20,7 +20,7 @@ import { composeBackend, unavailableBackend } from './backend/index';
 import { backupsFeature } from './features/backups';
 
 /**
- * The backups feature (agent A, M1+M2, ADR 0111–0118), composed through the
+ * The backups feature (ADR 0111–0118), composed through the
  * OpsFeature seam (ADR 0120). Remove it here to run ops without backups: its
  * OpsBackend methods then reject `unavailable` and secrets can't be revealed.
  */
@@ -72,8 +72,7 @@ export const createOps: CreateOps = (host) => {
 			if (started) return;
 			started = true;
 			mkdirSync(host.dataDir, { recursive: true });
-			const configured = host.env.OPS_DATABASE_PATH;
-			const dbPath = configured ? (isAbsolute(configured) ? configured : join(host.dataDir, configured)) : join(host.dataDir, 'ops.sqlite');
+			const dbPath = join(host.dataDir, 'ops.sqlite');
 			db = openOpsDb(dbPath);
 			const now = () => Date.now();
 			const redactor = health.redactor();

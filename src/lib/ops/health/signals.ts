@@ -59,7 +59,7 @@ export interface SamplerDeps {
 export function readDisk(host: OpsHost): DiskFacts | null {
 	let freeBytes: number;
 	let totalBytes: number;
-	const override = host.env.OPS_TEST_STATFS_OVERRIDE;
+	const override = host.env.GRANARY_TEST_STATFS_OVERRIDE;
 	try {
 		if (override && /^[0-9]+\/[0-9]+$/.test(override)) {
 			const [f, t] = override.split('/');

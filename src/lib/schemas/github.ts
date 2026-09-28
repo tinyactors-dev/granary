@@ -230,7 +230,7 @@ export type UpdateIssueRequest = Static<typeof UpdateIssueRequest>;
 // OAuth (web flow)
 // ---------------------------------------------------------------------------
 
-/** Query of `GET {GITHUB_WEB_URL}/login/oauth/authorize`. `login` is a fake-GitHub-only auto-approve. */
+/** Query of `GET {GRANARY_GITHUB_WEB_URL}/login/oauth/authorize`. `login` is a fake-GitHub-only auto-approve. */
 export const OAuthAuthorizeQuery = Type.Object(
 	{
 		client_id: Type.String({ minLength: 1 }),
@@ -250,7 +250,7 @@ export const OAuthCallbackQuery = Type.Object(
 );
 export type OAuthCallbackQuery = Static<typeof OAuthCallbackQuery>;
 
-/** Body of `POST {GITHUB_WEB_URL}/login/oauth/access_token` (JSON, `Accept: application/json`). */
+/** Body of `POST {GRANARY_GITHUB_WEB_URL}/login/oauth/access_token` (JSON, `Accept: application/json`). */
 export const OAuthAccessTokenRequest = Type.Object(
 	{
 		client_id: Type.String({ minLength: 1 }),
@@ -282,7 +282,7 @@ export type OAuthAccessTokenError = Static<typeof OAuthAccessTokenError>;
 export const OAuthAccessTokenResponse = Type.Union([OAuthAccessTokenSuccess, OAuthAccessTokenError]);
 export type OAuthAccessTokenResponse = Static<typeof OAuthAccessTokenResponse>;
 
-/** `GET {GITHUB_API_URL}/user` with `Authorization: Bearer <access_token>`. */
+/** `GET {GRANARY_GITHUB_API_URL}/user` with `Authorization: Bearer <access_token>`. */
 export const AuthenticatedUser = Type.Object(
 	{
 		login: Type.String(),

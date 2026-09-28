@@ -155,7 +155,7 @@ export const POLICIES: Record<ConditionKind, ConditionPolicy> = {
 
 export const policyFor = (kind: ConditionKind): ConditionPolicy => POLICIES[kind];
 
-/** Test hook: scale grace/settle periods (OPS_TEST_GRACE_SCALE, ADR 0123). */
+/** Test hook: scale grace/settle periods (GRANARY_TEST_GRACE_SCALE, ADR 0123). */
 export function scaled(ms: number, scale: number): number {
 	return Math.round(ms * scale);
 }

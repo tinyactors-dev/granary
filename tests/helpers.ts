@@ -34,6 +34,7 @@ export async function openIssue(
 		title: `Issue by ${author}`,
 		association: options.association
 	});
+	if (!deliveryId) throw new Error(`no GitHub App covers ${OWNER}/${repo} on the fake: nothing was delivered`);
 	if (options.expectAccepted !== false) {
 		const d = await h.fakeGithub.delivery(deliveryId);
 		expect(d?.status).toBe('delivered');

@@ -24,7 +24,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	const origin = config.origin ?? url.origin;
 	let user;
 	try {
-		const creds = await oauthCredentials(config);
+		const creds = await oauthCredentials();
 		if (!creds) error(503, 'GitHub sign-in is not set up yet');
 		const token = await exchangeCode(config, creds, query.code, `${origin}/auth/callback`);
 		user = await fetchUser(config, token);

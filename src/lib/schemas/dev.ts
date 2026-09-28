@@ -38,7 +38,7 @@ export interface DevTool {
 	/** Opens in a new tab (external UI). */
 	external: boolean;
 	/**
-	 * Dev-only login hint for local stand-ins (from `DEV_LOGIN_HINTS`, matched
+	 * Dev-only login hint for local stand-ins (from `GRANARY_DEV_LOGIN_HINTS`, matched
 	 * by URL origin). Never set for real services.
 	 */
 	login?: { username: string; password: string };
@@ -52,9 +52,9 @@ export interface DevInfo {
 	/** DAP TCP server: host is always 127.0.0.1. */
 	dapHost: string;
 	dapPort: number;
-	/** Base URL of the fake GitHub (GITHUB_API_URL in dev). */
+	/** Base URL of the fake GitHub (GRANARY_GITHUB_API_URL in dev). */
 	fakeGithubUrl: string;
-	/** Logins from `ADMINS`, for one-click "log in as admin". */
+	/** Current admins, for one-click "log in as admin". */
 	admins: string[];
 	fakeGithub: {
 		/** false when `GET /__control/state` failed (fake not running). */
@@ -90,7 +90,8 @@ export type DevOpenIssueInput = Static<typeof DevOpenIssueInput>;
 
 export interface DevOpenIssueResult {
 	number: number;
-	deliveryId: string;
+	/** Null when no installed GitHub App covers the repo on the fake (nothing delivered). */
+	deliveryId: string | null;
 	/** repository.id from the fake (via `POST /__control/repos`). */
 	repoId: number;
 	issueKey: string;

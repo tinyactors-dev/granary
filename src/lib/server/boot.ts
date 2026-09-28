@@ -4,6 +4,7 @@
  * dev mode, graceful shutdown hooks. Called from `hooks.server.ts` `init`,
  * which finishes before the server accepts HTTP.
  */
+import { startDevGithubAutoconnect } from './github/dev-autoconnect';
 import type { Config } from '$lib/schemas/config';
 import type { Backend } from './backend';
 import { RealBackend } from './backend.real';
@@ -52,8 +53,8 @@ type OpsG = { [OPS_KEY]?: OpsModule };
  * Start the operations module (ADR 0080, 0120) after the runtime is up: it
  * gets an OpsHost (database paths, health, logger, env), granary's Tracer
  * exports through its telemetry sink, and its OpsBackend is registered for
- * the /ops pages. A failing ops module never stops granary: the Tracer then
- * keeps POSTing to OTEL_EXPORTER_OTLP_ENDPOINT itself, as before.
+ * the /ops pages. A failing ops module never stops granary (nothing is
+ * exported then; the failure is logged).
  */
 async function startOps(runtime: Runtime, config: Config, opts: { devMode: boolean }): Promise<void> {
 	const g = globalThis as OpsG;
@@ -90,9 +91,9 @@ async function startOps(runtime: Runtime, config: Config, opts: { devMode: boole
 	});
 }
 
-/** Admin seeds (GRANARY_ADMINS / ADMINS); never removes admins (ADR 0161). */
+/** Admin seeds (GRANARY_SEED_ADMINS); never removes admins (ADR 0161). */
 function seedAdmins(admins: AdminStore, config: Config): string[] {
-	const added = admins.seedAdmins(config.admins);
+	const added = admins.seedAdmins(config.seedAdmins);
 	for (const l of added) log.info(`admins: seeded ${l}`);
 	return added.map((l) => `admin:${l}`);
 }
@@ -126,6 +127,7 @@ export async function bootBackend(config: Config, opts: { devMode: boolean }): P
 		log.error('master key could not be loaded; secrets are disabled', e);
 	}
 	onShutdown(() => closeGranarySecrets());
+	if (config.devGithubAutoconnect) onShutdown(startDevGithubAutoconnect(runtime.github, config));
 	await startOps(runtime, config, opts);
 	if (opts.devMode) {
 		startDapServer(runtime.system, config.dapPort);

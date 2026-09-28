@@ -1,5 +1,5 @@
 /**
- * The DAP TCP server (ADR 0009), dev mode only: `127.0.0.1:$DAP_PORT`, one
+ * The DAP TCP server (ADR 0009), dev mode only: `127.0.0.1:$GRANARY_DAP_PORT`, one
  * `createDebugSession(system, {allow: ['send','set','goto','evaluate']})`
  * per connection, framed with `DAPReader` / `encodeDAPMessage`. Clients
  * attach with `{"address": "family/name"}`. Every audit entry is logged.

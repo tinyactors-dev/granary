@@ -29,13 +29,13 @@
 	const envSnippet = $derived(
 		[
 			'# ops seeds pointing at fake-infra (ADR 0102); keys: issue an S3 credential below or use FAKE_INFRA_SEED_* from config/dev.env',
-			`OPS_SEED_S3_ENDPOINT=${s3Endpoint}`,
-			'OPS_SEED_S3_REGION=auto',
-			`OPS_SEED_S3_BUCKET=${bucket?.name ?? 'granary-backups'}`,
-			'OPS_SEED_S3_ACCESS_KEY_ID=…',
-			'OPS_SEED_S3_SECRET_ACCESS_KEY=…',
-			info.exePeerUrl ? `OPS_SEED_OTLP_ENDPOINT=${info.exePeerUrl}` : `OPS_SEED_OTLP_ENDPOINT=${info.url}/otlp`,
-			`OPS_SEED_OTLP_AUTH=${info.exePeerUrl ? 'exe-peer' : 'none'}`
+			`GRANARY_SEED_S3_ENDPOINT=${s3Endpoint}`,
+			'GRANARY_SEED_S3_REGION=auto',
+			`GRANARY_SEED_S3_BUCKET=${bucket?.name ?? 'granary-backups'}`,
+			'GRANARY_SEED_S3_ACCESS_KEY_ID=…',
+			'GRANARY_SEED_S3_SECRET_ACCESS_KEY=…',
+			info.exePeerUrl ? `GRANARY_SEED_OTLP_ENDPOINT=${info.exePeerUrl}` : `GRANARY_SEED_OTLP_ENDPOINT=${info.url}/otlp`,
+			`GRANARY_SEED_OTLP_AUTH=${info.exePeerUrl ? 'exe-peer' : 'none'}`
 		].join('\n')
 	);
 	let resetOpen = $state(false);

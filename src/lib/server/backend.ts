@@ -94,7 +94,7 @@ export interface Backend {
 
 	/**
 	 * Look up a session cookie value. Returns null for unknown or expired
-	 * sessions. `isAdmin` is computed from ADMINS at call time.
+	 * sessions. `isAdmin` is computed from the admins table at call time.
 	 * Used by `hooks.server.ts` to fill `locals.user`.
 	 */
 	resolveSession(sessionId: string): Promise<SessionUser | null>;
@@ -193,7 +193,7 @@ export interface Backend {
 	/** Stop everything and forget all scenarios. */
 	resetLoadgen(): Promise<void>;
 
-	// -- setup, admins, login links (ADR 0161) — real impl: fork E1 ------------------
+	// -- setup, admins, login links (ADR 0161) -----------------------
 
 	getSetupStatus(): Promise<SetupStatus>;
 	/** Sorted by login (case-insensitive). */
@@ -216,7 +216,7 @@ export interface Backend {
 	/** Newest first. */
 	listAuditLog(limit: number): Promise<AuditEntry[]>;
 
-	// -- GitHub connection (ADR 0160, 0162) — real impl: fork E3 ----------------------
+	// -- GitHub connection (ADR 0160, 0162) -----------------------
 
 	getGitHubStatus(): Promise<GitHubStatus>;
 	/** Stores a manifest nonce (10 min) and returns what the settings form POSTs to GitHub. */

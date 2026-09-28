@@ -24,6 +24,7 @@ describe('crash durability', () => {
 			await Bun.sleep(1500);
 			expectClosedOnce(await fakeIssue(h(), i), i);
 			expect(issue.state_reason).toBe('not_planned');
+			await h().waitForSpan(actorFinished(i.address, 'closed'), { timeout: 10_000 });
 			expect(finalStates(h().index(), i.address).filter((s) => s === 'closed')).toHaveLength(1);
 		},
 		120_000

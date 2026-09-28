@@ -179,7 +179,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			const journal = (journalRef = new Journal(ctx.db));
 			const repo = (repoRef = new SinksRepo(ctx.db, ctx.host.log));
 			if (!journal.kvGet('health:firstSeenAt')) journal.kvSet('health:firstSeenAt', String(ctx.now()), ctx.now());
-			const timeScale = Number(ctx.host.env.OPS_TEST_GRACE_SCALE ?? '1');
+			const timeScale = Number(ctx.host.env.GRANARY_TEST_GRACE_SCALE ?? '1');
 			const sinkTimeScale = Number.isFinite(timeScale) && timeScale > 0 && timeScale < 1 ? timeScale : 1;
 			const fanout = (fanoutRef = new TelemetryFanout({
 				redactor,
@@ -227,7 +227,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			for (const m of seeded) ctx.host.log.info(`ops telemetry: ${m}`);
 			reconcileSinks();
 
-			const interval = Number(ctx.host.env.OPS_WATCHDOG_INTERVAL_MS ?? DEFAULT_WATCHDOG_INTERVAL_MS) || DEFAULT_WATCHDOG_INTERVAL_MS;
+			const interval = Number(ctx.host.env.GRANARY_TEST_WATCHDOG_INTERVAL_MS ?? DEFAULT_WATCHDOG_INTERVAL_MS) || DEFAULT_WATCHDOG_INTERVAL_MS;
 			rt = {
 				ctx,
 				journal,

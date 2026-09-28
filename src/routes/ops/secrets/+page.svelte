@@ -40,7 +40,7 @@
 	}
 </script>
 
-<PageHeader title="Secrets" description="Write-only. Values are encrypted with a per-secret key wrapped by OPS_MASTER_KEY and are never shown or returned — only fingerprints." />
+<PageHeader title="Secrets" description="Write-only. Values are encrypted with a per-secret key wrapped by GRANARY_MASTER_KEY and are never shown or returned — only fingerprints." />
 
 <div class="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
 	<div class="grid min-w-0 gap-4">
@@ -54,7 +54,7 @@
 					</Card.Title>
 					<Card.Description>
 						{#if k.master === 'missing'}
-							Ops runs degraded: configuration is readable, but backups and anything needing a secret wait until OPS_MASTER_KEY is set.
+							Ops runs degraded: configuration is readable, but backups and anything needing a secret wait until GRANARY_MASTER_KEY is set.
 						{:else if k.master === 'dev-generated'}
 							A throwaway key generated for development. Backups made with it are useless elsewhere.
 						{:else}
@@ -67,13 +67,13 @@
 						<p>Rotation in progress: {k.secretsOnPreviousKek} secret{k.secretsOnPreviousKek === 1 ? ' is' : 's are'} still wrapped by the previous key; they are re-wrapped at the next start.</p>
 					{/if}
 					{#if k.backupsOnMissingKek}
-						<p>{k.backupsOnMissingKek} retained backup{k.backupsOnMissingKek === 1 ? ' uses' : 's use'} a key that is no longer configured and can't be restored. Keep that key in OPS_MASTER_KEY_PREVIOUS until retention prunes them.</p>
+						<p>{k.backupsOnMissingKek} retained backup{k.backupsOnMissingKek === 1 ? ' uses' : 's use'} a key that is no longer configured and can't be restored. Keep that key in GRANARY_MASTER_KEY_PREVIOUS until retention prunes them.</p>
 					{/if}
 					<details class="text-muted-foreground">
 						<summary class="text-foreground cursor-pointer">How to rotate the master key</summary>
 						<ol class="mt-2 list-decimal space-y-1 pl-5">
 							<li>Generate a new key: <code>openssl rand -base64 32</code>.</li>
-							<li>In 1Password (fnox <code>prod</code> profile), move the current value to <code>OPS_MASTER_KEY_PREVIOUS</code> and store the new one as <code>OPS_MASTER_KEY</code>.</li>
+							<li>In 1Password (fnox <code>prod</code> profile), move the current value to <code>GRANARY_MASTER_KEY_PREVIOUS</code> and store the new one as <code>GRANARY_MASTER_KEY</code>.</li>
 							<li>Restart granary: secrets are re-wrapped automatically; new backups use the new key.</li>
 							<li>Keep the previous key until no retained backup needs it (this card shows the count), then remove it.</li>
 						</ol>

@@ -42,18 +42,17 @@ export const init: ServerInit = async () => {
 		setOpsBackend(await createStubOpsBackend());
 	}
 	if (hasBackend()) return; // HMR: keep the running system
-	const stub = env.GRANARY_STUB_BACKEND === '1';
-	const config = loadConfig(env, { requireSecrets: !stub && !isDevMode({ dev, env }) });
+	const config = loadConfig(env);
 	if (config.stubBackend) {
 		const { StubBackend } = await import('$lib/server/backend.stub');
 		setBackend(
 			new StubBackend({
-				admins: config.admins,
+				admins: config.seedAdmins,
 				dapPort: config.dapPort,
 				fakeGithubUrl: config.fakeGithubUrl,
 				...(config.origin ? { origin: config.origin } : {}),
 				// Settings UI work (ADR 0210): GRANARY_STUB_GITHUB_MODE=none shows the setup wizard.
-				...(env.GRANARY_STUB_GITHUB_MODE === 'none' || env.GRANARY_STUB_GITHUB_MODE === 'app' || env.GRANARY_STUB_GITHUB_MODE === 'token'
+				...(env.GRANARY_STUB_GITHUB_MODE === 'none' || env.GRANARY_STUB_GITHUB_MODE === 'app'
 					? { githubMode: env.GRANARY_STUB_GITHUB_MODE }
 					: {})
 			})

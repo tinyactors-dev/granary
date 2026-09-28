@@ -33,7 +33,7 @@ export class SecretStore implements SecretReader {
 			redactor: o.redactor,
 			now: o.now,
 			newId: o.newId,
-			keyName: 'GRANARY_MASTER_KEY (or OPS_MASTER_KEY)',
+			keyName: 'GRANARY_MASTER_KEY (or GRANARY_MASTER_KEY)',
 			error: (code, message) => new OpsBackendError(code, message),
 			audit: (e) =>
 				o.db

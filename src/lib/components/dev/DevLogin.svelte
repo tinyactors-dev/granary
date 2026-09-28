@@ -73,7 +73,7 @@
 		</form>
 		<FieldIssues issues={devLoginAs.fields.allIssues()} />
 		<p class="text-muted-foreground text-xs">
-			Admins (from <code>ADMINS</code>): {admins.join(', ') || 'none'}. After logging in you go to
+			Admins: {admins.join(', ') || 'none'}. After logging in you go to
 			<code>{redirectTo}</code>.
 		</p>
 	</Card.Content>

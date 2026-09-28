@@ -3,19 +3,20 @@
  * granary was unreachable are found in the app's delivery log and
  * redelivered exactly once; the issue is closed exactly once.
  *
- * The catch-up cadence is shortened with `GRANARY_CATCHUP_FIRST_DELAY_MS` /
- * `GRANARY_CATCHUP_INTERVAL_MS` (ADR 0194).
+ * The catch-up cadence is shortened with `GRANARY_TEST_CATCHUP_FIRST_DELAY_MS` /
+ * `GRANARY_TEST_CATCHUP_INTERVAL_MS` (ADR 0194).
  */
 import { describe, expect, test } from 'bun:test';
 import { useHarness, type Harness } from './harness';
-import { APP_MODE_ENV, setupAppMode } from './github-app';
+import { setupAppMode } from './github-app';
 import { expectClosedOnce, openIssue, OWNER, settle, waitClosedOnGithub } from './helpers';
 
 const INTERVAL_MS = 1500;
 const T = 90_000;
 
 const h: () => Harness = useHarness({
-			appEnv: { ...APP_MODE_ENV, GRANARY_CATCHUP_FIRST_DELAY_MS: '500', GRANARY_CATCHUP_INTERVAL_MS: String(INTERVAL_MS) }
+			github: 'manual',
+			appEnv: { GRANARY_TEST_CATCHUP_FIRST_DELAY_MS: '500', GRANARY_TEST_CATCHUP_INTERVAL_MS: String(INTERVAL_MS) }
 		});
 
 let appId = 0;

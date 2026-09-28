@@ -28,7 +28,7 @@ ${origin ? `ORIGIN=${origin}` : '# ORIGIN=https://granary.example.com'}
 # HOST_HEADER=x-forwarded-host
 
 # Optional seeds, applied once when the in-product value is absent:
-# GRANARY_ADMINS=your-github-login
+# GRANARY_SEED_ADMINS=your-github-login
 `;
 
 async function confirmKey(key: string): Promise<boolean> {
@@ -187,7 +187,7 @@ Config mode (the data dir still has ops.sqlite; --ops-db defaults to <data>/ops.
 Direct mode (disaster recovery: only the master key + bucket credentials):
   granary restore --r2-account <id> [--jurisdiction eu] --bucket <b> [--prefix granary/] --access-key-id <id> --out …
   granary restore --endpoint https://… [--region auto] --bucket <b> [--prefix granary/] --access-key-id <id> --out …
-  (secret access key from env OPS_RESTORE_SECRET_ACCESS_KEY)
+  (secret access key from env GRANARY_RESTORE_SECRET_ACCESS_KEY)
 Options: --list (list committed backups), --force (overwrite --out), --json, --data <dir>
 Master key: GRANARY_MASTER_KEY (and GRANARY_MASTER_KEY_PREVIOUS for older backups) or <data>/master.key.
 The restored file is verified (checksums, PRAGMA integrity_check, row counts); exit 0 only when all match.`;

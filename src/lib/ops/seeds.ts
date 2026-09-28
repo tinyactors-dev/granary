@@ -46,25 +46,25 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 	};
 
 	// R2 (ADR 0095, 0106)
-	if (env.OPS_SEED_R2_ACCOUNT_ID && env.OPS_SEED_R2_BUCKET && env.OPS_SEED_R2_ACCESS_KEY_ID && env.OPS_SEED_R2_SECRET_ACCESS_KEY) {
+	if (env.GRANARY_SEED_R2_ACCOUNT_ID && env.GRANARY_SEED_R2_BUCKET && env.GRANARY_SEED_R2_ACCESS_KEY_ID && env.GRANARY_SEED_R2_SECRET_ACCESS_KEY) {
 		if (has(SEED_IDS.r2)) out.skipped.push(SEED_IDS.r2);
 		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.r2} (no master key)`);
 		else {
-			await seedSecret(SEED_IDS.r2Secret, 'R2 secret access key (seed)', 'r2-secret-access-key', env.OPS_SEED_R2_SECRET_ACCESS_KEY);
+			await seedSecret(SEED_IDS.r2Secret, 'R2 secret access key (seed)', 'r2-secret-access-key', env.GRANARY_SEED_R2_SECRET_ACCESS_KEY);
 			const config: DestinationConfig = {
 				settings: {
 					kind: 'r2',
-					accountId: env.OPS_SEED_R2_ACCOUNT_ID,
-					jurisdiction: (env.OPS_SEED_R2_JURISDICTION as R2Jurisdiction | undefined) ?? 'eu',
-					bucket: env.OPS_SEED_R2_BUCKET,
-					prefix: normPrefix(env.OPS_SEED_R2_PREFIX, 'granary/'),
-					accessKeyId: env.OPS_SEED_R2_ACCESS_KEY_ID,
+					accountId: env.GRANARY_SEED_R2_ACCOUNT_ID,
+					jurisdiction: (env.GRANARY_SEED_R2_JURISDICTION as R2Jurisdiction | undefined) ?? 'eu',
+					bucket: env.GRANARY_SEED_R2_BUCKET,
+					prefix: normPrefix(env.GRANARY_SEED_R2_PREFIX, 'granary/'),
+					accessKeyId: env.GRANARY_SEED_R2_ACCESS_KEY_ID,
 					secretAccessKey: { secretRef: SEED_IDS.r2Secret },
-					...(env.OPS_SEED_R2_ENDPOINT_OVERRIDE ? { endpointOverride: env.OPS_SEED_R2_ENDPOINT_OVERRIDE.replace(/\/+$/, '') } : {})
+					...(env.GRANARY_SEED_R2_ENDPOINT_OVERRIDE ? { endpointOverride: env.GRANARY_SEED_R2_ENDPOINT_OVERRIDE.replace(/\/+$/, '') } : {})
 				},
 				retention: DEFAULT_SCHEDULE,
 				caps,
-				...(env.OPS_SEED_R2_CONSOLE_URL ? { consoleUrl: env.OPS_SEED_R2_CONSOLE_URL } : {})
+				...(env.GRANARY_SEED_R2_CONSOLE_URL ? { consoleUrl: env.GRANARY_SEED_R2_CONSOLE_URL } : {})
 			};
 			repo.insertDestination({ id: SEED_IDS.r2, name: 'Cloudflare R2 (seed)', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.r2);
@@ -72,25 +72,25 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 	}
 
 	// Generic S3 (fake-infra, RustFS)
-	if (env.OPS_SEED_S3_ENDPOINT && env.OPS_SEED_S3_BUCKET && env.OPS_SEED_S3_ACCESS_KEY_ID && env.OPS_SEED_S3_SECRET_ACCESS_KEY) {
+	if (env.GRANARY_SEED_S3_ENDPOINT && env.GRANARY_SEED_S3_BUCKET && env.GRANARY_SEED_S3_ACCESS_KEY_ID && env.GRANARY_SEED_S3_SECRET_ACCESS_KEY) {
 		if (has(SEED_IDS.s3)) out.skipped.push(SEED_IDS.s3);
 		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.s3} (no master key)`);
 		else {
-			await seedSecret(SEED_IDS.s3Secret, 'S3 secret access key (seed)', 's3-secret-access-key', env.OPS_SEED_S3_SECRET_ACCESS_KEY);
+			await seedSecret(SEED_IDS.s3Secret, 'S3 secret access key (seed)', 's3-secret-access-key', env.GRANARY_SEED_S3_SECRET_ACCESS_KEY);
 			const config: DestinationConfig = {
 				settings: {
 					kind: 's3',
-					endpoint: env.OPS_SEED_S3_ENDPOINT.replace(/\/+$/, ''),
-					region: env.OPS_SEED_S3_REGION ?? 'auto',
-					bucket: env.OPS_SEED_S3_BUCKET,
-					prefix: normPrefix(env.OPS_SEED_S3_PREFIX, 'granary/'),
+					endpoint: env.GRANARY_SEED_S3_ENDPOINT.replace(/\/+$/, ''),
+					region: env.GRANARY_SEED_S3_REGION ?? 'auto',
+					bucket: env.GRANARY_SEED_S3_BUCKET,
+					prefix: normPrefix(env.GRANARY_SEED_S3_PREFIX, 'granary/'),
 					virtualHostedStyle: false,
-					accessKeyId: env.OPS_SEED_S3_ACCESS_KEY_ID,
+					accessKeyId: env.GRANARY_SEED_S3_ACCESS_KEY_ID,
 					secretAccessKey: { secretRef: SEED_IDS.s3Secret }
 				},
 				retention: DEFAULT_SCHEDULE,
 				caps,
-				...(env.OPS_SEED_S3_CONSOLE_URL ? { consoleUrl: env.OPS_SEED_S3_CONSOLE_URL } : {})
+				...(env.GRANARY_SEED_S3_CONSOLE_URL ? { consoleUrl: env.GRANARY_SEED_S3_CONSOLE_URL } : {})
 			};
 			repo.insertDestination({ id: SEED_IDS.s3, name: 'S3-compatible (seed)', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.s3);
@@ -99,21 +99,21 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 
 	// Console links (ADR 0154): fill a missing link on seed rows nobody edited,
 	// so an existing database picks up a newly added seed env var.
-	for (const [id, url] of [[SEED_IDS.r2, env.OPS_SEED_R2_CONSOLE_URL], [SEED_IDS.s3, env.OPS_SEED_S3_CONSOLE_URL]] as const) {
+	for (const [id, url] of [[SEED_IDS.r2, env.GRANARY_SEED_R2_CONSOLE_URL], [SEED_IDS.s3, env.GRANARY_SEED_S3_CONSOLE_URL]] as const) {
 		if (url && repo.fillSeedConsoleUrl(id, url)) out.created.push(`${id} console link`);
 	}
 
 	// Telemetry token seed (ADR 0122, 0150): the health feature's seed sink
 	// `seed-otlp` references the secret `seed-otlp-token`; the secret store
 	// belongs to backups, so the value is stored here. Never overwritten.
-	if (env.OPS_SEED_OTLP_TOKEN) {
-		const mode = env.OPS_SEED_OTLP_AUTH ?? 'none';
+	if (env.GRANARY_SEED_OTLP_TOKEN) {
+		const mode = env.GRANARY_SEED_OTLP_AUTH ?? 'none';
 		const kind = mode === 'exe-vm-token' ? 'exe-vm-token' : mode === 'bearer' ? 'bearer-token' : mode === 'basic' ? 'basic-password' : null;
-		if (!kind) out.skipped.push(`${SEED_IDS.otlpToken} (OPS_SEED_OTLP_AUTH=${mode} takes no token)`);
+		if (!kind) out.skipped.push(`${SEED_IDS.otlpToken} (GRANARY_SEED_OTLP_AUTH=${mode} takes no token)`);
 		else if (!canStoreSecrets) out.skipped.push(`${SEED_IDS.otlpToken} (no master key)`);
 		else if (secrets.exists(SEED_IDS.otlpToken)) out.skipped.push(SEED_IDS.otlpToken);
 		else {
-			await secrets.set({ name: 'OTLP token (seed)', kind, value: env.OPS_SEED_OTLP_TOKEN }, 'seed', { createId: SEED_IDS.otlpToken });
+			await secrets.set({ name: 'OTLP token (seed)', kind, value: env.GRANARY_SEED_OTLP_TOKEN }, 'seed', { createId: SEED_IDS.otlpToken });
 			out.created.push(SEED_IDS.otlpToken);
 		}
 	}
@@ -140,13 +140,13 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 			name: 'All databases (seed)',
 			enabled: true,
 			origin: 'seed',
-			config: { databases: opts.databases, destinationIds, intervalMs: parseInterval(env.OPS_SEED_BACKUP_INTERVAL), drillIntervalMs: DEFAULT_DRILL_INTERVAL_MS }
+			config: { databases: opts.databases, destinationIds, intervalMs: parseInterval(env.GRANARY_SEED_BACKUP_INTERVAL), drillIntervalMs: DEFAULT_DRILL_INTERVAL_MS }
 		});
 		out.created.push(SEED_IDS.plan);
 	}
 
 	// Budgets (ADR 0107): egress budget seed.
-	const gib = env.OPS_SEED_EGRESS_BUDGET_GIB ? Number(env.OPS_SEED_EGRESS_BUDGET_GIB) : null;
+	const gib = env.GRANARY_SEED_EGRESS_BUDGET_GIB ? Number(env.GRANARY_SEED_EGRESS_BUDGET_GIB) : null;
 	repo.seedBudgets({ ...DEFAULT_BUDGETS, ...(gib ? { r2EgressBytesPerMonth: Math.max(GiB, Math.round(gib * GiB)) } : {}) });
 	return out;
 }

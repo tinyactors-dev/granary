@@ -146,7 +146,7 @@ export const OPS_EVENTS = {
 	remediated: Type.Object({ conditionId: ConditionId, action: RemediationAction, outcome: Type.Union([Type.Literal('done'), Type.Literal('noop')]), detail: Type.String() }), // remediator → condition
 	'remediation.failed': Type.Object({ conditionId: ConditionId, action: RemediationAction, error: Type.String() }),
 
-	// ---- backups additions (agent A, ADR 0111): requests to the `backup-ledger`,
+	// ---- backups additions (ADR 0111): requests to the `backup-ledger`,
 	// `object-store` and `snapshot` processors and their replies. ----
 	'config.reconcile': Type.Object({ area: Type.Union([ConfigArea, Type.Null()]), id: Type.Union([Type.String(), Type.Null()]) }), // ops-config → ledger
 	'config.reconciled': Type.Object({ spawned: Type.Array(Type.String()), replaced: Type.Array(Type.String()), destroyed: Type.Array(Type.String()) }), // ledger → ops-config

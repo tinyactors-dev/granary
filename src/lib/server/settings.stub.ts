@@ -1,7 +1,7 @@
 /**
  * In-memory setup/admins/login-links/GitHub-connection data for StubBackend
- * (ADR 0161, 0160, 0166). Lets the settings UI (fork E5) be built before the
- * real implementations (forks E1, E3) exist. Mutations behave plausibly:
+ * (ADR 0161, 0160). For UI work against the stub backend
+ * (`GRANARY_STUB_BACKEND=1`). Mutations behave plausibly:
  * creating a manifest then "completing" it switches the mode to `app`.
  */
 import { createHash, randomBytes } from 'node:crypto';

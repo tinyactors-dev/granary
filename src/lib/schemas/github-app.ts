@@ -18,25 +18,20 @@ const open = { additionalProperties: true } as const;
 // Mode and secret refs
 // ---------------------------------------------------------------------------
 
-/** `none` = setup required; `app` = GitHub App (product path); `token` = PAT + OAuth app (seeds/tests). */
-export const GitHubMode = Type.Union([Type.Literal('none'), Type.Literal('app'), Type.Literal('token')]);
+/** `none` = setup required; `app` = connected as a GitHub App (the only way granary talks to GitHub, ADR 0230). */
+export const GitHubMode = Type.Union([Type.Literal('none'), Type.Literal('app')]);
 export type GitHubMode = Static<typeof GitHubMode>;
 
 /** Fixed ids in the platform secret store (ADR 0158). */
 export const GITHUB_SECRET_REFS = {
 	appPrivateKey: 'github-app-private-key',
 	appWebhookSecret: 'github-app-webhook-secret',
-	appClientSecret: 'github-app-client-secret',
-	token: 'github-token',
-	tokenWebhookSecret: 'github-webhook-secret',
-	tokenOauthClientSecret: 'github-oauth-client-secret'
+	appClientSecret: 'github-app-client-secret'
 } as const;
 
 /** Settings keys (granary.sqlite `settings` kv) owned by the GitHub connection. */
 export const GITHUB_SETTING_KEYS = {
 	mode: 'github.mode',
-	/** token mode only: OAuth app client id (not secret). */
-	tokenOauthClientId: 'github.token.oauthClientId',
 	catchupCheckpoint: 'github.catchup.checkpoint'
 } as const;
 
@@ -44,7 +39,7 @@ export const GITHUB_SETTING_KEYS = {
 // Manifest flow (ADR 0160)
 // ---------------------------------------------------------------------------
 
-/** The manifest POSTed to `{GITHUB_WEB_URL}/settings/apps/new?state=…`. */
+/** The manifest POSTed to `{GRANARY_GITHUB_WEB_URL}/settings/apps/new?state=…`. */
 export const GitHubAppManifest = Type.Object(
 	{
 		name: Type.String({ minLength: 1, maxLength: 34 }),
@@ -274,7 +269,7 @@ export const GitHubStatus = Type.Object(
 				closed
 			)
 		),
-		/** Last `GET /app` (app mode) or `GET /user` (token mode) check. */
+		/** Last `GET /app` check. */
 		auth: Type.Object(
 			{ ok: Nullable(Type.Boolean()), checkedAt: Nullable(EpochMs), error: Nullable(Type.String()) },
 			closed

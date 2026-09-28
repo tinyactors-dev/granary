@@ -7,7 +7,7 @@
  * if (config.stubBackend) setBackend(new StubBackend({ admins: config.admins, dapPort: config.dapPort }));
  * ```
  *
- * Run with e.g. `GRANARY_STUB_BACKEND=1 ADMINS=admin bun --bun vite dev`.
+ * Run with e.g. `GRANARY_STUB_BACKEND=1 GRANARY_SEED_ADMINS=admin bun --bun vite dev`.
  * State is mutable (allowlist, sessions, effects, dev actions) and lives
  * until the process exits. No actor system, DB or network is touched.
  */

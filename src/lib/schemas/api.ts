@@ -17,7 +17,7 @@ const closed = { additionalProperties: false } as const;
 // Session
 // ---------------------------------------------------------------------------
 
-/** The signed-in user (also `App.Locals.user`). `isAdmin` is computed per request from `ADMINS`. */
+/** The signed-in user (also `App.Locals.user`). `isAdmin` is computed per request from the admins table. */
 export const SessionUser = Type.Object(
 	{ login: Type.String(), avatarUrl: Nullable(Type.String()), isAdmin: Type.Boolean() },
 	closed

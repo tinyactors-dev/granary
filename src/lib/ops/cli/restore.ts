@@ -7,8 +7,8 @@
  * Direct mode (disaster recovery: only 1Password + bucket credentials):
  *   --r2-account <id> [--jurisdiction eu] --bucket b [--prefix granary/] --access-key-id <id> …
  *   --endpoint https://… [--region auto] --bucket b [--prefix granary/] --access-key-id <id> …
- *   secret access key from env OPS_RESTORE_SECRET_ACCESS_KEY
- * Always: OPS_MASTER_KEY (and OPS_MASTER_KEY_PREVIOUS for older backups) in the environment,
+ *   secret access key from env GRANARY_RESTORE_SECRET_ACCESS_KEY
+ * Always: GRANARY_MASTER_KEY (and GRANARY_MASTER_KEY_PREVIOUS for older backups) in the environment,
  * e.g. `fnox exec -P prod -- mise run ops:restore -- …`.
  *   --list   list committed backups instead of restoring
  *   --force  overwrite --out
@@ -66,7 +66,7 @@ if (a.help) {
 
 const env = process.env as Record<string, string | undefined>;
 const keys = await loadMasterKeys({ env, dataDir: env.GRANARY_DATA_DIR ?? '.', devMode: false });
-if (!keys.current && !keys.previous) die('no master key: set GRANARY_MASTER_KEY (alias OPS_MASTER_KEY) or pass --data with a master.key');
+if (!keys.current && !keys.previous) die('no master key: set GRANARY_MASTER_KEY or pass --data with a master.key');
 
 let store: BackupStore;
 if (a['ops-db']) {
@@ -79,8 +79,8 @@ if (a['ops-db']) {
 	const dest = repo.destination(a.dest!) ?? die(`destination ${a.dest} not found in ${dbPath} (known: ${repo.destinations().map((d) => d.id).join(', ')})`);
 	store = await openStore(dest.settings, { secret: (ref) => secrets.reveal(ref, 'cli:ops:restore'), dataDir: resolve(dbPath, '..') });
 } else {
-	const secret = env.OPS_RESTORE_SECRET_ACCESS_KEY;
-	if (!a.bucket || !a['access-key-id'] || !secret) die('direct mode needs --bucket, --access-key-id and OPS_RESTORE_SECRET_ACCESS_KEY (or use --ops-db)');
+	const secret = env.GRANARY_RESTORE_SECRET_ACCESS_KEY;
+	if (!a.bucket || !a['access-key-id'] || !secret) die('direct mode needs --bucket, --access-key-id and GRANARY_RESTORE_SECRET_ACCESS_KEY (or use --ops-db)');
 	let settings: DestinationSettings;
 	if (a['r2-account']) {
 		settings = { kind: 'r2', accountId: a['r2-account']!, jurisdiction: a.jurisdiction as R2Jurisdiction, bucket: a.bucket!, prefix: a.prefix!, accessKeyId: a['access-key-id']!, secretAccessKey: { secretRef: 'cli' }, ...(a.endpoint ? { endpointOverride: a.endpoint } : {}) };

@@ -1,7 +1,7 @@
 <!--
 	/settings/github (ADR 0160, 0161, 0210): the setup wizard until GitHub is
 	connected, the connection and repositories afterwards. The callback and
-	post-install routes (fork E3) redirect back here with `?created=1`,
+	post-install routes redirect back here with `?created=1`,
 	`?installed=1` or `?error=<message>`.
 -->
 <script lang="ts">

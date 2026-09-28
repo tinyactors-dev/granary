@@ -16,15 +16,9 @@ const TOKEN_TTL_MS = 4000;
 const T = 60_000;
 
 
-/** No GitHub env at all: granary must come up in `none` mode (ADR 0157, 0160). */
+/** Not connected at boot: granary must come up in `none` mode (ADR 0157, 0160). */
 const h: () => Harness = useHarness({
-	appEnv: {
-		GITHUB_TOKEN: '',
-		GITHUB_WEBHOOK_SECRET: '',
-		GITHUB_OAUTH_CLIENT_ID: '',
-		GITHUB_OAUTH_CLIENT_SECRET: '',
-		GRANARY_MASTER_KEY: 'b1'.repeat(32)
-	},
+	github: 'manual',
 	fakeEnv: { FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS: String(TOKEN_TTL_MS) }
 });
 

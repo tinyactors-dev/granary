@@ -1,6 +1,6 @@
 /**
  * The GitHub REST calls the outbox relay makes (ADR 0003, ADR 0006), via
- * `fetch` against `GITHUB_API_URL`. Responses are validated with the TypeBox
+ * `fetch` against `GRANARY_GITHUB_API_URL`. Responses are validated with the TypeBox
  * schemas of `$lib/schemas/github`; request bodies are validated before
  * sending.
  */
@@ -94,7 +94,7 @@ export function nextLink(link: string | null): string | null {
 
 export interface GitHubClientOptions {
 	apiUrl: string;
-	/** A PAT (token mode) or an installation-token provider (app mode). */
+	/** An installation-token provider, or a fixed token (e.g. an app JWT). */
 	token: TokenSource;
 	/** Per-request timeout; default 15 s. */
 	timeoutMs?: number;

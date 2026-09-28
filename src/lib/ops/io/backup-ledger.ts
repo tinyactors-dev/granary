@@ -39,7 +39,7 @@ export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 						r.event('info', `backup plan ${d.planId}: run not started — ${why}`, { planId: d.planId, trigger: d.trigger });
 						reply('plan.dispatched', { planId: d.planId, runIds: [], startedAt, refused: why });
 					};
-					if (!rt.keys?.current) return refuse('OPS_MASTER_KEY is not configured (backups are always encrypted, ADR 0097)');
+					if (!rt.keys?.current) return refuse('GRANARY_MASTER_KEY is not configured (backups are always encrypted, ADR 0097)');
 					const plan = r.plan(d.planId);
 					if (!plan) return refuse('plan no longer exists');
 					const destinationIds = plan.destinationIds.filter((id) => r.destination(id)?.enabled);

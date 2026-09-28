@@ -40,7 +40,7 @@ async function backupAndWait(expect: 'succeeded' | 'partial' = 'succeeded') {
 function runRestore(args: string[]) {
 	const p = Bun.spawnSync(['bun', 'src/lib/ops/cli/restore.ts', ...args, '--json'], {
 		cwd: ROOT,
-		env: { PATH: process.env.PATH!, HOME: process.env.HOME!, OPS_MASTER_KEY: OPS_TEST.masterKey }
+		env: { PATH: process.env.PATH!, HOME: process.env.HOME!, GRANARY_MASTER_KEY: OPS_TEST.masterKey }
 	});
 	const out = p.stdout.toString().trim().split('\n').pop() ?? '';
 	return { code: p.exitCode, json: out ? (JSON.parse(out) as Record<string, unknown>) : {}, stderr: p.stderr.toString() };

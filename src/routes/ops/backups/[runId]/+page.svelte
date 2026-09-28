@@ -111,7 +111,7 @@
 		<Card.Root>
 			<Card.Header>
 				<Card.Title>Restore this backup</Card.Title>
-				<Card.Description>Backups are always encrypted; the restore tool needs OPS_MASTER_KEY (from fnox) and the destination's credentials.</Card.Description>
+				<Card.Description>Backups are always encrypted; the restore tool needs GRANARY_MASTER_KEY (from fnox) and the destination's credentials.</Card.Description>
 			</Card.Header>
 			<Card.Content class="grid gap-2">
 				{#each d.uploads.filter((u) => u.state === 'done') as u (u.destinationId)}

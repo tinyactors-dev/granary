@@ -1,11 +1,10 @@
 /**
  * Master key (KEK) handling (ADR 0086, 0097, 0113, 0157).
  *
- * Sources, highest first: `GRANARY_MASTER_KEY` (alias `OPS_MASTER_KEY`) →
- * `<dataDir>/master.key` (written by `granary init`, mode 0600). Rotation:
- * `GRANARY_MASTER_KEY_PREVIOUS` (alias `OPS_MASTER_KEY_PREVIOUS`).
- * Only in dev mode, without either, one is generated into
- * `<dataDir>/ops-master.key` (0600). Outside dev mode a missing key is never
+ * Sources, highest first: `GRANARY_MASTER_KEY` → `<dataDir>/master.key`
+ * (written by `granary init`, mode 0600). Rotation:
+ * `GRANARY_MASTER_KEY_PREVIOUS`. Only in dev mode, without either, one is
+ * generated into `<dataDir>/dev-master.key` (0600). Outside dev mode a missing key is never
  * generated silently → `status: 'missing'` (degraded; ADR 0157).
  */
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -30,7 +29,7 @@ export interface MasterKeys {
 	byId(id: string): Kek | null;
 }
 
-export const DEV_KEY_FILE = 'ops-master.key';
+export const DEV_KEY_FILE = 'dev-master.key';
 /** Written by `granary init` (ADR 0157). */
 export const MASTER_KEY_FILE = 'master.key';
 

@@ -150,7 +150,7 @@ export function assertEncrypted(m: Partial<BackupManifest> | null | undefined): 
 
 export async function unwrapBackupDek(keys: MasterKeys, m: BackupManifest): Promise<CryptoKey> {
 	const kek = keys.byId(m.encryption.kekId);
-	if (!kek) throw new IntegrityError(`backup ${m.runId} is sealed with KEK ${m.encryption.kekId}, which is not configured (OPS_MASTER_KEY / _PREVIOUS)`);
+	if (!kek) throw new IntegrityError(`backup ${m.runId} is sealed with KEK ${m.encryption.kekId}, which is not configured (GRANARY_MASTER_KEY / _PREVIOUS)`);
 	const dek = await unwrapKey(kek.key, unb64(m.encryption.wrappedDek), backupDekAad(m.runId));
 	const key = await importAesKey(dek);
 	dek.fill(0);

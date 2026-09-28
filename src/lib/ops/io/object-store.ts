@@ -68,7 +68,7 @@ async function putArtifact(rt: BackupsRuntime, request: IORequest, reply: (e: st
 		rt.r.setUploadState(d.runId, d.destinationId, 'uploading', { attemptInc: true, artifactKey: d.artifactKey, nextAttemptAt: null });
 		dest = rt.r.requireDestination(d.destinationId);
 		const kek = rt.keys?.current;
-		if (!kek) throw new StoreFailure(storeError('other', 'OPS_MASTER_KEY is not configured: backups cannot be sealed (ADR 0097)', { retryable: false }));
+		if (!kek) throw new StoreFailure(storeError('other', 'GRANARY_MASTER_KEY is not configured: backups cannot be sealed (ADR 0097)', { retryable: false }));
 		if (dest.settings.kind === 'local-dir') {
 			const facts = await diskFacts(rt.c.host.dataDir, rt.c.host.env);
 			const ok = localCopyAllowed(facts, d.snapshot.rawBytes, rt.r.budgets());
@@ -206,7 +206,7 @@ async function drillFetch(rt: BackupsRuntime, request: IORequest, reply: (e: str
 	};
 	try {
 		const dest = rt.r.requireDestination(d.destinationId);
-		if (!rt.keys?.current && !rt.keys?.previous) return checked('decrypt-failed', 'OPS_MASTER_KEY is not configured');
+		if (!rt.keys?.current && !rt.keys?.previous) return checked('decrypt-failed', 'GRANARY_MASTER_KEY is not configured');
 		const store = await rt.store(dest, `object-store:drill:${d.destinationId}`);
 		const latest = (await listBackups(store, d.database))[0];
 		if (!latest) return checked('no-backup', `no committed backup of ${d.database} on ${dest.name}`);

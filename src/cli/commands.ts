@@ -112,7 +112,7 @@ export async function configSetCmd(ctx: Context, p: Parsed): Promise<void> {
 
 export async function configSeed(ctx: Context): Promise<void> {
 	const r = await viaSocketOrDirect(ctx, 'config/seed', {}, () =>
-		openDirect(ctx, (a) => ({ applied: a.seedAdmins(loadConfig(ctx.env).admins).map((l) => `admin:${l}`) }))
+		openDirect(ctx, (a) => ({ applied: a.seedAdmins(loadConfig(ctx.env).seedAdmins).map((l) => `admin:${l}`) }))
 	);
 	note(ctx, r.via);
 	print(ctx, r.result, () => (r.result.applied.length ? `applied: ${r.result.applied.join(', ')}` : 'nothing to seed (seeds never overwrite existing values)'));

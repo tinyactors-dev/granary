@@ -171,15 +171,6 @@ export async function setupGitHubApp(h: Harness, cookie: string): Promise<{ appI
 	return { appId: app.id, slug: app.slug, callbackStatus: cb.status, callbackLocation: cb.headers.get('location') };
 }
 
-/** granary env with no GitHub config at all (setup happens in-product). */
-export const APP_MODE_ENV: Record<string, string> = {
-	GITHUB_TOKEN: '',
-	GITHUB_WEBHOOK_SECRET: '',
-	GITHUB_OAUTH_CLIENT_ID: '',
-	GITHUB_OAUTH_CLIENT_SECRET: '',
-	GRANARY_MASTER_KEY: 'b1'.repeat(32)
-};
-
 /**
  * Bring a fresh granary into app mode: login link for `admin` (CLI), manifest
  * setup, install on `account` (all repos). Returns the admin cookie and app.

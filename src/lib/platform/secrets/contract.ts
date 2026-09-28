@@ -1,6 +1,6 @@
 /**
  * Platform secret store contract (ADR 0158). Implemented by the store moved
- * from `src/lib/ops/secrets/` (fork E1); one instance per database:
+ * from `src/lib/ops/secrets/`; one instance per database:
  * granary.sqlite (GitHub connection secrets) and ops.sqlite (ops secrets).
  *
  * Write-only towards the UI: no DTO ever carries plaintext. `reveal` is for
@@ -48,8 +48,8 @@ export interface PlatformSecrets {
 	keyStatus(): 'ok' | 'missing';
 }
 
-/** Master key env names (ADR 0157); the OPS_* names stay accepted aliases. */
+/** Master key env names (ADR 0157, 0230). */
 export const MASTER_KEY_ENV = {
-	current: ['GRANARY_MASTER_KEY', 'OPS_MASTER_KEY'],
-	previous: ['GRANARY_MASTER_KEY_PREVIOUS', 'OPS_MASTER_KEY_PREVIOUS']
+	current: ['GRANARY_MASTER_KEY'],
+	previous: ['GRANARY_MASTER_KEY_PREVIOUS']
 } as const;

@@ -117,11 +117,11 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 
 	// 1. DB
 	const wal = new Wal(config.databasePath);
-	for (const login of config.allowedUsersSeed) {
+	for (const login of config.seedAllowlist) {
 		if (wal.addAllowedUser(login, 'seed').added) log.info(`allowlist: seeded ${login}`);
 	}
 
-	// 1b. GitHub connection (ADR 0160, 0193): mode + seeds; secrets resolved at use.
+	// 1b. GitHub connection (ADR 0160, 0230): mode (app or none); secrets resolved at use.
 	const github = new GitHubConnection({ config, store: new GitHubStore(wal.db), secrets: granarySecretsOrNull });
 	github.seed();
 
@@ -180,7 +180,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		}
 	});
 
-	tracer = new Tracer({ system, otlpTracesUrl: config.otlpTracesUrl, keepRecent: opts.devMode });
+	tracer = new Tracer({ system, keepRecent: opts.devMode });
 	tracer.install();
 
 	const issueDefinition = system.define(issueChart());
@@ -314,8 +314,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	};
 	(globalThis as Registry)[KEY] = runtime;
 	log.info(
-		`runtime up: db=${config.databasePath} github=${config.githubApiUrl} allowlist=${wal.allowedCount()} ` +
-			`traces=${config.otlpTracesUrl ?? 'off'} dev=${opts.devMode}`
+		`runtime up: db=${config.databasePath} github=${config.githubApiUrl} (${github.mode()}) allowlist=${wal.allowedCount()} dev=${opts.devMode}`
 	);
 	return runtime;
 }
@@ -328,8 +327,8 @@ export function catchupIntervalMs(): number {
 /** Test/ops knobs for the catch-up cadence (ADR 0194); defaults 30 s / 10 min. */
 function catchupTimingFromEnv(): Partial<DeliveryCatchupData> {
 	const num = (v: string | undefined) => (v && /^\d+$/.test(v) ? Number(v) : undefined);
-	const firstDelayMs = num(process.env.GRANARY_CATCHUP_FIRST_DELAY_MS);
-	const intervalMs = num(process.env.GRANARY_CATCHUP_INTERVAL_MS);
+	const firstDelayMs = num(process.env.GRANARY_TEST_CATCHUP_FIRST_DELAY_MS);
+	const intervalMs = num(process.env.GRANARY_TEST_CATCHUP_INTERVAL_MS);
 	return { ...(firstDelayMs !== undefined ? { firstDelayMs } : {}), ...(intervalMs !== undefined ? { intervalMs } : {}) };
 }
 

@@ -44,7 +44,7 @@
 			{/if}
 		</Card.Content>
 		<Card.Footer>
-			<p class="text-muted-foreground w-full text-center text-xs">Only logins listed in ADMINS can sign in.</p>
+			<p class="text-muted-foreground w-full text-center text-xs">Only admins can sign in.</p>
 		</Card.Footer>
 	</Card.Root>
 </div>

@@ -34,7 +34,9 @@ async function signIn(h: Harness, login: string, redirect = '/') {
 	const authorize = new URL(start.headers.get('location')!);
 	expect(authorize.origin).toBe(h.fakeUrl);
 	expect(authorize.pathname).toBe('/login/oauth/authorize');
-	expect(authorize.searchParams.get('client_id')).toBe('test-client');
+	// Sign-in uses the GitHub App's own OAuth client (ADR 0160, 0230).
+	const app = ((await h.fakeGithub.state()).apps ?? []).at(-1);
+	expect(authorize.searchParams.get('client_id')).toBe(app?.clientId ?? '(no app)');
 	expect(authorize.searchParams.get('redirect_uri')).toBe(`${h.appUrl}/auth/callback`);
 	authorize.searchParams.set('login', login);
 
