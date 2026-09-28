@@ -9,7 +9,11 @@ import type { Backend } from './backend';
 import { RealBackend } from './backend.real';
 import { startDapServer, stopDapServer } from './dap';
 import { log } from './log';
-import { getRuntime, onShutdown, startRuntime } from './system';
+import { getRuntime, onShutdown, startRuntime, type Runtime } from './system';
+import { dirname, resolve } from 'node:path';
+import { createOps } from '$lib/ops/index';
+import { hasOpsBackend, setOpsBackend, type OpsModule } from '$lib/ops/contract';
+import { createHostHealth } from './ops-health';
 
 const SIGNALS_KEY = Symbol.for('granary.signals');
 type G = { [SIGNALS_KEY]?: boolean };
@@ -32,8 +36,52 @@ function installShutdown(): void {
 	process.once('SIGINT', () => stop('SIGINT'));
 }
 
+const OPS_KEY = Symbol.for('granary.ops');
+type OpsG = { [OPS_KEY]?: OpsModule };
+
+/**
+ * Start the operations module (ADR 0080, 0120) after the runtime is up: it
+ * gets an OpsHost (database paths, health, logger, env), granary's Tracer
+ * exports through its telemetry sink, and its OpsBackend is registered for
+ * the /ops pages. A failing ops module never stops granary: the Tracer then
+ * keeps POSTing to OTEL_EXPORTER_OTLP_ENDPOINT itself, as before.
+ */
+async function startOps(runtime: Runtime, config: Config, opts: { devMode: boolean }): Promise<void> {
+	const g = globalThis as OpsG;
+	if (g[OPS_KEY]) return;
+	const dbPath = resolve(config.databasePath);
+	const hostHealth = createHostHealth(runtime);
+	const ops = createOps({
+		databases: [{ id: 'granary', label: 'granary', path: dbPath }],
+		health: () => hostHealth.health(),
+		telemetry: { subscribe: () => () => {} }, // reserved: granary pushes via ops.telemetrySink instead (ADR 0121)
+		log,
+		env: process.env,
+		dataDir: dirname(dbPath),
+		version: process.env.npm_package_version ?? '0.0.0',
+		devMode: opts.devMode
+	});
+	try {
+		await ops.start();
+	} catch (e) {
+		log.error('ops module failed to start; granary continues without it (telemetry falls back to direct export)', e);
+		hostHealth.stop();
+		await ops.stop().catch(() => undefined);
+		return;
+	}
+	g[OPS_KEY] = ops;
+	runtime.tracer.attachSink(ops.telemetrySink);
+	if (!hasOpsBackend()) setOpsBackend(ops.backend);
+	onShutdown(async () => {
+		hostHealth.stop();
+		await ops.stop();
+		if (g[OPS_KEY] === ops) delete g[OPS_KEY];
+	});
+}
+
 export async function bootBackend(config: Config, opts: { devMode: boolean }): Promise<Backend> {
 	const runtime = startRuntime(config, opts);
+	await startOps(runtime, config, opts);
 	if (opts.devMode) {
 		startDapServer(runtime.system, config.dapPort);
 		onShutdown(() => stopDapServer());

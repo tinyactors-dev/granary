@@ -48,6 +48,8 @@ export interface Runtime {
 	postIssueOpened(data: IssueOpenedData): boolean;
 	/** Post `allowlist.replace` with the current `allowed_users`. */
 	publishAllowlist(): void;
+	/** Monotonic counters since process start (ops health, ADR 0124). */
+	stats: { deadLetters: number };
 	shutdown(reason?: string): Promise<void>;
 	closed: boolean;
 }
@@ -116,6 +118,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	// 2. System (the relay and tracer are created right after; hooks reach them late-bound)
 	let relay: Relay | null = null;
 	let tracer: Tracer | null = null;
+	const stats = { deadLetters: 0 };
 	const system = createSystem({
 		io: {
 			[GITHUB_IO_TYPE]: githubProcessor({ wal, kickRelay: () => relay?.kick() })
@@ -159,6 +162,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 			});
 		},
 		deadLetter(record) {
+			stats.deadLetters++;
 			const target =
 				'family' in record.target ? `${record.target.family}/${record.target.name}` : `#${record.target.slot}`;
 			log.warn(`dead letter: ${record.event} → ${target} (${record.reason}${record.detail ? `: ${record.detail}` : ''})`);
@@ -243,6 +247,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		issueDefinition,
 		allowlist,
 		postIssueOpened,
+		stats,
 		publishAllowlist() {
 			system.post(ALLOWLIST_ADDRESS, EVENTS.allowlistReplace, { logins: wal.allowedLogins() });
 		},

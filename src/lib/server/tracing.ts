@@ -6,9 +6,12 @@
  * every span of a known actor session gets `granary.actor.family`,
  * `granary.actor.name` and `granary.actor.address`, and `scxml.finished`
  * spans of issue actors get `granary.done.*` from the done-data. The batch
- * is then re-encoded and POSTed (fire-and-forget) to
- * `OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces`; the sink's log bytes go to
- * `/v1/logs` unchanged. In dev mode the last SPAN_BUFFER_SIZE spans are kept
+ * is then re-encoded and handed to the ops module's telemetry sink
+ * (`attachSink`, ADR 0121), which fans it out to the configured OTLP sinks;
+ * `OTEL_EXPORTER_OTLP_ENDPOINT` is seeded as one of them (ADR 0122). Without
+ * an ops sink (ops failed to start) it falls back to POSTing
+ * (fire-and-forget) to `OTEL_EXPORTER_OTLP_ENDPOINT/v1/traces` and
+ * `/v1/logs` directly, as before. In dev mode the last SPAN_BUFFER_SIZE spans are kept
  * in memory for `/__dev` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
  */
 import { decodeTraces, stepSpanID, type ActorInspection, type DecodedSpan, type System } from '@tinyactors/node';
@@ -20,6 +23,7 @@ import type { ActorAddress, IssueDoneData } from '../schemas/actors';
 import { FAMILY, ALLOWLIST_ADDRESS, formatAddress } from '../schemas/actors';
 import { encodeTraces } from './otlp-encode';
 import { log } from './log';
+import type { TelemetrySink } from '../ops/contract';
 
 /** Attribute keys granary adds to tinyactors spans (ADR 0042). */
 export const GRANARY_ATTRS = {
@@ -61,6 +65,9 @@ export class Tracer {
 	#recent: SpanSummary[] = [];
 	#lastPostError = 0;
 	#closed = false;
+	#installed = false;
+	/** The ops module's fan-out; when set, granary never POSTs itself. */
+	#sink: TelemetrySink | null = null;
 
 	constructor(opts: TracerOptions) {
 		this.#system = opts.system;
@@ -71,7 +78,9 @@ export class Tracer {
 
 	/** Installs the sink when there is somewhere for spans to go. */
 	install(): boolean {
-		if (!this.#tracesUrl && !this.#keepRecent) return false;
+		if (this.#installed) return true;
+		if (!this.#tracesUrl && !this.#keepRecent && !this.#sink) return false;
+		this.#installed = true;
 		this.#system.setTraceSink((traces, logs) => this.#onBatch(traces, logs), {
 			resource: { 'service.name': SERVICE_NAME },
 			detail: 'decisions',
@@ -82,6 +91,13 @@ export class Tracer {
 
 	close(): void {
 		this.#closed = true;
+		this.#sink = null;
+	}
+
+	/** Route exports through the ops module (ADR 0121). */
+	attachSink(sink: TelemetrySink): void {
+		this.#sink = sink;
+		this.install();
 	}
 
 	/** Remember who a session is (spawn, done hook, fault hook). */
@@ -107,18 +123,37 @@ export class Tracer {
 
 	#onBatch(traces: Uint8Array, logs?: Uint8Array): void {
 		if (this.#closed) return;
+		const sink = this.#sink;
+		const exporting = sink ? (sink.active?.() ?? true) : !!this.#tracesUrl;
+		if (!exporting && !this.#keepRecent) {
+			// Nobody wants spans right now; keep the lookup maps bounded.
+			if (this.#sessions.size > 10_000) this.#sessions.clear();
+			if (this.#done.size > 10_000) this.#done.clear();
+			return;
+		}
 		let spans: DecodedSpan[];
 		try {
 			spans = decodeTraces(traces);
 			this.#enrich(spans);
 		} catch (e) {
 			log.error('tracing: could not decode/enrich a batch', e);
-			if (this.#tracesUrl) this.#post(this.#tracesUrl, traces);
+			if (exporting) this.#export('traces', traces.slice());
 			return;
 		}
-		if (this.#tracesUrl) this.#post(this.#tracesUrl, encodeTraces(spans));
-		if (logs && logs.length && this.#logsUrl) this.#post(this.#logsUrl, logs);
+		if (exporting) {
+			this.#export('traces', encodeTraces(spans));
+			if (logs && logs.length) this.#export('logs', logs.slice()); // the sink may hold it for a while
+		}
 		if (this.#keepRecent) this.#remember(spans);
+	}
+
+	#export(signal: 'traces' | 'logs', bytes: Uint8Array): void {
+		if (this.#sink) {
+			this.#sink.write({ signal, contentType: 'application/x-protobuf', bytes, service: SERVICE_NAME, producedAt: Date.now() });
+			return;
+		}
+		const url = signal === 'traces' ? this.#tracesUrl : this.#logsUrl;
+		if (url) this.#post(url, bytes);
 	}
 
 	#enrich(spans: DecodedSpan[]): void {
