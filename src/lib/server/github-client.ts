@@ -61,7 +61,9 @@ export async function githubRequest(opts: GitHubRequestOptions, method: string, 
 		method,
 		headers: {
 			Accept: 'application/vnd.github+json',
-			Authorization: `Bearer ${opts.token}`,
+			// No token → no Authorization header at all: GitHub answers 401 "Bad credentials"
+			// to an empty bearer, e.g. on the unauthenticated manifest conversion.
+			...(opts.token ? { Authorization: `Bearer ${opts.token}` } : {}),
 			'User-Agent': opts.userAgent ?? 'granary',
 			'X-GitHub-Api-Version': '2022-11-28',
 			...(body !== undefined ? { 'Content-Type': 'application/json' } : {})

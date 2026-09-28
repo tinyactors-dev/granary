@@ -487,7 +487,13 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		if (req.method === 'POST' && orgNew) return manifestNew(req, url, decodeURIComponent(orgNew[1]!));
 		if (req.method === 'POST' && path === '/settings/apps/new/confirm') return manifestConfirm(req);
 		const conv = /^\/app-manifests\/([^/]+)\/conversions$/.exec(path);
-		if (req.method === 'POST' && conv) return conversion(decodeURIComponent(conv[1]!));
+		if (req.method === 'POST' && conv) {
+			// Like github.com: the conversion is unauthenticated, and any Authorization header
+			// that isn't a valid credential (e.g. an empty "Bearer ") is rejected.
+			if (req.headers.has('authorization'))
+				return Response.json({ message: 'Bad credentials', documentation_url: 'https://docs.github.com/rest', status: '401' }, { status: 401 });
+			return conversion(decodeURIComponent(conv[1]!));
+		}
 		const instNew = /^\/apps\/([^/]+)\/installations\/new(\/confirm)?$/.exec(path);
 		if (instNew) {
 			const slug = decodeURIComponent(instNew[1]!);
