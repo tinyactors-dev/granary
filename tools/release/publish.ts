@@ -7,7 +7,7 @@
  * Dry run unless --yes. Refuses unless ALL hold:
  *   both channels
  *   - clean git tree; release/meta.json packed from git (not --working-tree)
- *     at HEAD, no CLI placeholder, tarball present with matching sha256
+ *     at HEAD, tarball present with matching sha256
  *   - the packed channel matches --channel
  *   - a passing verify for that exact tarball (release/verify*.json merged);
  *     platforms not verified need --accept-unverified <platform>
@@ -76,7 +76,6 @@ const version = meta.version;
 check((meta.channel ?? 'latest') === channel, `the tarball was packed for channel ${meta.channel ?? 'latest'}, not ${channel} — re-pack with --channel ${channel}`);
 check(meta.source === 'git' && !meta.dirty, 'tarball was packed from the working tree — re-pack from git');
 check(meta.gitSha === head, `tarball was packed at ${meta.gitSha.slice(0, 12)}, HEAD is ${head.slice(0, 12)} — re-pack`);
-check(!meta.cliPlaceholder, 'tarball contains the CLI placeholder (--allow-missing-cli) — cannot publish');
 const tgz = join(ROOT, meta.tarball);
 const present = await Bun.file(tgz).exists();
 check(present, `${meta.tarball} is missing`);

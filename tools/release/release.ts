@@ -11,7 +11,7 @@
  *
  * Options: --channel dev|latest (default dev) · --yes · --provenance (GitHub
  * Actions only) · --accept-unverified <platform[,…]> · --platform · --out ·
- * --working-tree / --allow-missing-cli (pack; never publishable).
+ * --working-tree (pack; never publishable).
  *
  * Examples:
  *   mise run release                                   # dev build: pack, verify, dry-run publish
@@ -43,6 +43,6 @@ async function run(script: string, args: string[]): Promise<void> {
 	if (code !== 0) die(`${script} failed (exit ${code})`, code);
 }
 
-if (step === 'all' || step === 'pack') await run('pack.ts', ['--channel', channel, ...pass(['--version', '--ref', '--working-tree', '--allow-missing-cli'])]);
-if (step === 'all' || step === 'verify') await run('verify.ts', pass(['--platform', '--out', '--timeout', '--emulated', '--allow-missing']));
+if (step === 'all' || step === 'pack') await run('pack.ts', ['--channel', channel, ...pass(['--version', '--ref', '--working-tree'])]);
+if (step === 'all' || step === 'verify') await run('verify.ts', pass(['--platform', '--out', '--timeout', '--emulated']));
 if (step === 'all' || step === 'publish') await run('publish.ts', ['--channel', channel, ...pass(['--yes', '--provenance', '--accept-unverified'])]);

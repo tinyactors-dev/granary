@@ -44,7 +44,6 @@ export interface PackMeta {
 	builtAt: string;
 	tarball: string;
 	sha256: string;
-	cliPlaceholder: boolean;
 	dependencies: Record<string, string>;
 }
 
@@ -53,7 +52,7 @@ export interface VerifyResult {
 	ok: boolean;
 	/** Not run on this host (e.g. emulated x86-64, ADR 0184); publish needs --accept-unverified. */
 	skipped?: string;
-	steps: { name: string; ok: boolean; missing?: boolean; detail: string }[];
+	steps: { name: string; ok: boolean; detail: string }[];
 }
 export interface VerifyReport {
 	tarball: string;

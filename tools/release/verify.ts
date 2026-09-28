@@ -4,7 +4,7 @@
  * global install, native addon, `granary version|init|doctor|serve`,
  * `/healthz`, `/readyz`, graceful stop.
  *
- *   bun tools/release/verify.ts [--platform linux/arm64] [--out release/verify-arm64.json] [--allow-missing] [--timeout 600]
+ *   bun tools/release/verify.ts [--platform linux/arm64] [--out release/verify-arm64.json] [--timeout 600]
  *
  * Each container runs as a pitchfork daemon (PROCESS RULES) through
  * tools/dev/container.sh with an exact container name, and is removed after.
@@ -13,7 +13,7 @@
  * Results: release/verify.json (or --out), read by release:publish. With
  * --platform, results for other platforms already recorded for the same
  * tarball are kept.
- * Exit: 0 all ok · 2 only `missing` steps and --allow-missing · 1 otherwise.
+ * Exit: 0 all ok · 1 otherwise.
  */
 import { cp, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -37,7 +37,6 @@ const opt = (f: string) => {
 	const i = args.indexOf(f);
 	return i >= 0 ? args[i + 1] : undefined;
 };
-const allowMissing = args.includes('--allow-missing');
 const tryEmulated = args.includes('--emulated');
 const timeoutS = Number(opt('--timeout') ?? 600);
 const platforms = opt('--platform') ? [opt('--platform')!] : [...RELEASE_DEFAULTS.platforms];
@@ -144,7 +143,7 @@ for (const platform of platforms) {
 		console.log(`  FAIL: ${detail.split('\n')[0]} — see \`pitchfork logs ${id}\``);
 		continue;
 	}
-	for (const s of r.steps) console.log(`  ${s.ok ? 'ok     ' : s.missing ? 'MISSING' : 'FAIL   '} ${s.name} — ${s.detail.split('\n')[0]}`);
+	for (const s of r.steps) console.log(`  ${s.ok ? 'ok  ' : 'FAIL'} ${s.name} — ${s.detail.split('\n')[0]}`);
 	results.push({ platform, ok: r.ok, steps: r.steps });
 }
 
@@ -157,16 +156,14 @@ const report: VerifyReport = {
 	sha256: meta.sha256,
 	gitSha: meta.gitSha,
 	at: new Date().toISOString(),
-	ok: all.every((r) => r.ok || r.skipped) && all.some((r) => r.ok) && !meta.cliPlaceholder,
+	ok: all.every((r) => r.ok || r.skipped) && all.some((r) => r.ok),
 	results: all
 };
 await Bun.write(outFile, JSON.stringify(report, null, '\t') + '\n');
 
-const failed = results.flatMap((r) => r.steps.filter((s) => !s.ok && !s.missing).map((s) => `${r.platform}: ${s.name}`));
+const failed = results.flatMap((r) => r.steps.filter((s) => !s.ok).map((s) => `${r.platform}: ${s.name}`));
 const skipped = results.filter((r) => r.skipped).map((r) => r.platform);
-const missing = results.flatMap((r) => r.steps.filter((s) => s.missing).map((s) => `${r.platform}: ${s.name}`));
 console.log(`\nrelease:verify ${report.ok ? 'PASSED' : 'NOT PASSED'} for ${meta.name}@${meta.version} (${meta.gitSha.slice(0, 12)})`);
-if (missing.length) console.log(`  missing in this build (not failures): \n    ${missing.join('\n    ')}`);
 if (skipped.length) console.log(`  skipped (unverified — release:publish needs --accept-unverified ${skipped.join(',')}): ${skipped.join(', ')}`);
 if (failed.length) console.log(`  failed:\n    ${failed.join('\n    ')}`);
-process.exit(report.ok ? 0 : failed.length === 0 && allowMissing ? 2 : 1);
+process.exit(report.ok ? 0 : 1);

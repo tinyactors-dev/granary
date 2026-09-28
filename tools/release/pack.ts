@@ -2,7 +2,7 @@
  * release:pack (ADR 0180): build granary from a clean export of a git ref and
  * assemble the publishable npm package.
  *
- *   bun tools/release/pack.ts [--channel latest|dev] [--version <semver>] [--ref <git-ref>] [--working-tree] [--allow-missing-cli]
+ *   bun tools/release/pack.ts [--channel latest|dev] [--version <semver>] [--ref <git-ref>] [--working-tree]
  *
  * - Version (ADR 0185): `--channel latest` (default) uses package.json's
  *   version; `--channel dev` computes `<base>-dev.<epoch>.g<sha7>`;
@@ -15,14 +15,12 @@
  *   (for trying uncommitted changes; the result is marked dirty and
  *   release:publish refuses it).
  * - Build: `bun install --frozen-lockfile`, `bun --bun vite build`, and the
- *   CLI via the `cli` mise task (E1) → dist/cli.js.
+ *   CLI via the `cli` mise task → dist/cli.js.
  * - Stage: release/package/ with a generated package.json (the repo's own
  *   package.json stays the private dev manifest), then `bun pm pack` →
  *   release/<name>-<version>.tgz, and release/meta.json.
  *
- * Missing dist/cli.js fails, unless --allow-missing-cli, which stages a
- * placeholder `granary` that exits 70 with a clear message (pipeline testing
- * before the CLI exists).
+ * Missing dist/cli.js fails.
  */
 import { cp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
@@ -55,7 +53,6 @@ const opt = (f: string) => {
 };
 const ref = opt('--ref') ?? 'HEAD';
 const fromWorkingTree = flag('--working-tree');
-const allowMissingCli = flag('--allow-missing-cli');
 
 const channel = (opt('--channel') ?? 'latest') as Channel;
 if (!CHANNELS.includes(channel)) die(`--channel must be one of ${CHANNELS.join(', ')}`);
@@ -107,15 +104,9 @@ console.log('  install (frozen lockfile)…');
 await mustSh(['bun', 'install', '--frozen-lockfile'], { cwd: src });
 console.log('  build server (vite)…');
 await mustSh(['bun', '--bun', 'vite', 'build'], { cwd: src, env: { NODE_ENV: 'production' } });
-const miseToml = await Bun.file(join(src, 'mise.toml')).text();
-if (/^\[tasks\.cli\]/m.test(miseToml)) {
-	console.log('  build CLI (mise run cli)…');
-	await mustSh(['mise', 'run', 'cli'], { cwd: src });
-}
-const cliBuilt = await Bun.file(join(src, 'dist/cli.js')).exists();
-if (!cliBuilt && !allowMissingCli) {
-	die('dist/cli.js is missing: the CLI build (mise task `cli`, ADR 0159/0166 fork E1) does not exist at this ref yet. Use --allow-missing-cli to stage a placeholder for pipeline testing.');
-}
+console.log('  build CLI (mise run cli)…');
+await mustSh(['mise', 'run', 'cli'], { cwd: src });
+if (!(await Bun.file(join(src, 'dist/cli.js')).exists())) die('dist/cli.js is missing after `mise run cli`');
 
 // 3. Runtime dependencies: everything the bundles import by bare specifier --
 const external = new Set<string>(['@tinyactors/node', '@sinclair/typebox']);
@@ -138,7 +129,7 @@ async function scan(dir: string): Promise<void> {
 	}
 }
 await scan(join(src, 'build'));
-if (cliBuilt) await scan(join(src, 'dist'));
+await scan(join(src, 'dist'));
 const builtins = new Set(['bun', 'fs', 'path', 'os', 'crypto', 'url', 'util', 'events', 'stream', 'buffer', 'http', 'https', 'net', 'tls', 'zlib', 'child_process', 'worker_threads', 'module', 'assert', 'querystring', 'string_decoder', 'timers', 'readline', 'dns', 'perf_hooks', 'async_hooks', 'v8', 'vm', 'tty', 'process', 'constants', 'stream/web', 'fs/promises']);
 const dependencies: Record<string, string> = {};
 for (const name of [...external].sort()) {
@@ -152,14 +143,7 @@ for (const name of [...external].sort()) {
 await mkdir(STAGE_DIR, { recursive: true });
 await cp(join(src, 'build'), join(STAGE_DIR, 'build'), { recursive: true });
 await mkdir(join(STAGE_DIR, 'dist'), { recursive: true });
-if (cliBuilt) {
-	await cp(join(src, 'dist/cli.js'), join(STAGE_DIR, 'dist/cli.js'));
-} else {
-	await Bun.write(
-		join(STAGE_DIR, 'dist/cli.js'),
-		`#!/usr/bin/env bun\nconsole.error('granary: this package was packed without the CLI (placeholder from release:pack --allow-missing-cli); it cannot run.');\nprocess.exit(70);\n`
-	);
-}
+await cp(join(src, 'dist/cli.js'), join(STAGE_DIR, 'dist/cli.js'));
 const cliHead = (await Bun.file(join(STAGE_DIR, 'dist/cli.js')).text()).slice(0, 40);
 if (!cliHead.startsWith('#!')) die('dist/cli.js has no shebang (expected "#!/usr/bin/env bun")');
 const manual = join(src, 'docs/manual');
@@ -212,11 +196,9 @@ const meta: PackMeta = {
 	builtAt: new Date().toISOString(),
 	tarball: relative(ROOT, tarball),
 	sha256: await sha256File(tarball),
-	cliPlaceholder: !cliBuilt,
 	dependencies
 };
 await Bun.write(META_FILE, JSON.stringify(meta, null, '\t') + '\n');
 const size = (await stat(tarball)).size;
 console.log(`  packed ${meta.tarball} (${(size / 1024).toFixed(0)} KiB, sha256 ${meta.sha256.slice(0, 16)}…)`);
 console.log(`  dependencies: ${Object.entries(dependencies).map(([k, v]) => `${k}@${v}`).join(', ')}`);
-if (!cliBuilt) console.warn('  WARNING: dist/cli.js is a placeholder (--allow-missing-cli); this tarball must not be published.');

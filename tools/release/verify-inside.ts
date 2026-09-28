@@ -2,14 +2,10 @@
  * Runs INSIDE the clean `oven/bun` container for release:verify (ADR 0181).
  * Installs the packed tarball globally and exercises it like a new host would.
  * Writes /verify/out/result.json; never throws past the top level.
- *
- * A step is `missing` when the feature does not exist yet in this build (e.g.
- * the CLI placeholder, or /healthz before fork E1 lands) — reported clearly,
- * distinct from a failure.
  */
 import { mkdirSync } from 'node:fs';
 
-type Step = { name: string; ok: boolean; missing?: boolean; detail: string };
+type Step = { name: string; ok: boolean; detail: string };
 const steps: Step[] = [];
 const out = '/verify/out';
 mkdirSync(out, { recursive: true });
@@ -27,8 +23,6 @@ async function run(cmd: string[], env: Record<string, string> = {}, timeoutMs = 
 	return { code, text: (o + e).trim() };
 }
 const tail = (s: string, n = 600) => (s.length > n ? '…' + s.slice(-n) : s);
-const PLACEHOLDER = /packed without the CLI/;
-const UNKNOWN = /unknown command|not implemented|Usage:/i;
 
 async function step(name: string, fn: () => Promise<Omit<Step, 'name'>>) {
 	try {
@@ -38,7 +32,7 @@ async function step(name: string, fn: () => Promise<Omit<Step, 'name'>>) {
 		steps.push({ name, ok: false, detail: String(e instanceof Error ? e.message : e) });
 	}
 	const s = steps.at(-1)!;
-	console.log(`${s.ok ? 'ok     ' : s.missing ? 'MISSING' : 'FAIL   '} ${name} — ${s.detail.split('\n')[0]}`);
+	console.log(`${s.ok ? 'ok  ' : 'FAIL'} ${name} — ${s.detail.split('\n')[0]}`);
 }
 
 async function waitHttp(url: string, ms: number): Promise<{ status: number; body: string } | null> {
@@ -69,44 +63,24 @@ await step('native addon loads', async () => {
 	return { ok: r2.code === 0, detail: r2.code === 0 ? `@tinyactors/node ${r2.text}` : tail(r.text + '\n' + r2.text) };
 });
 
-let cliPresent = false;
 await step('granary version', async () => {
 	const r = await run(['granary', 'version']);
-	if (PLACEHOLDER.test(r.text)) return { ok: false, missing: true, detail: 'dist/cli.js is the release:pack placeholder — the CLI (fork E1) is not in this build' };
-	cliPresent = r.code === 0;
 	return { ok: r.code === 0, detail: r.code === 0 ? r.text.split('\n')[0]! : tail(r.text) };
 });
 
-const key = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
-const serverEnv: Record<string, string> = { NODE_ENV: 'production', PORT: String(PORT), HOST: '127.0.0.1', ORIGIN: `http://127.0.0.1:${PORT}`, GRANARY_MASTER_KEY: key };
-// With the CLI, everything comes from the data dir `granary init` wrote
-// (master key, granary.env); only NODE_ENV is set.
+// Everything comes from the data dir `granary init` writes (master key,
+// granary.env); only NODE_ENV is set.
 const cliEnv: Record<string, string> = { NODE_ENV: 'production' };
-// Builds from before in-product GitHub config (ADR 0157/0160) still require
-// these at boot; dummy seeds let the fallback path start the server anyway.
-const legacySeeds: Record<string, string> = {
-	GITHUB_TOKEN: 'verify-dummy',
-	GITHUB_WEBHOOK_SECRET: 'verify-dummy',
-	GITHUB_OAUTH_CLIENT_ID: 'verify-dummy',
-	GITHUB_OAUTH_CLIENT_SECRET: 'verify-dummy'
-};
 
-if (cliPresent) {
-	await step('granary init', async () => {
-		// init generates the master key itself (ADR 0157); confirmation skipped non-interactively
-		const r = await run(['granary', 'init', '--data', DATA, '--origin', `http://127.0.0.1:${PORT}`, '--yes-i-stored-the-key'], cliEnv);
-		if (UNKNOWN.test(r.text) && r.code !== 0) return { ok: false, missing: true, detail: `init not available: ${tail(r.text, 200)}` };
-		return { ok: r.code === 0, detail: r.code === 0 ? 'initialised ' + DATA : tail(r.text) };
-	});
-}
+await step('granary init', async () => {
+	// init generates the master key itself (ADR 0157); confirmation skipped non-interactively
+	const r = await run(['granary', 'init', '--data', DATA, '--origin', `http://127.0.0.1:${PORT}`, '--yes-i-stored-the-key'], cliEnv);
+	return { ok: r.code === 0, detail: r.code === 0 ? 'initialised ' + DATA : tail(r.text) };
+});
 
-// serve: via the CLI, or (fallback) the bundled server directly
-const serveCmd = cliPresent
-	? ['granary', 'serve', '--data', DATA, '--host', '127.0.0.1', '--port', String(PORT)]
-	: ['bun', `${PKG}/build/index.js`];
 mkdirSync(DATA, { recursive: true });
-const server = Bun.spawn(serveCmd, {
-	env: cliPresent ? { ...process.env, ...cliEnv } : { ...process.env, ...serverEnv, ...legacySeeds, GRANARY_DATA_DIR: DATA, DATABASE_PATH: `${DATA}/granary.sqlite` },
+const server = Bun.spawn(['granary', 'serve', '--data', DATA, '--host', '127.0.0.1', '--port', String(PORT)], {
+	env: { ...process.env, ...cliEnv },
 	stdout: 'pipe',
 	stderr: 'pipe'
 });
@@ -118,7 +92,7 @@ let serverLog = '';
 	for await (const c of server.stderr) serverLog += new TextDecoder().decode(c);
 })();
 
-await step(cliPresent ? 'granary serve starts' : 'server starts (fallback: bun build/index.js)', async () => {
+await step('granary serve starts', async () => {
 	const r = await waitHttp(`http://127.0.0.1:${PORT}/`, 60_000);
 	if (!r) return { ok: false, detail: 'no HTTP answer within 60 s\n' + tail(serverLog) };
 	return { ok: r.status < 500, detail: `GET / → ${r.status}` };
@@ -128,7 +102,6 @@ for (const path of ['/healthz', '/readyz']) {
 	await step(`GET ${path}`, async () => {
 		const r = await waitHttp(`http://127.0.0.1:${PORT}${path}`, path === '/readyz' ? 30_000 : 5_000);
 		if (!r) return { ok: false, detail: 'no answer' };
-		if (r.status === 404) return { ok: false, missing: true, detail: `${path} → 404 (not implemented in this build; fork E1)` };
 		if (path === '/readyz' && r.status === 503) {
 			// wait for readiness a bit longer
 			const until = Date.now() + 30_000;
@@ -142,13 +115,10 @@ for (const path of ['/healthz', '/readyz']) {
 	});
 }
 
-if (cliPresent) {
-	await step('granary doctor', async () => {
-		const r = await run(['granary', 'doctor', '--data', DATA], cliEnv);
-		if (UNKNOWN.test(r.text) && r.code !== 0) return { ok: false, missing: true, detail: `doctor not available: ${tail(r.text, 200)}` };
-		return { ok: r.code === 0, detail: tail(r.text, 300) };
-	});
-}
+await step('granary doctor', async () => {
+	const r = await run(['granary', 'doctor', '--data', DATA], cliEnv);
+	return { ok: r.code === 0, detail: tail(r.text, 300) };
+});
 
 await step('server stops on SIGTERM', async () => {
 	server.kill('SIGTERM');
