@@ -10,6 +10,8 @@ import type { Database } from 'bun:sqlite';
 import { GITHUB_SETTING_KEYS, GitHubMode } from '../schemas/github-app';
 import { check } from '../schemas/standard';
 import { AdminStore, AdminStoreError, type SettingSource } from './admins';
+import { CLOSING_MESSAGES_SETTING } from '../schemas/message-template';
+import { saveClosingMessages } from './closing-messages';
 
 /** Internal GitHub connection state (github_settings): readable, not settable. */
 const GITHUB_INTERNAL_KEYS = new Set<string>([GITHUB_SETTING_KEYS.catchupCheckpoint]);
@@ -49,6 +51,7 @@ export function configSet(db: Database, key: string, value: unknown, source: Set
 		const s = admins.setSetting(key, value, source, by, { action: 'github.mode.set', details: { mode: value } });
 		return { key: s.key, value: s.value };
 	}
+	if (key === CLOSING_MESSAGES_SETTING) return { key, value: saveClosingMessages(db, value, source, by) };
 	const s = admins.setSetting(key, value, source, by);
 	return { key: s.key, value: s.value };
 }

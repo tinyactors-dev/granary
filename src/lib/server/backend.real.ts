@@ -4,6 +4,10 @@
  * retries, sessions, and (dev only) the fake-GitHub control API, the span
  * ring buffer and DAP launch configurations.
  */
+import type { ClosingMessages } from '$lib/schemas/message-template';
+import { readClosingMessages, saveClosingMessages } from './closing-messages';
+import { log } from './log';
+import { CLOSING_MESSAGES_SETTING } from '$lib/schemas/message-template';
 import { randomBytes } from 'node:crypto';
 import { LoadgenClient } from './loadgen-client';
 import { FakeInfraClient } from './fake-infra-client';
@@ -716,6 +720,15 @@ export class RealBackend implements Backend {
 			adminCount,
 			steps: setupSteps({ adminCount, github, ops, opsError })
 		};
+	}
+	async getClosingMessages(): Promise<{ messages: ClosingMessages; updatedBy: string | null; updatedAt: number | null }> {
+		const row = this.#admins.getSetting(CLOSING_MESSAGES_SETTING);
+		return { messages: readClosingMessages(this.#wal.db), updatedBy: row?.updatedBy ?? null, updatedAt: row?.updatedAt ?? null };
+	}
+	async saveClosingMessages(messages: ClosingMessages, actor: string): Promise<ClosingMessages> {
+		const saved = this.#adminCall(() => saveClosingMessages(this.#wal.db, messages, 'ui', actor));
+		log.info(`settings: closing message changed by ${actor}`);
+		return saved;
 	}
 	async listAdmins(): Promise<Admin[]> {
 		return this.#admins.listAdmins();

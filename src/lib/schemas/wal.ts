@@ -10,6 +10,7 @@ import { Type, type Static } from '@sinclair/typebox';
 import { ActorAddress, EffectKey, GitHubCloseData, IssueKey } from './actors';
 import { IssuesWebhookPayload, Nullable } from './github';
 import { parse, parseJson, stringifyJson } from './standard';
+import { MAX_RENDERED_LENGTH } from './message-template';
 
 const closed = { additionalProperties: false } as const;
 
@@ -56,8 +57,16 @@ export const VERDICT_VALUES: readonly VerdictValue[] = ['allowed', 'closed', 'fa
 export const InboxPayload = IssuesWebhookPayload;
 export type InboxPayload = Static<typeof InboxPayload>;
 
-/** `outbox.payload` JSON — same shape as the `github.close` event data. */
-export const OutboxPayload = GitHubCloseData;
+/**
+ * `outbox.payload` JSON — the `github.close` event data plus the closing
+ * comment rendered when the row was enqueued (ADR 0251), so retries post the
+ * same text even if the template changes meanwhile. Rows without it (enqueued
+ * before templates existed) are rendered by the relay from the current setting.
+ */
+export const OutboxPayload = Type.Composite(
+	[GitHubCloseData, Type.Object({ commentBody: Type.Optional(Type.String({ maxLength: MAX_RENDERED_LENGTH })) })],
+	{ additionalProperties: false, title: 'outbox.payload' }
+);
 export type OutboxPayload = Static<typeof OutboxPayload>;
 
 /** `outbox.reply_to` JSON — the actor to notify (`issue/<key>`). */

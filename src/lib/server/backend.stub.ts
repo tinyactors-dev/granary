@@ -708,6 +708,12 @@ export class StubBackend implements Backend {
 	async listAuditLog(limit: number) {
 		return this.settings.listAuditLog(limit);
 	}
+	async getClosingMessages() {
+		return this.settings.getClosingMessages();
+	}
+	async saveClosingMessages(messages: Parameters<StubSettings['saveClosingMessages']>[0], actor: string) {
+		return this.settings.saveClosingMessages(messages, actor);
+	}
 	async listLoginLinks(limit: number) {
 		return this.settings.listLoginLinks(limit);
 	}

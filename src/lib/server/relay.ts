@@ -16,7 +16,8 @@
  */
 import type { System } from '@tinyactors/node';
 import { EVENTS, MAX_EFFECT_ATTEMPTS, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
-import { CLOSING_COMMENT, commentMarker } from '../schemas/github';
+import { commentMarker } from '../schemas/github';
+import { commentWithMarker, renderClosingBody } from './closing-messages';
 import { parseOutboxPayload, parseReplyTo, type OutboxPayload, type OutboxRow } from '../schemas/wal';
 import { GitHubHttpError, type GitHubClient } from './github-client';
 import { log } from './log';
@@ -162,7 +163,7 @@ export class Relay {
 						payload.owner,
 						payload.repo,
 						payload.number,
-						`${CLOSING_COMMENT}\n\n${marker}`,
+						commentWithMarker(payload.commentBody ?? renderClosingBody(this.#wal.db, payload), marker),
 						signal
 					);
 					commentId = comment.id;

@@ -35,6 +35,7 @@ import {
 import { currentUser, requireAdmin, requireUser } from '$lib/server/auth';
 import { backendErrorStatus, getBackend, hasBackend, isBackendError } from '$lib/server/backend';
 import { withBackend } from '$lib/server/remote-helpers';
+import { ClosingMessages } from '$lib/schemas/message-template';
 
 // ---------------------------------------------------------------------------
 // Setup state (first run, ADR 0161)
@@ -185,4 +186,22 @@ export const setRepoEnabled = command(standard(SetRepoEnabledInput), async (inpu
 	const repo = await withBackend((b) => b.setRepoEnabled(input, admin.login));
 	await Promise.all([getGitHubStatus().refresh(), listAuditLog({}).refresh()]);
 	return repo;
+});
+
+// ---------------------------------------------------------------------------
+// Closing message (ADR 0250)
+// ---------------------------------------------------------------------------
+
+/** Signed-in users may read the templates; only admins change them. */
+export const getClosingMessages = query(async () => {
+	requireUser();
+	return withBackend((b) => b.getClosingMessages());
+});
+
+/** Replace the whole setting (templates or null = default, per-repo overrides). */
+export const saveClosingMessages = command(standard(ClosingMessages), async (messages): Promise<ClosingMessages> => {
+	const admin = requireAdmin();
+	const saved = await withBackend((b) => b.saveClosingMessages(messages, admin.login));
+	await Promise.all([getClosingMessages().refresh(), listAuditLog({}).refresh()]);
+	return saved;
 });

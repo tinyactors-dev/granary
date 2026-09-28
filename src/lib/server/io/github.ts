@@ -4,6 +4,7 @@
  * `<send type="github" event="github.close">` from an issue actor runs
  * `send()` at the end of the pump turn (so synchronous `bun:sqlite` is safe):
  * - validate the data (`GitHubCloseData`);
+ * - render the closing comment from the templates in effect now (ADR 0251);
  * - `INSERT OR IGNORE` the outbox row `close:<repoId>:<number>` with
  *   `reply_to` = the sending actor's address, and commit;
  * - row already `done` → reply `github.closed` at once; already `dead` →
@@ -23,6 +24,7 @@ import {
 	type GitHubGaveUpData
 } from '../../schemas/actors';
 import type { Wal } from '../wal';
+import { renderClosingBody } from '../closing-messages';
 import { log } from '../log';
 
 export { GITHUB_IO_TYPE };
@@ -53,7 +55,7 @@ export function githubProcessor(deps: GitHubProcessorDeps): IOProcessor {
 				effectKey,
 				issueKey: issueKey(data.repoId, data.number),
 				replyTo,
-				payload: data
+				payload: { ...data, commentBody: renderClosingBody(deps.wal.db, data) }
 			});
 			if (row.state === 'done') {
 				ctx.post(replyTo, EVENTS.githubClosed, { effectKey, commentId: row.comment_id } satisfies GitHubClosedData);

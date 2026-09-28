@@ -4,6 +4,7 @@
  * (`GRANARY_STUB_BACKEND=1`). Mutations behave plausibly:
  * creating a manifest then "completing" it switches the mode to `app`.
  */
+import { EMPTY_CLOSING_MESSAGES, validateClosingMessages, type ClosingMessages } from '$lib/schemas/message-template';
 import { createHash, randomBytes } from 'node:crypto';
 import { BackendError } from './backend';
 import { setupSteps } from './setup-steps';
@@ -84,6 +85,26 @@ export class StubSettings {
 
 	#log(actor: string, action: AuditEntry['action'], subject: string, detail: unknown = null) {
 		this.#audit.unshift({ id: this.#audit.length + 1, at: Date.now(), actor, action, subject, detail });
+	}
+
+	#closing: { messages: ClosingMessages; updatedBy: string | null; updatedAt: number | null } = {
+		messages: { ...EMPTY_CLOSING_MESSAGES, repos: { 'acme/sandbox': { issue: 'Hi @{{author}}, {{repository}} is a sandbox for the core team; your {{kind}} was closed.' } } },
+		updatedBy: 'admin',
+		updatedAt: Date.now() - 86_400_000
+	};
+
+	async getClosingMessages() {
+		return structuredClone(this.#closing);
+	}
+
+	async saveClosingMessages(messages: ClosingMessages, actor: string): Promise<ClosingMessages> {
+		const repos = Object.fromEntries(Object.entries(messages.repos).map(([k, v]) => [k.toLowerCase(), v]));
+		const next = { ...messages, repos };
+		const problems = validateClosingMessages(next);
+		if (problems.length) throw new BackendError('invalid', problems.join('; '));
+		this.#closing = { messages: next, updatedBy: actor, updatedAt: Date.now() };
+		this.#log(actor, 'closing-message.set', 'messages.closing', { repos: Object.keys(repos) });
+		return structuredClone(next);
 	}
 
 	isAdmin(login: string): boolean {

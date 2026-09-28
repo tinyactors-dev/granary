@@ -290,7 +290,7 @@ export class AdminStore {
 		return { key: r.key, value, source: r.source, updatedBy: r.updated_by, updatedAt: r.updated_at };
 	}
 
-	setSetting(key: string, value: unknown, source: SettingSource, by: string, auditAs: { action: 'config.set' | 'github.mode.set'; details: Record<string, unknown> | null } = { action: 'config.set', details: null }): SettingValue {
+	setSetting(key: string, value: unknown, source: SettingSource, by: string, auditAs: { action: 'config.set' | 'github.mode.set' | 'closing-message.set'; details: Record<string, unknown> | null } = { action: 'config.set', details: null }): SettingValue {
 		const now = this.#now();
 		this.db.transaction(() => {
 			this.db

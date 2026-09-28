@@ -164,7 +164,8 @@ export const AuditAction = Type.Union([
 	Type.Literal('github.repo.disable'),
 	Type.Literal('config.set'),
 	Type.Literal('blocklist.add'),
-	Type.Literal('blocklist.remove')
+	Type.Literal('blocklist.remove'),
+	Type.Literal('closing-message.set')
 ]);
 export type AuditAction = Static<typeof AuditAction>;
 

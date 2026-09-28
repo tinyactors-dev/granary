@@ -16,6 +16,7 @@
  *   may throw `BackendError('unavailable')` when not in dev mode; callers
  *   already guard with `requireDev()`.
  */
+import type { ClosingMessages } from '$lib/schemas/message-template';
 import type {
 	ActorSnapshot,
 	ActorSummary,
@@ -227,6 +228,13 @@ export interface Backend {
 	revokeLoginLink(id: string, revokedBy: string): Promise<RevokeLoginLinkResult>;
 	/** Newest first. */
 	listAuditLog(limit: number): Promise<AuditEntry[]>;
+
+	// -- closing message (ADR 0250) ------------------------------------
+
+	/** The stored templates (`null` = built-in default) and when/by whom they were last changed. */
+	getClosingMessages(): Promise<{ messages: ClosingMessages; updatedBy: string | null; updatedAt: number | null }>;
+	/** Validates shape and every template (`invalid` with the problems); audited as `closing-message.set`. */
+	saveClosingMessages(messages: ClosingMessages, actor: string): Promise<ClosingMessages>;
 
 	// -- GitHub connection (ADR 0160, 0162) -----------------------
 

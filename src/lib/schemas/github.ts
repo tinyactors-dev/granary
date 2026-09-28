@@ -317,6 +317,4 @@ export const normalizeLogin = (login: string): string => login.toLowerCase();
 /** The marker the relay embeds in its closing comment (ADR 0003). */
 export const commentMarker = (effectKey: string): string => `<!-- granary:${effectKey} -->`;
 
-/** Default closing comment text (ADR 0004); the relay appends `commentMarker(effectKey)`. */
-export const CLOSING_COMMENT =
-	'Thanks for the report! Issues in this repository can only be opened by approved contributors, so this one was closed automatically.';
+/* The closing comment text is a template now: see message-template.ts (ADR 0250). */
