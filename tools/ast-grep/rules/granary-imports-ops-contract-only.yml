@@ -13,7 +13,7 @@ ignores:
 utils:
   ops-source:
     all:
-      - regex: "\\$lib/ops|/ops/|^['\"]\\.\\.?/ops"
+      - regex: "\\$lib/ops/|^['\"](\\.\\.?/)+ops/"
       - not: { regex: "/ops/contract['\"]$" }
 rule:
   any:

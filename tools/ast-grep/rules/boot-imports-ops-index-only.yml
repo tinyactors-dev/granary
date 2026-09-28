@@ -9,7 +9,7 @@ files:
 utils:
   ops-source:
     all:
-      - regex: "\\$lib/ops|/ops/"
+      - regex: "\\$lib/ops/|^['\"](\\.\\.?/)+ops/"
       - not: { regex: "/ops/(contract|index)['\"]$" }
 rule:
   any:
