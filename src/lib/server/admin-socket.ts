@@ -39,6 +39,8 @@ export interface AdminSocketDeps {
 	databasePath: string;
 	/** Applies env seeds now; returns what was applied (`config seed`). */
 	seed(): string[];
+	/** Called after `config set|seed` so running components re-read settings (ADR 0220). */
+	onConfigChanged?(key: string | null): void;
 	/** Server-side checks beyond the offline ones (system, GitHub, ops). */
 	systemCheck(): DoctorCheck;
 }
@@ -78,8 +80,16 @@ export function adminHandlers(d: AdminSocketDeps): { [K in AdminCommandPath]: Ha
 			return { url, loginLink: await d.backend.createLoginLink({ login: b.login }, actor) };
 		},
 		'config/get': (b: { key: string }) => configGet(d.admins.db, b.key),
-		'config/set': (b: { key: string; value: unknown }) => configSet(d.admins.db, b.key, b.value, 'cli', actor),
-		'config/seed': () => ({ applied: d.seed() }),
+		'config/set': (b: { key: string; value: unknown }) => {
+			const r = configSet(d.admins.db, b.key, b.value, 'cli', actor);
+			d.onConfigChanged?.(b.key);
+			return r;
+		},
+		'config/seed': () => {
+			const applied = d.seed();
+			d.onConfigChanged?.(null);
+			return { applied };
+		},
 		'backup/now': async (b: { plan?: string }) => {
 			if (!hasOpsBackend()) throw new BackendError('unavailable', 'the ops module is not running');
 			const ops = getOpsBackend();

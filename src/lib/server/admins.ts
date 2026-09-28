@@ -52,11 +52,17 @@ export interface SettingValue {
 const sha256Hex = (s: string) => createHash('sha256').update(s).digest('hex');
 const trimSlash = (s: string) => s.replace(/\/+$/, '');
 
-/** GitHub mode from E3's `github_settings` table (absent before the GitHub fork's schema exists). */
+/** `github.mode` from the platform settings kv (ADR 0220), or null when never set. */
 export function readGitHubMode(db: Database): string | null {
 	try {
-		const row = db.query(`SELECT value FROM github_settings WHERE key = 'github.mode'`).get() as { value: string } | null;
-		return row?.value ?? null;
+		const row = db.query(`SELECT value FROM settings WHERE key = 'github.mode'`).get() as { value: string } | null;
+		if (!row) return null;
+		try {
+			const v: unknown = JSON.parse(row.value);
+			return typeof v === 'string' ? v : null;
+		} catch {
+			return row.value;
+		}
 	} catch {
 		return null;
 	}
@@ -272,7 +278,7 @@ export class AdminStore {
 		return { key: r.key, value, source: r.source, updatedBy: r.updated_by, updatedAt: r.updated_at };
 	}
 
-	setSetting(key: string, value: unknown, source: SettingSource, by: string): SettingValue {
+	setSetting(key: string, value: unknown, source: SettingSource, by: string, auditAs: { action: 'config.set' | 'github.mode.set'; details: Record<string, unknown> | null } = { action: 'config.set', details: null }): SettingValue {
 		const now = this.#now();
 		this.db.transaction(() => {
 			this.db
@@ -281,7 +287,7 @@ export class AdminStore {
 					 ON CONFLICT(key) DO UPDATE SET value = excluded.value, source = excluded.source, updated_by = excluded.updated_by, updated_at = excluded.updated_at`
 				)
 				.run(key, JSON.stringify(value), source, by, now);
-			if (source !== 'seed') this.audit(by, 'config.set', key, null);
+			if (source !== 'seed') this.audit(by, auditAs.action, key, auditAs.details);
 		})();
 		return this.getSetting(key)!;
 	}
@@ -301,13 +307,11 @@ export class AdminStore {
 
 	/**
 	 * `needs-github` until a GitHub connection mode other than `none` exists
-	 * (ADR 0161). Before the GitHub fork's seeds exist, legacy env credentials
-	 * (`legacyTokenConfigured`) count as token mode.
+	 * (ADR 0161). The connection's boot seeds always write `github.mode`
+	 * (ADR 0220), so no env inference is needed here.
 	 */
-	setupState(legacyTokenConfigured: boolean): SetupState {
+	setupState(): SetupState {
 		const mode = readGitHubMode(this.db);
-		if (mode === 'app' || mode === 'token') return 'ready';
-		if (mode === 'none') return 'needs-github';
-		return legacyTokenConfigured ? 'ready' : 'needs-github';
+		return mode === 'app' || mode === 'token' ? 'ready' : 'needs-github';
 	}
 }

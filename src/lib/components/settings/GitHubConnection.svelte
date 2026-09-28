@@ -8,7 +8,8 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import * as Table from '$lib/components/ui/table/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
+	import { Button, buttonVariants } from '$lib/components/ui/button/index.js';
+	import * as AlertDialog from '$lib/components/ui/alert-dialog/index.js';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import ExternalLinkIcon from '@lucide/svelte/icons/external-link';
@@ -20,12 +21,27 @@
 	import CopyButton from '$lib/components/app/CopyButton.svelte';
 	import AdminOnly from '$lib/components/app/AdminOnly.svelte';
 	import { describeError } from '$lib/components/app/format';
-	import { refreshGitHubInstallations, setRepoEnabled } from '$lib/remote/settings.remote';
+	import { disconnectGitHub, refreshGitHubInstallations, setRepoEnabled } from '$lib/remote/settings.remote';
 	import type { GitHubStatus, RepoSummary } from '$lib/schemas/github-app';
 
 	let { status }: { status: GitHubStatus } = $props();
 
 	let refreshing = $state(false);
+	let confirmDisconnect = $state(false);
+	let disconnecting = $state(false);
+
+	async function disconnect() {
+		disconnecting = true;
+		try {
+			await disconnectGitHub();
+			toast.success('GitHub disconnected. granary no longer acts on GitHub.');
+			confirmDisconnect = false;
+		} catch (e) {
+			toast.error('Could not disconnect', { description: describeError(e).message });
+		} finally {
+			disconnecting = false;
+		}
+	}
 	let toggling = $state<number | null>(null);
 
 	const guarded = $derived(status.installations.reduce((n, i) => n + i.repos.filter((r) => r.enabled).length, 0));
@@ -177,14 +193,36 @@
 			</Card.Root>
 		{/if}
 
-		<Card.Root>
+		<Card.Root data-testid="github-disconnect">
 			<Card.Header>
-				<Card.Title>Disconnecting</Card.Title>
+				<Card.Title>Disconnect</Card.Title>
+				<Card.Description>Stop granary acting on GitHub. The stored app credentials are deleted; your per-repository choices are kept for a later reconnect.</Card.Description>
 			</Card.Header>
-			<Card.Content class="text-muted-foreground grid gap-2 text-sm">
-				<p>To stop granary acting on GitHub, uninstall or delete the app on GitHub{#if status.app}{' '}(<a class="underline-offset-2 hover:underline" href={status.app.htmlUrl} target="_blank" rel="noreferrer">app settings</a>){/if}, then run this on the server:</p>
-				<div class="flex flex-wrap items-center gap-2"><code class="bg-muted text-foreground rounded px-1.5 py-0.5">granary config set github.mode none</code><CopyButton text="granary config set github.mode none" /></div>
+			<Card.Content class="text-muted-foreground grid gap-3 text-sm">
+				<p>Afterwards, delete the app on GitHub too{#if status.app}{' '}(<a class="underline-offset-2 hover:underline" href={status.app.htmlUrl} target="_blank" rel="noreferrer">app settings</a>){/if}, or it keeps sending webhooks that granary will refuse.</p>
+				<div>
+					<AdminOnly>
+						{#snippet children({ disabled })}
+							<Button variant="outline" class="text-destructive" {disabled} onclick={() => (confirmDisconnect = true)}>Disconnect GitHub…</Button>
+						{/snippet}
+					</AdminOnly>
+				</div>
 			</Card.Content>
 		</Card.Root>
 	</div>
 </div>
+
+<AlertDialog.Root open={confirmDisconnect} onOpenChange={(open) => { if (!open && !disconnecting) confirmDisconnect = false; }}>
+	<AlertDialog.Content>
+		<AlertDialog.Header>
+			<AlertDialog.Title>Disconnect GitHub?</AlertDialog.Title>
+			<AlertDialog.Description>
+				granary stops closing issues and refuses webhooks until GitHub is connected again. The app's private key, webhook secret and client secret are deleted from granary.
+			</AlertDialog.Description>
+		</AlertDialog.Header>
+		<AlertDialog.Footer>
+			<AlertDialog.Cancel disabled={disconnecting}>Cancel</AlertDialog.Cancel>
+			<AlertDialog.Action class={buttonVariants({ variant: 'destructive' })} disabled={disconnecting} onclick={disconnect}>Disconnect</AlertDialog.Action>
+		</AlertDialog.Footer>
+	</AlertDialog.Content>
+</AlertDialog.Root>

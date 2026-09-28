@@ -196,6 +196,14 @@ export class StubSettings {
 		this.#log(actor, 'github.app.create', 'granary-new');
 		return { appId: 512345, slug: 'granary-new', installUrl: this.#app!.installUrl };
 	}
+	async disconnectGitHub(actor: string): Promise<GitHubStatus> {
+		const before = this.#mode;
+		this.#mode = 'none';
+		this.#app = null;
+		this.#installations = [];
+		this.#log(actor, 'github.disconnect', before);
+		return this.getGitHubStatus();
+	}
 	async refreshGitHubInstallations(_actor: string): Promise<InstallationSummary[]> {
 		for (const i of this.#installations) i.syncedAt = Date.now();
 		return this.#installations;

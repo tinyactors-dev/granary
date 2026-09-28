@@ -141,6 +141,7 @@ export async function bootBackend(config: Config, opts: { devMode: boolean }): P
 		origin: backend.origin,
 		databasePath: resolve(config.databasePath),
 		seed: () => seedAdmins(backend.adminStore, config),
+		onConfigChanged: () => runtime.github.refreshMode('cli'),
 		systemCheck: () =>
 			runtime.closed
 				? { name: 'system', status: 'fail', detail: 'the actor system is shut down' }

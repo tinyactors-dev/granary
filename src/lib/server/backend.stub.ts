@@ -687,6 +687,9 @@ export class StubBackend implements Backend {
 	async completeGitHubAppManifest(code: string, state: string, actor: string) {
 		return this.settings.completeGitHubAppManifest(code, state, actor);
 	}
+	async disconnectGitHub(actor: string) {
+		return this.settings.disconnectGitHub(actor);
+	}
 	async refreshGitHubInstallations(actor: string) {
 		return this.settings.refreshGitHubInstallations(actor);
 	}

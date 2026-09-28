@@ -25,9 +25,19 @@ export class GitHubStore {
 
 	// -- configuration (platform `settings` kv, ADR 0157/0190) ---------------------
 
+	/**
+	 * Settings are JSON-encoded like every other `settings` row (AdminStore,
+	 * ADR 0220); a plain-text value is read as-is.
+	 */
 	getConfigValue(key: string): string | null {
 		const row = this.db.query('SELECT value FROM settings WHERE key = ?1').get(key) as { value: string } | null;
-		return row?.value ?? null;
+		if (!row) return null;
+		try {
+			const v: unknown = JSON.parse(row.value);
+			return typeof v === 'string' ? v : row.value;
+		} catch {
+			return row.value;
+		}
 	}
 
 	/** `by` = 'seed' for seeds (source `seed`), else a login (source `ui`). */
@@ -38,7 +48,7 @@ export class GitHubStore {
 				 ON CONFLICT(key) DO UPDATE SET value = excluded.value, source = excluded.source,
 				   updated_by = excluded.updated_by, updated_at = excluded.updated_at`
 			)
-			.run(key, value, by === 'seed' ? 'seed' : 'ui', by, now);
+			.run(key, JSON.stringify(value), by === 'seed' ? 'seed' : 'ui', by, now);
 	}
 
 	// -- internal state (github_settings) ---------------------------------------------
@@ -109,6 +119,16 @@ export class GitHubStore {
 				   repository_selection = excluded.repository_selection, suspended = excluded.suspended, synced_at = excluded.synced_at`
 			)
 			.run(inst.id, inst.account.login, inst.account.type, inst.repository_selection, inst.suspended_at ? 1 : 0, now);
+	}
+
+	/** Forget the app, its installations and pending manifests; repos keep their `enabled` choice. */
+	clearApp(): void {
+		this.db.transaction(() => {
+			this.db.query('UPDATE github_repos SET installation_id = NULL').run();
+			this.db.query('DELETE FROM github_installations').run();
+			this.db.query('DELETE FROM github_app').run();
+			this.db.query('DELETE FROM manifest_states').run();
+		})();
 	}
 
 	deleteInstallation(installationId: number): void {

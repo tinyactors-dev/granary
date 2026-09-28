@@ -639,7 +639,7 @@ export class RealBackend implements Backend {
 	async getSetupStatus(): Promise<SetupStatus> {
 		const c = this.#rt.config;
 		return {
-			state: this.#admins.setupState(!!c.githubToken && !!c.webhookSecret),
+			state: this.#admins.setupState(),
 			origin: c.origin,
 			masterKey: masterKeyStatus(),
 			adminCount: this.#admins.adminCount()
@@ -680,13 +680,23 @@ export class RealBackend implements Backend {
 		return this.#rt.github.beginManifest(input, requestedBy);
 	}
 	async completeGitHubAppManifest(code: string, state: string, actor: string): Promise<CompleteManifestResult> {
-		return this.#rt.github.completeManifest(code, state, actor);
+		const r = await this.#rt.github.completeManifest(code, state, actor);
+		this.#admins.audit(actor, 'github.app.create', r.slug, { appId: r.appId });
+		return r;
+	}
+	async disconnectGitHub(actor: string): Promise<GitHubStatus> {
+		const before = this.#rt.github.mode();
+		this.#rt.github.disconnect(actor);
+		this.#admins.audit(actor, 'github.disconnect', before, null);
+		return this.getGitHubStatus();
 	}
 	async refreshGitHubInstallations(actor: string): Promise<InstallationSummary[]> {
 		return this.#rt.github.refreshInstallations(actor);
 	}
 	async setRepoEnabled(input: SetRepoEnabledInput, actor: string): Promise<RepoSummary> {
-		return this.#rt.github.setRepoEnabled(input, actor);
+		const repo = await this.#rt.github.setRepoEnabled(input, actor);
+		this.#admins.audit(actor, input.enabled ? 'github.repo.enable' : 'github.repo.disable', repo.fullName, null);
+		return repo;
 	}
 
 	// -- fake-infra (ADR 0139) ---------------------------------------------------

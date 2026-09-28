@@ -233,6 +233,3 @@ export function isDevMode({ dev, env }: { dev: boolean; env: Record<string, stri
 	return dev && env.NODE_ENV !== 'production';
 }
 
-/** Is `login` in the configured admins (case-insensitive)? */
-export const isAdminLogin = (config: Pick<Config, 'admins'>, login: string): boolean =>
-	config.admins.includes(login.toLowerCase());

@@ -34,6 +34,7 @@ export const AUDIT_LABELS: Record<string, string> = {
 	'login-link.use': 'Login link used',
 	'github.app.create': 'GitHub App created',
 	'github.mode.set': 'GitHub mode changed',
+	'github.disconnect': 'GitHub disconnected',
 	'github.repo.enable': 'Repository guarded',
 	'github.repo.disable': 'Repository no longer guarded',
 	'config.set': 'Setting changed'

@@ -155,6 +155,14 @@ export const refreshGitHubInstallations = command(async (): Promise<Installation
 	return result;
 });
 
+/** Admin only (ADR 0220): mode → none, app + credentials forgotten. */
+export const disconnectGitHub = command(async (): Promise<GitHubStatus> => {
+	const admin = requireAdmin();
+	const status = await withBackend((b) => b.disconnectGitHub(admin.login));
+	await Promise.all([getGitHubStatus().refresh(), getSetupStatus().refresh(), listAuditLog({}).refresh()]);
+	return status;
+});
+
 /** Admin only. Disabled repos keep receiving webhooks but they are stored as ignored. */
 export const setRepoEnabled = command(standard(SetRepoEnabledInput), async (input): Promise<RepoSummary> => {
 	const admin = requireAdmin();

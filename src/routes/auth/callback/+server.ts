@@ -1,11 +1,11 @@
 /**
  * `GET /auth/callback?code&state` (ADR 0034): verify `state` against the
- * cookie (400), exchange the code, fetch `/user`, allow only ADMINS (403),
+ * cookie (400), exchange the code, fetch `/user`, allow only logins in the
+ * admins table (403, ADR 0161/0220),
  * create a session, set `granary_session`, 303 to the stored redirect.
  * The GitHub access token is not stored.
  */
 import { error, redirect, type RequestHandler } from '@sveltejs/kit';
-import { isAdminLogin } from '$lib/schemas/config';
 import { OAuthCallbackQuery } from '$lib/schemas/github';
 import { check } from '$lib/schemas/standard';
 import { OAUTH_STATE_COOKIE, safeRedirectPath, setSessionCookie } from '$lib/server/auth';
@@ -32,9 +32,11 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 		if (e instanceof OAuthFailure) error(e.status, e.message);
 		throw e;
 	}
-	if (!isAdminLogin(config, user.login)) error(403, `${user.login} is not allowed to sign in to granary`);
+	const backend = getBackend();
+	const login = user.login.toLowerCase();
+	if (!(await backend.listAdmins()).some((a) => a.login.toLowerCase() === login)) error(403, `${user.login} is not allowed to sign in to granary`);
 
-	const session = await getBackend().createSession({ login: user.login, avatarUrl: user.avatar_url });
+	const session = await backend.createSession({ login: user.login, avatarUrl: user.avatar_url });
 	setSessionCookie(cookies, session.sessionId, session.expiresAt, url);
 	redirect(303, safeRedirectPath(stored.redirect));
 };

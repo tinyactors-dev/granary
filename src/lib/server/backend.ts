@@ -229,6 +229,12 @@ export interface Backend {
 	completeGitHubAppManifest(code: string, state: string, actor: string): Promise<CompleteManifestResult>;
 	/** Re-sync installations and their repositories from GitHub. */
 	refreshGitHubInstallations(actor: string): Promise<InstallationSummary[]>;
+	/**
+	 * Stop acting on GitHub (ADR 0220): mode → `none`, the app row,
+	 * installations and all stored GitHub credentials are deleted; per-repo
+	 * enable choices are kept. The app itself must be deleted on GitHub.
+	 */
+	disconnectGitHub(actor: string): Promise<GitHubStatus>;
 	/** `not-found` for an unknown repo. */
 	setRepoEnabled(input: SetRepoEnabledInput, actor: string): Promise<RepoSummary>;
 

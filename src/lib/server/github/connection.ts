@@ -110,11 +110,25 @@ export class GitHubConnection {
 		return this.#store.getMode(GITHUB_SETTING_KEYS.mode) ?? 'none';
 	}
 
+	#lastMode: GitHubMode | null = null;
+
 	#setMode(mode: GitHubMode, by: string): void {
-		const before = this.mode();
 		this.#store.setConfigValue(GITHUB_SETTING_KEYS.mode, mode, by);
-		if (before !== mode) {
+		this.refreshMode(by);
+	}
+
+	/**
+	 * Re-read the mode and notify listeners when it changed. Called after
+	 * anything outside this class writes `github.mode` (the admin socket's
+	 * `config set`, ADR 0220), so e.g. the catch-up actor starts or stops.
+	 */
+	refreshMode(by = 'config'): void {
+		const mode = this.mode();
+		const before = this.#lastMode;
+		this.#lastMode = mode;
+		if (before !== null && before !== mode) {
 			log.info(`github: mode ${before} → ${mode} (${by})`);
+			this.#tokens.clear();
 			for (const l of this.#modeListeners) {
 				try {
 					l(mode);
@@ -149,6 +163,7 @@ export class GitHubConnection {
 			this.#store.setConfigValue(GITHUB_SETTING_KEYS.tokenOauthClientId, c.oauthClientId, 'seed');
 		}
 		this.#secretsReady(); // copies env secrets into the store when it is already open
+		this.refreshMode('seed');
 	}
 
 	/** Token mode: copy the legacy env secrets into the store once (never overwriting). */
@@ -406,6 +421,25 @@ export class GitHubConnection {
 		this.#tokens.clear();
 		this.#setMode('app', actor);
 		return { appId: conv.id, slug: conv.slug, installUrl: this.installUrl(conv.slug) };
+	}
+
+	// -- disconnect ----------------------------------------------------------------------------
+
+	/** See `Backend.disconnectGitHub` (ADR 0220). */
+	disconnect(actor: string): void {
+		const store = this.#secrets();
+		if (store) {
+			for (const id of Object.values(GITHUB_SECRET_REFS)) {
+				try {
+					store.delete(id, actor);
+				} catch {
+					/* not stored */
+				}
+			}
+		}
+		this.#store.clearApp();
+		this.#tokens.clear();
+		this.#setMode('none', actor);
 	}
 
 	// -- installations -------------------------------------------------------------------------
