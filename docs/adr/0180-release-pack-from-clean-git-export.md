@@ -1,6 +1,6 @@
 # 180. release:pack builds from a clean git export with a generated manifest
 
-Date: 2026-09-28 · Status: accepted (defaults pending user confirmation)
+Date: 2026-09-28 · Status: accepted (defaults confirmed in 0187)
 
 ## Context
 ADR 0156 decides to ship `@tinyactors/granary` on npm. The repository's own
@@ -33,7 +33,7 @@ uncommitted work.
 - **Defaults awaiting confirmation** live in one place,
   `RELEASE_DEFAULTS` in `tools/release/common.ts`: package name
   `@tinyactors/granary`, MIT license (© Dario Hamidi), repository
-  `https://github.com/tinyactors/granary`, public access on
+  `https://github.com/tinyactors-dev/granary` (ADR 0187), public access on
   `registry.npmjs.org`, `bun >=1.4.1`.
 
 ## Consequences

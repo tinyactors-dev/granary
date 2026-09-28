@@ -1,6 +1,6 @@
 # 183. Publish from the laptop without provenance for now; CI + provenance later
 
-Date: 2026-09-28 · Status: accepted (pending user confirmation)
+Date: 2026-09-28 · Status: superseded by 0186, 0187
 
 ## Context
 npm provenance attestations need an OIDC-capable CI (GitHub Actions or
