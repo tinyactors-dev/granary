@@ -1,16 +1,19 @@
 /**
- * ops.sqlite schema (ADR 0089, 0101, 0109) — pinned in M0 because several
- * agents write to it. The code that opens/migrates the DB (`db/open.ts`) is
- * owned by the backups agent (M1). Pragmas: WAL, synchronous=FULL,
+ * ops.sqlite schema (ADR 0089, 0101, 0230). Pragmas: WAL, synchronous=FULL,
  * foreign_keys=ON. JSON columns are validated with TypeBox on read and write.
+ * One baseline migration (squashed before the first release, ADR 0230);
+ * later changes append migrations.
  */
 import { Type, type Static } from '@sinclair/typebox';
 
 export const OPS_PRAGMAS = ['PRAGMA journal_mode=WAL', 'PRAGMA synchronous=FULL', 'PRAGMA foreign_keys=ON', 'PRAGMA busy_timeout=5000'] as const;
 
+/** `PRAGMA application_id` of ops.sqlite ("gops"): databases of another layout are refused. */
+export const OPS_APPLICATION_ID = 0x676f7073;
+
 /** Ordered migrations; `PRAGMA user_version` = number applied. Append only. */
 export const OPS_MIGRATIONS: readonly string[] = [
-	/* 1: config, secrets, audit */ `
+	/* 1: baseline */ `
 CREATE TABLE destinations (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK (kind IN ('r2','s3','local-dir')),
   name TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0, origin TEXT NOT NULL CHECK (origin IN ('seed','ui')),
@@ -37,8 +40,6 @@ CREATE TABLE ops_audit (
   id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, -- login or 'system' or io type
   action TEXT NOT NULL, area TEXT NOT NULL, target_id TEXT, detail TEXT);
 CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at INTEGER NOT NULL);
-`,
-	/* 2: runs, uploads, drills */ `
 CREATE TABLE backup_runs (
   id TEXT PRIMARY KEY, plan_id TEXT NOT NULL, database TEXT NOT NULL,
   state TEXT NOT NULL, attempt INTEGER NOT NULL DEFAULT 1, trigger TEXT NOT NULL,
@@ -59,8 +60,6 @@ CREATE TABLE restore_drills (
   started_at INTEGER NOT NULL, finished_at INTEGER, result TEXT, detail TEXT, rpo_ms INTEGER, rto_ms INTEGER);
 CREATE INDEX restore_drills_dest ON restore_drills(destination_id, started_at DESC);
 CREATE TABLE egress (month TEXT NOT NULL, kind TEXT NOT NULL, bytes INTEGER NOT NULL, PRIMARY KEY (month, kind)); -- month = 'YYYY-MM'
-`,
-	/* 3: conditions, events, banner */ `
 CREATE TABLE conditions (
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, subject TEXT, state TEXT NOT NULL,
   since INTEGER, facts TEXT NOT NULL DEFAULT '{}', last_action TEXT, last_action_at INTEGER, last_action_outcome TEXT,
@@ -139,10 +138,3 @@ export type AdminVisitRow = Static<typeof AdminVisitRow>;
 
 export const EgressRow = Type.Object({ month: Type.String(), kind: Type.String(), bytes: Int });
 export type EgressRow = Static<typeof EgressRow>;
-
-/** Table ownership for M1–M4 (ADR 0109): who writes which table. */
-export const TABLE_OWNERS = {
-	destinations: 'backups', backup_plans: 'backups', budgets: 'backups', secrets: 'backups', ops_audit: 'backups (append: all)',
-	kv: 'all (key-prefixed by owner)', backup_runs: 'backups', uploads: 'backups', restore_drills: 'backups', egress: 'backups',
-	telemetry_sinks: 'telemetry', conditions: 'telemetry', ops_events: 'telemetry (append: all)', admin_visits: 'telemetry'
-} as const;

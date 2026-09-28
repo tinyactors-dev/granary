@@ -31,8 +31,16 @@ import {
 } from '../schemas/wal';
 import { secretsTableSql } from '../platform/secrets/store';
 
-/** Schema migrations, applied in order; `PRAGMA user_version` records how many ran. */
+/** `PRAGMA application_id` of granary.sqlite ("gran"): databases of another layout are refused. */
+export const GRANARY_APPLICATION_ID = 0x6772616e;
+
+/**
+ * Schema migrations, applied in order; `PRAGMA user_version` records how many
+ * ran. One baseline (squashed before the first release, ADR 0230); later
+ * changes append migrations.
+ */
 const MIGRATIONS: string[] = [
+	/* 1: baseline */
 	`CREATE TABLE IF NOT EXISTS inbox (
 		delivery_id TEXT PRIMARY KEY,
 		event TEXT NOT NULL,
@@ -40,7 +48,8 @@ const MIGRATIONS: string[] = [
 		issue_key TEXT,
 		payload TEXT NOT NULL,
 		received_at INTEGER NOT NULL,
-		state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','done','failed','ignored'))
+		state TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','done','failed','ignored')),
+		ignore_reason TEXT
 	);
 	CREATE INDEX IF NOT EXISTS inbox_state_received ON inbox(state, received_at);
 	CREATE INDEX IF NOT EXISTS inbox_issue_key ON inbox(issue_key);
@@ -76,9 +85,8 @@ const MIGRATIONS: string[] = [
 		created_at INTEGER NOT NULL,
 		expires_at INTEGER NOT NULL
 	);
-	CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);`,
-	/* 2: platform & first run (ADR 0157, 0158, 0161): admins, login links, audit log, secrets, settings */
-	`CREATE TABLE IF NOT EXISTS admins (
+	CREATE INDEX IF NOT EXISTS sessions_expires ON sessions(expires_at);
+	CREATE TABLE IF NOT EXISTS admins (
 		login TEXT PRIMARY KEY COLLATE NOCASE,
 		added_by TEXT NOT NULL,
 		added_at INTEGER NOT NULL,
@@ -90,7 +98,8 @@ const MIGRATIONS: string[] = [
 		created_by TEXT NOT NULL,
 		created_at INTEGER NOT NULL,
 		expires_at INTEGER NOT NULL,
-		used_at INTEGER
+		used_at INTEGER,
+		revoked_at INTEGER
 	);
 	CREATE INDEX IF NOT EXISTS login_links_expires ON login_links(expires_at);
 	CREATE TABLE IF NOT EXISTS audit_log (
@@ -109,11 +118,47 @@ const MIGRATIONS: string[] = [
 		source TEXT NOT NULL CHECK (source IN ('seed','cli','ui')),
 		updated_by TEXT NOT NULL,
 		updated_at INTEGER NOT NULL
-	);`,
-	/* 3: revocable login links (ADR 0170) */
-	`ALTER TABLE login_links ADD COLUMN revoked_at INTEGER;`,
-	/* 4: why a delivery was ignored (ADR 0220) */
-	`ALTER TABLE inbox ADD COLUMN ignore_reason TEXT;`
+	);
+	CREATE TABLE IF NOT EXISTS github_settings (
+		key TEXT PRIMARY KEY,
+		value TEXT NOT NULL,
+		updated_by TEXT,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS github_app (
+		app_id INTEGER PRIMARY KEY,
+		slug TEXT NOT NULL,
+		name TEXT NOT NULL,
+		html_url TEXT NOT NULL,
+		owner_login TEXT NOT NULL,
+		client_id TEXT NOT NULL,
+		created_by TEXT NOT NULL,
+		created_at INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS github_installations (
+		installation_id INTEGER PRIMARY KEY,
+		account_login TEXT NOT NULL,
+		account_type TEXT NOT NULL,
+		repository_selection TEXT NOT NULL CHECK (repository_selection IN ('all','selected')),
+		suspended INTEGER NOT NULL DEFAULT 0 CHECK (suspended IN (0,1)),
+		synced_at INTEGER NOT NULL
+	);
+	CREATE TABLE IF NOT EXISTS github_repos (
+		repo_id INTEGER PRIMARY KEY,
+		full_name TEXT NOT NULL,
+		installation_id INTEGER,
+		enabled INTEGER NOT NULL DEFAULT 1 CHECK (enabled IN (0,1)),
+		updated_by TEXT,
+		updated_at INTEGER NOT NULL
+	);
+	CREATE INDEX IF NOT EXISTS github_repos_installation ON github_repos(installation_id);
+	CREATE TABLE IF NOT EXISTS manifest_states (
+		state TEXT PRIMARY KEY,
+		created_by TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		expires_at INTEGER NOT NULL,
+		used_at INTEGER
+	);`
 ];
 
 export interface InsertInbox {
@@ -159,10 +204,15 @@ export class Wal {
 	/** Idempotent: runs migrations past `user_version` in one transaction each. */
 	migrate(): void {
 		const { user_version } = this.db.query('PRAGMA user_version').get() as { user_version: number };
+		const { application_id } = this.db.query('PRAGMA application_id').get() as { application_id: number };
+		if (user_version > 0 && application_id !== GRANARY_APPLICATION_ID) {
+			throw new Error(`${this.path} has a pre-release layout (ADR 0230); remove the data directory's databases and start again`);
+		}
 		for (let i = user_version; i < MIGRATIONS.length; i++) {
 			this.db.transaction(() => {
 				this.db.exec(MIGRATIONS[i]!);
 				this.db.exec(`PRAGMA user_version = ${i + 1}`);
+				if (i === 0) this.db.exec(`PRAGMA application_id = ${GRANARY_APPLICATION_ID}`);
 			})();
 		}
 	}

@@ -13,14 +13,13 @@ import {
 	type GitHubInstallation
 } from '../../schemas/github-app';
 import { check, parse } from '../../schemas/standard';
-import { ensureGitHubSchema } from './schema';
 
 export class GitHubStore {
 	readonly db: Database;
 
+	/** `db` is granary.sqlite, migrated by `Wal` (the GitHub tables are part of its baseline). */
 	constructor(db: Database) {
 		this.db = db;
-		ensureGitHubSchema(db);
 	}
 
 	// -- configuration (platform `settings` kv, ADR 0157/0190) ---------------------
