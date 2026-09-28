@@ -29,7 +29,7 @@ the product (`/ops`); env vars only seed. **Status: planned.**
  │ /ops UI + banner ─ OpsBackend ─────┼─ ops.sqlite (config, envelope-encrypted secrets, runs,     │
  │                                    │               conditions, ops_events, admin_visits)       │
  └────────────────────────────────────┴───────────────────────────────────────────────────┼────┘
-        │ http://grafana-otlp.int.exe.xyz  (exe.dev peer integration: key injected        │ S3 API (billed egress)
+        │ https://grafana-otlp.int.exe.xyz  (exe.dev peer integration: key injected        │ S3 API (billed egress)
         │  at the edge, granary stores no credential; VM↔VM traffic is not billed)        ▼
         ▼                                                          Cloudflare R2, EU jurisdiction
  exe.dev VM "granary-grafana" (FRA): grafana/otel-lgtm              <account>.eu.r2.cloudflarestorage.com

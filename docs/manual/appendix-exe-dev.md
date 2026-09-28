@@ -68,9 +68,23 @@ ssh exe.dev integrations add http-proxy --name grafana-otlp \
 ```
 
 In granary, **Ops → Telemetry → New sink**: endpoint
-`http://grafana-otlp.int.exe.xyz`, authentication **exe-peer**, Grafana
+`https://grafana-otlp.int.exe.xyz`, authentication **exe-peer**, Grafana
 link `https://granary-grafana.exe.xyz/explore`. **Test**, **Save**, then
 switch **Enabled** on and **Save** again.
+
+Seeding instead of clicking: put `GRANARY_SEED_OTLP_ENDPOINT=https://grafana-otlp.int.exe.xyz`,
+`GRANARY_SEED_OTLP_AUTH=exe-peer` and `GRANARY_SEED_OTLP_GRAFANA_URL=…/explore` into
+`granary.env` before the first start.
+
+**One observability VM for several projects.** Attach the integration to a
+tag instead of a single VM (`--attach tag:<tag>`, and `ssh exe.dev tag <vm> <tag>`
+on each sender), so every tagged VM can send OTLP. To use exe.dev's login
+for Grafana instead of its own passwords, start the container with
+`-e GF_AUTH_PROXY_ENABLED=true -e GF_AUTH_PROXY_HEADER_NAME=X-ExeDev-Email
+-e GF_AUTH_PROXY_HEADER_PROPERTY=email -e GF_AUTH_PROXY_AUTO_SIGN_UP=true
+-e GF_AUTH_DISABLE_LOGIN_FORM=true -e GF_AUTH_ANONYMOUS_ENABLED=false`; this
+is safe only while the VM stays **private** (exe.dev strips and sets the
+header), never after `share set-public`.
 
 Alternatively use **exe-vm-token** with a token from
 `ssh exe.dev ssh-key generate-api-key --vm=granary-grafana --label=granary-telemetry`

@@ -33,7 +33,7 @@ Date: 2026-09-28 · Status: proposed · Partially superseded by 107 (volume cont
   dropped from the first version; otel-lgtm ingests logs via OTLP).
 - **Two supported auth modes** for the `otlp-http` sink:
   1. **`exe-peer` (recommended in production)**: endpoint
-     `http://grafana-otlp.int.exe.xyz` (a peer integration targeting
+     `https://grafana-otlp.int.exe.xyz` (plain `http://` answers 301 — verified 2026-09-28) (a peer integration targeting
      `https://granary-grafana.exe.xyz:4318/`, attached to the granary VM).
      **granary stores no credential at all**; the test connection only checks
      reachability and a 200 on an empty OTLP request.

@@ -110,7 +110,7 @@ export class StubOpsBackend implements OpsBackend {
 			{
 				...meta('seed-otlp', 'Grafana on exe.dev (FRA)', 'seed'),
 				kind: 'otlp-http',
-				endpoint: 'http://grafana-otlp.int.exe.xyz',
+				endpoint: 'https://grafana-otlp.int.exe.xyz',
 				auth: { mode: 'exe-peer' },
 				signals: ['traces', 'logs', 'metrics'],
 				volumeBudgetBytesPerMonth: 5 * GiB,

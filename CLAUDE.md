@@ -157,6 +157,10 @@ architecture, and add a new ADR for every new decision.
   GitHub REST, remote functions, SQLite JSON columns, fake-GitHub control API).
 - **Bun first:** `bun:sqlite` for SQLite; prefer Bun APIs/libraries whenever
   possible. (Exception: SvelteKit requires Vite — see ADR.)
+- **Never `fnox set` a secret value with the 1Password provider**: it writes
+  the plaintext value into `fnox.toml` instead of 1Password. Create the item
+  with `op item create --vault Personal --template <0600 temp file>` (value
+  never on argv or stdout), keep `fnox.toml` a reference, verify by hash.
 - **Tasks** are mise tasks (`mise.toml`). Secrets come from fnox; never
   hardcode real secrets.
 - **Commits:** Conventional Commits, linear history.

@@ -29,7 +29,7 @@
 
 	let name = $state(s0?.name ?? 'Grafana on exe.dev (FRA)');
 	let enabled = $state(s0?.enabled ?? false);
-	let endpoint = $state(s0?.endpoint ?? 'http://grafana-otlp.int.exe.xyz');
+	let endpoint = $state(s0?.endpoint ?? 'https://grafana-otlp.int.exe.xyz');
 	let mode = $state<SinkAuth['mode']>(a0?.mode ?? 'exe-peer');
 	let secretRef = $state<string | null>(a0 && 'token' in a0 ? a0.token.secretRef : a0 && 'password' in a0 ? a0.password.secretRef : a0 && 'value' in a0 ? a0.value.secretRef : null);
 	let secretValue = $state('');
@@ -79,7 +79,7 @@
 	function check(): boolean {
 		const i: Record<string, string> = {};
 		if (!name.trim()) i.name = 'Required';
-		if (!/^https?:\/\/\S+$/.test(endpoint.trim())) i.endpoint = 'A base URL such as http://grafana-otlp.int.exe.xyz (/v1/<signal> is appended)';
+		if (!/^https?:\/\/\S+$/.test(endpoint.trim())) i.endpoint = 'A base URL such as https://grafana-otlp.int.exe.xyz (/v1/<signal> is appended)';
 		if (!signals.length) i.signals = 'Pick at least one signal';
 		if (newSecret && !secretValue.trim()) i.secret = 'Pick a stored secret or paste a new one';
 		if (mode === 'basic' && !username.trim()) i.username = 'Required';
