@@ -15,3 +15,11 @@ GITHUB_OAUTH_CLIENT_ID = { provider = "1password", value = "granary/oauth-client
 GITHUB_OAUTH_CLIENT_SECRET = { provider = "1password", value = "granary/oauth-client-secret", description = "GitHub OAuth app client secret (UI login)" }
 OPS_MASTER_KEY = { provider = "1password", value = "granary/ops-master-key", description = "Ops master key (32 bytes, base64 or hex) wrapping secrets and backup keys (ADR 0086, 0097)" }
 OPS_MASTER_KEY_PREVIOUS = { provider = "1password", value = "granary/ops-master-key-previous", description = "Previous ops master key during rotation only; remove once rewrapped (ADR 0086)", if_missing = "ignore" }
+
+# Release credentials (ADR 0182): a separate profile so the publish token is
+# never injected into the running server (`prod`). Used by
+# `mise run release:publish`. Create an npm *granular* automation token with
+# publish rights on @tinyactors/granary only, store it in 1Password item
+# "granary" field "npm-token".
+[profiles.release.secrets]
+NPM_TOKEN = { provider = "1password", value = "granary/npm-token", description = "npm granular token: publish @tinyactors/granary (ADR 0182)", if_missing = "ignore" }
