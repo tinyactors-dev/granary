@@ -5,6 +5,7 @@
  * ring buffer and DAP launch configurations.
  */
 import { randomBytes } from 'node:crypto';
+import { LoadgenClient } from './loadgen-client';
 import { TinyactorsError, type ActorInspection } from '@tinyactors/node';
 import type { TSchema, Static } from '@sinclair/typebox';
 import type {
@@ -46,7 +47,17 @@ import type {
 	GetRecentSpansInput,
 	ListRecentTracesInput,
 	SpanSummary,
-	TraceSummary
+	TraceSummary,
+	CreateScenarioRequest as LoadgenCreateScenarioRequest,
+	LoadgenInfo,
+	ListPersonasQuery,
+	PersonaDetail,
+	PersonaKind,
+	PersonaKindInfo,
+	PersonaSummary,
+	ScenarioAction,
+	ScenarioDetail,
+	ScenarioSummary
 } from '../schemas/dev';
 import { parseIssuesWebhook } from '../schemas/github';
 import { issueKey } from '../schemas/actors';
@@ -491,5 +502,41 @@ export class RealBackend implements Backend {
 		this.#requireDev();
 		const a = formatAddress(address);
 		return { type: 'tinyactors', request: 'attach', name: `granary: ${a}`, port: this.#rt.config.dapPort, address: a };
+	}
+
+	// -- load generator (ADR 0076) ------------------------------------------------------
+
+	#loadgenClient: LoadgenClient | null = null;
+	get #loadgen(): LoadgenClient {
+		this.#requireDev();
+		return (this.#loadgenClient ??= new LoadgenClient(this.#rt.config.loadgenUrl));
+	}
+
+	getLoadgenStatus(): Promise<LoadgenInfo> {
+		return this.#loadgen.info();
+	}
+	listScenarios(): Promise<ScenarioSummary[]> {
+		return this.#loadgen.listScenarios();
+	}
+	getScenario(id: string): Promise<ScenarioDetail> {
+		return this.#loadgen.getScenario(id);
+	}
+	createScenario(request: LoadgenCreateScenarioRequest): Promise<ScenarioSummary> {
+		return this.#loadgen.createScenario(request);
+	}
+	controlScenario(id: string, action: ScenarioAction): Promise<ScenarioSummary> {
+		return this.#loadgen.control(id, action);
+	}
+	listPersonas(query: ListPersonasQuery): Promise<PersonaSummary[]> {
+		return this.#loadgen.listPersonas(query);
+	}
+	getPersona(kind: PersonaKind, name: string): Promise<PersonaDetail> {
+		return this.#loadgen.getPersona(kind, name);
+	}
+	listPersonaKinds(): Promise<PersonaKindInfo[]> {
+		return this.#loadgen.kinds();
+	}
+	resetLoadgen(): Promise<void> {
+		return this.#loadgen.reset();
 	}
 }

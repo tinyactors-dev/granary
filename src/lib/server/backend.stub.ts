@@ -11,6 +11,7 @@
  * State is mutable (allowlist, sessions, effects, dev actions) and lives
  * until the process exits. No actor system, DB or network is touched.
  */
+import { StubLoadgen } from './loadgen.stub';
 import type {
 	ActorDetail,
 	ActorSnapshot,
@@ -587,5 +588,36 @@ export class StubBackend implements Backend {
 	async getDapLaunchConfig(address: ActorAddress): Promise<DapLaunchConfig> {
 		const a = formatAddress(address);
 		return { type: 'tinyactors', request: 'attach', name: `granary: ${a}`, port: this.dapPort, address: a };
+	}
+
+	// -- load generator (ADR 0076) ------------------------------------------------------
+
+	#loadgen = new StubLoadgen();
+	async getLoadgenStatus() {
+		return this.#loadgen.info();
+	}
+	async listScenarios() {
+		return this.#loadgen.listScenarios();
+	}
+	async getScenario(id: string) {
+		return this.#loadgen.getScenario(id);
+	}
+	async createScenario(request: import('$lib/schemas/dev').CreateScenarioRequest) {
+		return this.#loadgen.createScenario(request);
+	}
+	async controlScenario(id: string, action: import('$lib/schemas/dev').ScenarioAction) {
+		return this.#loadgen.control(id, action);
+	}
+	async listPersonas(query: import('$lib/schemas/dev').ListPersonasQuery) {
+		return this.#loadgen.listPersonas(query);
+	}
+	async getPersona(kind: import('$lib/schemas/dev').PersonaKind, name: string) {
+		return this.#loadgen.getPersona(kind, name);
+	}
+	async listPersonaKinds() {
+		return this.#loadgen.kinds();
+	}
+	async resetLoadgen() {
+		this.#loadgen.reset();
 	}
 }

@@ -221,3 +221,70 @@ export interface DapLaunchConfig {
 	/** `family/name` */
 	address: string;
 }
+
+// ---------------------------------------------------------------------------
+// Load generator (ADR 0070–0076). Shapes come from `loadgen/schemas.ts`.
+// ---------------------------------------------------------------------------
+
+import {
+	CreateScenarioRequest,
+	ListPersonasQuery,
+	PersonaKind,
+	ScenarioAction,
+	type LoadgenStatus,
+	type PersonaDetail,
+	type PersonaKindInfo,
+	type PersonaSummary,
+	type ScenarioDetail,
+	type ScenarioSummary
+} from '../../../loadgen/schemas';
+
+export {
+	CreateScenarioRequest,
+	ListPersonasQuery,
+	type LoadgenStatus,
+	type PersonaDetail,
+	type PersonaKindInfo,
+	type PersonaSummary,
+	type ScenarioDetail,
+	type ScenarioSummary
+};
+export type {
+	InvariantStatus,
+	Metrics,
+	PersonaIssue,
+	PersonaKind,
+	PersonaKindCount,
+	PresetInfo,
+	PresetName,
+	ScenarioAction,
+	ScenarioConfig,
+	ScenarioState,
+	SeriesPoint,
+	TimelineEntry,
+	Violation
+} from '../../../loadgen/schemas';
+export { PERSONA_KINDS, PRESET_NAMES, SCENARIO_STATES } from '../../../loadgen/schemas';
+
+/** `getLoadgenStatus`: reachability plus the loadgen's own status. */
+export interface LoadgenInfo {
+	url: string;
+	reachable: boolean;
+	error: string | null;
+	status: LoadgenStatus | null;
+}
+
+export const ScenarioIdInput = Type.Object({ id: Type.String({ minLength: 1, maxLength: 64 }) }, closed);
+export type ScenarioIdInput = Static<typeof ScenarioIdInput>;
+
+export const ControlScenarioInput = Type.Object(
+	{ id: Type.String({ minLength: 1, maxLength: 64 }), action: ScenarioAction },
+	closed
+);
+export type ControlScenarioInput = Static<typeof ControlScenarioInput>;
+
+export const GetPersonaInput = Type.Object(
+	{ kind: PersonaKind, name: Type.String({ minLength: 1, maxLength: 64 }) },
+	closed
+);
+export type GetPersonaInput = Static<typeof GetPersonaInput>;

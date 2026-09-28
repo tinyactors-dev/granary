@@ -52,7 +52,17 @@ import type {
 	GetRecentSpansInput,
 	ListRecentTracesInput,
 	SpanSummary,
-	TraceSummary
+	TraceSummary,
+	CreateScenarioRequest,
+	LoadgenInfo,
+	ListPersonasQuery,
+	PersonaDetail,
+	PersonaKind,
+	PersonaKindInfo,
+	PersonaSummary,
+	ScenarioAction,
+	ScenarioDetail,
+	ScenarioSummary
 } from '$lib/schemas/dev';
 
 export interface Backend {
@@ -137,6 +147,25 @@ export interface Backend {
 	/** The ring buffer grouped by trace, newest first (ADR 0054). */
 	listRecentTraces(query: Resolved<ListRecentTracesInput>): Promise<TraceSummary[]>;
 	getDapLaunchConfig(address: ActorAddress): Promise<DapLaunchConfig>;
+
+	// -- load generator (ADR 0070–0076), dev only; proxies LOADGEN_URL ----------------
+
+	/** Never throws for an unreachable loadgen: `reachable: false` instead. */
+	getLoadgenStatus(): Promise<LoadgenInfo>;
+	/** Newest first. */
+	listScenarios(): Promise<ScenarioSummary[]>;
+	/** `not-found` for an unknown id. */
+	getScenario(id: string): Promise<ScenarioDetail>;
+	/** `invalid` for a bad config, `conflict` when another scenario runs. */
+	createScenario(request: CreateScenarioRequest): Promise<ScenarioSummary>;
+	/** `conflict` when the action does not apply to the scenario's state. */
+	controlScenario(id: string, action: ScenarioAction): Promise<ScenarioSummary>;
+	listPersonas(query: ListPersonasQuery): Promise<PersonaSummary[]>;
+	getPersona(kind: PersonaKind, name: string): Promise<PersonaDetail>;
+	/** The persona catalogue with each kind's statechart. */
+	listPersonaKinds(): Promise<PersonaKindInfo[]>;
+	/** Stop everything and forget all scenarios. */
+	resetLoadgen(): Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
