@@ -59,9 +59,14 @@ export interface TelemetrySinkData {
 	lastSuccessAt: number | null;
 	lastFailureAt: number | null;
 	openedAt: number | null;
+	/** Test hook (OPS_TEST_GRACE_SCALE, ADR 0150): scales backoff and probe delays; 1 in production. */
+	timeScale: number;
 }
 
-export const initialSinkData = (sinkId: string, flushIntervalMs: number, maxBufferBytes: number): TelemetrySinkData => ({
+/** Scaled delay; tests never go below 200 ms so a down sink doesn't spin. */
+const scaled = (ms: number, scale: number) => (scale >= 1 ? ms : Math.max(200, Math.round(ms * scale)));
+
+export const initialSinkData = (sinkId: string, flushIntervalMs: number, maxBufferBytes: number, timeScale = 1): TelemetrySinkData => ({
 	sinkId,
 	flushIntervalMs,
 	maxBufferBytes,
@@ -76,7 +81,8 @@ export const initialSinkData = (sinkId: string, flushIntervalMs: number, maxBuff
 	lastError: null,
 	lastSuccessAt: null,
 	lastFailureAt: null,
-	openedAt: null
+	openedAt: null,
+	timeScale
 });
 
 type Ctx = EvaluationContext<TelemetrySinkData>;
@@ -136,13 +142,14 @@ function onFailed({ data, event }: Ctx) {
 }
 
 const backoffDelay = ({ data }: Ctx) =>
-	Math.min(MAX_BACKOFF_MS, data.retryAfterMs ?? Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(6, data.failures)));
+	scaled(Math.min(MAX_BACKOFF_MS, data.retryAfterMs ?? Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(6, data.failures))), data.timeScale ?? 1);
 
 export function telemetrySinkChart(): DefinitionBuilder<TelemetrySinkData> {
 	const S = SINK_STATES;
 	return statechart<TelemetrySinkData>({ family: OPS_FAMILY.sink, revision: SINK_REVISION, name: 'telemetry-sink' })
 		.data('sinkId', 'unset')
 		.data('flushIntervalMs', 2000)
+		.data('timeScale', 1)
 		.data('maxBufferBytes', 8 * 1024 * 1024)
 		.data('queue', [])
 		.data('queuedBytes', 0)
@@ -204,7 +211,7 @@ export function telemetrySinkChart(): DefinitionBuilder<TelemetrySinkData> {
 						.script(({ data }: Ctx) => {
 							data.openedAt ??= Date.now();
 						})
-						.send('sink.probe', (b) => b.id(SEND_ID.probe).after(PROBE_AFTER_MS))
+						.send('sink.probe', (b) => b.id(SEND_ID.probe).after(({ data }: Ctx) => scaled(PROBE_AFTER_MS, data.timeScale ?? 1)))
 				)
 				.exit((a) => a.cancel(SEND_ID.probe))
 				.on('telemetry.batch', (t) => t.internal().script(pushBatch))

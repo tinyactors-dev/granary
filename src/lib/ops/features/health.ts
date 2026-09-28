@@ -179,6 +179,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			const repo = (repoRef = new SinksRepo(ctx.db, ctx.host.log));
 			if (!journal.kvGet('health:firstSeenAt')) journal.kvSet('health:firstSeenAt', String(ctx.now()), ctx.now());
 			const timeScale = Number(ctx.host.env.OPS_TEST_GRACE_SCALE ?? '1');
+			const sinkTimeScale = Number.isFinite(timeScale) && timeScale > 0 && timeScale < 1 ? timeScale : 1;
 			const fanout = (fanoutRef = new TelemetryFanout({
 				redactor,
 				db: ctx.db,
@@ -216,7 +217,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 				for (const s of enabled.values()) {
 					const existing = sinkActors.get(s.id);
 					if (existing && !existing.destroyed) continue;
-					sinkActors.set(s.id, ctx.spawn(sinkDef, sinkAddress(s.id), initialSinkData(s.id, s.flushIntervalMs, s.maxBufferBytes)));
+					sinkActors.set(s.id, ctx.spawn(sinkDef, sinkAddress(s.id), initialSinkData(s.id, s.flushIntervalMs, s.maxBufferBytes, sinkTimeScale)));
 				}
 				fanout.setSinks([...enabled.values()]);
 			};
