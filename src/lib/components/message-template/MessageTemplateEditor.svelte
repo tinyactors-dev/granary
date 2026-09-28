@@ -20,7 +20,7 @@
 	import { Button } from '$lib/components/ui/button/index.js';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
+	import RotateCcwIcon from '@lucide/svelte/icons/rotate-ccw';
 
 	let {
 		value = $bindable(null),
@@ -61,18 +61,20 @@
 	});
 	const html = $derived(rendered === null ? '' : renderMarkdown(rendered));
 
-	function setCustom(on: boolean) {
+	/** Back to inheriting (null). Editing the text or inserting a variable makes it custom again. */
+	function reset() {
 		if (readonly) return;
-		value = on ? inherited : null;
+		value = null;
 	}
 
 	function insert(name: string) {
-		if (readonly || value === null) return;
+		if (readonly) return;
+		const base = value ?? inherited; // inserting into the inherited text starts a custom template
 		const token = `{{${name}}}`;
 		const el = textarea;
-		const start = el?.selectionStart ?? value.length;
-		const end = el?.selectionEnd ?? value.length;
-		value = value.slice(0, start) + token + value.slice(end);
+		const start = el?.selectionStart ?? base.length;
+		const end = el?.selectionEnd ?? base.length;
+		value = base.slice(0, start) + token + base.slice(end);
 		queueMicrotask(() => {
 			el?.focus();
 			el?.setSelectionRange(start + token.length, start + token.length);
@@ -83,9 +85,17 @@
 <div class="grid gap-3" data-testid="message-template-editor">
 	<div class="flex flex-wrap items-center justify-between gap-2">
 		<label for={id} class="text-sm font-medium">{label}</label>
-		<span class="text-muted-foreground flex items-center gap-2 text-xs">
-			<Switch checked={custom} disabled={readonly} onCheckedChange={setCustom} aria-label="Customise {label}" />
-			{custom ? 'Custom' : `Using ${inheritedLabel}`}
+		<span class="text-muted-foreground flex items-center gap-2 text-xs" data-testid="template-status">
+			{#if custom}
+				<Badge variant="secondary">Custom</Badge>
+				{#if !readonly}
+					<Button variant="ghost" size="sm" class="h-6 px-2 text-xs" onclick={reset} data-testid="template-reset"
+						><RotateCcwIcon class="size-3.5" />Reset to {inheritedLabel}</Button
+					>
+				{/if}
+			{:else}
+				<span>Using {inheritedLabel}{readonly ? '' : ' — edit the text to customise'}</span>
+			{/if}
 		</span>
 	</div>
 
@@ -96,18 +106,18 @@
 				bind:ref={textarea}
 				value={effective}
 				oninput={(e) => (value = (e.currentTarget as HTMLTextAreaElement).value)}
-				readonly={readonly || !custom}
+				{readonly}
 				rows={8}
 				class="font-mono text-sm {custom ? '' : 'text-muted-foreground'}"
 				aria-invalid={problems.length > 0}
 			/>
-			<div class="flex flex-wrap gap-1" aria-label="Insert a variable">
+			<div class="flex flex-wrap gap-1" role="group" aria-label="Insert a variable">
 				{#each TEMPLATE_VARIABLES as v (v.name)}
 					<button
 						type="button"
 						class="bg-muted hover:bg-accent disabled:hover:bg-muted rounded px-1.5 py-0.5 font-mono text-xs disabled:opacity-50"
 						title={v.description}
-						disabled={readonly || !custom}
+						disabled={readonly}
 						onclick={() => insert(v.name)}>{`{{${v.name}}}`}</button
 					>
 				{/each}

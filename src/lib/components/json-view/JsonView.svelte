@@ -4,10 +4,6 @@
   (pretty-printed) view, key/path search, vim/emacs keyboard navigation and
   clipboard integration. Rows are virtualized. See ./README.md.
 -->
-<script lang="ts" module>
-	let nextId = 0;
-</script>
-
 <script lang="ts">
 	import { tick, untrack } from 'svelte';
 	import { SvelteSet } from 'svelte/reactivity';
@@ -78,7 +74,9 @@
 		class: className = ''
 	}: Props = $props();
 
-	const uid = `jv${nextId++}`;
+	// Unique per instance and identical on server and client (hydration-safe).
+	const instanceId = $props.id();
+	const uid = `jv-${instanceId}`;
 	const OVERSCAN = 10;
 	const INDENT = 16;
 
@@ -151,6 +149,10 @@
 		for (let i = first; i < last; i++) out.push(i);
 		return out;
 	});
+	// ARIA id references must point at elements that exist: the match list is only
+	// rendered while searching, and rows are virtualized.
+	const matchesOpen = $derived(searchFocused && query !== '' && matches.length > 0);
+	const cursorRendered = $derived(visible.some((i) => rows.node[i] === cursor && rows.close[i] !== 1));
 
 	// New value: reset per-document state.
 	$effect(() => {
@@ -565,6 +567,19 @@
 	}
 </script>
 
+{#snippet icon(name: 'up' | 'down' | 'expand' | 'collapse' | 'copy' | 'help' | 'close')}
+	<!-- Inline stroke icons (Lucide geometry, ISC) so the component stays dependency-free; buttons carry the accessible name. -->
+	<svg class="jv-svg" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+		{#if name === 'up'}<path d="m18 15-6-6-6 6" />
+		{:else if name === 'down'}<path d="m6 9 6 6 6-6" />
+		{:else if name === 'expand'}<path d="m7 15 5 5 5-5" /><path d="m7 9 5-5 5 5" />
+		{:else if name === 'collapse'}<path d="m7 20 5-5 5 5" /><path d="m7 4 5 5 5-5" />
+		{:else if name === 'copy'}<rect x="8" y="8" width="14" height="14" rx="2" /><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+		{:else if name === 'help'}<circle cx="12" cy="12" r="10" /><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" /><path d="M12 17h.01" />
+		{:else}<path d="M18 6 6 18" /><path d="m6 6 12 12" />{/if}
+	</svg>
+{/snippet}
+
 <svelte:window onpointerdown={onWindowPointer} />
 
 <div
@@ -589,8 +604,7 @@
 				autocomplete="off"
 				placeholder={keymap === 'vim' ? 'Search keys  (/)' : 'Search keys  (C-s)'}
 				aria-label="Search keys"
-				aria-controls="{uid}-matches"
-				oninput={onQueryInput}
+				aria-controls={matchesOpen ? `${uid}-matches` : undefined}				oninput={onQueryInput}
 				onkeydown={onSearchKey}
 				onfocus={() => {
 					searchFocused = true;
@@ -601,12 +615,12 @@
 			{#if query}
 				<span class="jv-count" aria-live="polite">{matches.length ? `${matchPos + 1}/${matches.length}` : '0/0'}</span>
 			{/if}
-			<button type="button" class="jv-icon" title="Previous match" aria-label="Previous match" onclick={() => nextMatch(-1)}>↑</button>
-			<button type="button" class="jv-icon" title="Next match" aria-label="Next match" onclick={() => nextMatch(1)}>↓</button>
+			<button type="button" class="jv-icon" title="Previous match" aria-label="Previous match" onclick={() => nextMatch(-1)}>{@render icon('up')}</button>
+			<button type="button" class="jv-icon" title="Next match" aria-label="Next match" onclick={() => nextMatch(1)}>{@render icon('down')}</button>
 			<label class="jv-check" title="Also match primitive values">
 				<input type="checkbox" bind:checked={valueSearch} onchange={onQueryInput} />values
 			</label>
-			{#if searchFocused && query && matches.length}
+			{#if matchesOpen}
 				<div class="jv-matches" id="{uid}-matches" role="listbox" aria-label="Matches">
 					{#each Array.from(matches.subarray(0, 200)) as m, i (m)}
 						<button
@@ -634,10 +648,10 @@
 			{/if}
 		</div>
 		<div class="jv-actions-bar">
-			<button type="button" class="jv-icon" title="Expand all" aria-label="Expand all" onclick={() => run('openAll')}>⊞</button>
-			<button type="button" class="jv-icon" title="Collapse all" aria-label="Collapse all" onclick={() => run('closeAll')}>⊟</button>
-			<button type="button" class="jv-icon" title="Copy document" aria-label="Copy document" onclick={() => copy('document')}>⧉</button>
-			<button type="button" class="jv-icon" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-pressed={help} onclick={() => (help = !help)}>?</button>
+			<button type="button" class="jv-icon" title="Expand all" aria-label="Expand all" onclick={() => run('openAll')}>{@render icon('expand')}</button>
+			<button type="button" class="jv-icon" title="Collapse all" aria-label="Collapse all" onclick={() => run('closeAll')}>{@render icon('collapse')}</button>
+			<button type="button" class="jv-icon" title="Copy document" aria-label="Copy document" onclick={() => copy('document')}>{@render icon('copy')}</button>
+			<button type="button" class="jv-icon" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" aria-pressed={help} onclick={() => (help = !help)}>{@render icon('help')}</button>
 		</div>
 	</div>
 
@@ -649,7 +663,7 @@
 		role="tree"
 		tabindex="0"
 		aria-label="{rootLabel} ({mode} view)"
-		aria-activedescendant="{uid}-{cursor}"
+		aria-activedescendant={cursorRendered ? `${uid}-${cursor}` : undefined}
 		onkeydown={onKey}
 		onscroll={() => (scrollTop = viewport!.scrollTop)}
 	>
@@ -824,7 +838,7 @@
 		<div class="jv-help" role="dialog" aria-label="Keyboard shortcuts">
 			<div class="jv-help-head">
 				<strong>Keyboard — {keymap}</strong>
-				<button type="button" class="jv-icon" aria-label="Close help" onclick={() => (help = false)}>×</button>
+				<button type="button" class="jv-icon" aria-label="Close help" onclick={() => (help = false)}>{@render icon('close')}</button>
 			</div>
 			<dl>
 				{#each [...HELP[keymap], ...HELP_COMMON] as h (h.keys)}
@@ -1022,6 +1036,15 @@
 		place-items: center;
 		border-radius: 4px;
 		color: var(--jv-muted-fg);
+	}
+	.jv-svg {
+		width: 0.95rem;
+		height: 0.95rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	.jv-icon:hover,
 	.jv-icon[aria-pressed='true'] {

@@ -29,7 +29,8 @@ export interface PreviewEntry {
 	/** Where the component lives (shown in the docs panel). */
 	source: string;
 	/** Renders the component from `args` (and may bind args back). */
-	preview: Component<{ args: Args }>;
+	/** `setArgs` lets a preview report edits made in the canvas back to the controls (optional). */
+	preview: Component<{ args: Args; setArgs?: (patch: Args) => void }>;
 	/** Usage notes rendered under the canvas; receives the current args. */
 	docs?: Component<{ args: Args }>;
 	controls: ControlDef[];

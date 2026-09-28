@@ -10,7 +10,9 @@
 	import PlusIcon from '@lucide/svelte/icons/plus';
 	import TrashIcon from '@lucide/svelte/icons/trash';
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
+	import CheckIcon from '@lucide/svelte/icons/check';
 	import { toast } from 'svelte-sonner';
+	import { beforeNavigate } from '$app/navigation';
 	import PageHeader from '$lib/components/app/PageHeader.svelte';
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 		import { describeError } from '$lib/components/app/format';
@@ -33,8 +35,24 @@
 	let changed = $state<{ by: string | null; at: number | null }>({ by: initial.updatedBy, at: initial.updatedAt });
 	let busy = $state(false);
 	let newRepo = $state('');
+	let justSaved = $state(false);
 
 	const dirty = $derived(JSON.stringify(draft) !== saved);
+	$effect(() => {
+		if (dirty) justSaved = false;
+	});
+
+	// Unsaved-changes guard: in-app navigation asks; closing the tab gets the browser prompt.
+	beforeNavigate((nav) => {
+		if (!dirty || busy) return;
+		if (!confirm('You have unsaved changes to the closing message. Leave without saving?')) nav.cancel();
+	});
+	$effect(() => {
+		if (!dirty) return;
+		const onBeforeUnload = (e: BeforeUnloadEvent) => e.preventDefault();
+		window.addEventListener('beforeunload', onBeforeUnload);
+		return () => window.removeEventListener('beforeunload', onBeforeUnload);
+	});
 	const problems = $derived(validateClosingMessages(draft));
 	const repoKey = $derived(newRepo.trim().toLowerCase());
 	const repoValid = $derived(/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(repoKey));
@@ -58,6 +76,7 @@
 			draft = structuredClone(result);
 			saved = JSON.stringify(result);
 			changed = { by: shellData().user?.login ?? null, at: Date.now() };
+			justSaved = true;
 			toast.success('Closing message saved');
 		} catch (e) {
 			toast.error('Could not save the closing message', { description: describeError(e).message });
@@ -75,7 +94,7 @@
 	description="What granary writes when it closes an issue or pull request from someone who isn't allowed. Markdown with variables; the preview uses sample data."
 />
 
-<div class="grid gap-4">
+<div class="grid gap-4 pb-2">
 			<Card.Root>
 				<Card.Header>
 					<Card.Title>Issues</Card.Title>
@@ -153,13 +172,18 @@
 				</Card.Content>
 			</Card.Root>
 
-			<div class="bg-background/95 sticky bottom-0 flex flex-wrap items-center gap-3 border-t py-3">
+			<div
+				class="bg-background sticky bottom-0 z-10 -mx-1 flex flex-wrap items-center gap-3 rounded-t-lg border-t px-1 py-3 shadow-[0_-6px_12px_-8px_rgb(0_0_0/0.25)]"
+				data-testid="closing-message-actions"
+			>
 				{#if admin}
 					<Button onclick={save} disabled={!dirty || busy || problems.length > 0} data-testid="save-closing-message">
 						{#if busy}<LoaderCircleIcon class="size-4 animate-spin" />{/if}Save
 					</Button>
 					<Button variant="ghost" onclick={discard} disabled={!dirty || busy}>Discard changes</Button>
-					{#if problems.length}<span class="text-destructive text-sm">Fix {problems.length} problem{problems.length === 1 ? '' : 's'} first.</span>{/if}
+					{#if problems.length}<span class="text-destructive text-sm">Fix {problems.length} problem{problems.length === 1 ? '' : 's'} first.</span>
+					{:else if dirty}<span class="text-sm text-amber-700 dark:text-amber-400" data-testid="unsaved">Unsaved changes</span>
+					{:else if justSaved}<span class="text-muted-foreground inline-flex items-center gap-1 text-sm" data-testid="saved"><CheckIcon class="size-4" />Saved</span>{/if}
 				{:else}
 					<span class="text-muted-foreground text-sm">Only admins can change the closing message.</span>
 				{/if}

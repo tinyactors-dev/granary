@@ -34,6 +34,17 @@ export function isTiny(value: unknown): boolean {
 	return oneLine(value).length <= 60;
 }
 
+/**
+ * A small flat object (at most 4 keys, primitive values): list rows show it as
+ * key/value pairs rather than a full viewer with a toolbar (design audit).
+ */
+export function isFlatSmall(value: unknown): value is Record<string, unknown> {
+	if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
+	if (value instanceof Map || value instanceof Set) return false;
+	const entries = Object.entries(value as Record<string, unknown>);
+	return entries.length > 0 && entries.length <= 4 && entries.every(([, v]) => v === null || typeof v !== 'object');
+}
+
 export function oneLine(value: unknown): string {
 	if (value === undefined) return 'undefined';
 	if (typeof value === 'bigint') return `${value}n`;

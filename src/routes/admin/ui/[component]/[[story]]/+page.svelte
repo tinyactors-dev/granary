@@ -82,7 +82,7 @@
 					style:min-height={entry.canvas?.minHeight}
 				>
 					{#key story.id}
-						<Preview {args} />
+						<Preview {args} setArgs={(patch: Args) => (args = { ...args, ...patch })} />
 					{/key}
 				</div>
 			</div>

@@ -10,7 +10,7 @@
 	import { JsonView, type ViewMode } from '$lib/components/json-view';
 	import { cn } from '$lib/utils';
 	import { jsonPrefs } from './json-prefs.svelte';
-	import { CHROME_PX, PRESETS, blockHeight, isTiny, oneLine, type JsonBlockPreset } from './json-block';
+	import { CHROME_PX, PRESETS, blockHeight, isFlatSmall, isTiny, oneLine, type JsonBlockPreset } from './json-block';
 
 	let {
 		value,
@@ -40,6 +40,7 @@
 
 	const depth = $derived(expandDepth ?? PRESETS[preset].expandDepth);
 	const tiny = $derived(!alwaysTree && isTiny(value));
+	const flat = $derived(!alwaysTree && !tiny && preset === 'inline' && isFlatSmall(value));
 	let host: HTMLDivElement | undefined = $state();
 	let chrome = $state(CHROME_PX);
 	const height = $derived(blockHeight(value, preset, depth, chrome));
@@ -65,6 +66,13 @@
 
 {#if tiny}
 	<code class={cn('font-mono text-xs break-all', className)} data-testid="json-inline">{oneLine(value)}</code>
+{:else if flat}
+	<dl class={cn('grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-0.5 text-xs', className)} data-testid="json-flat">
+		{#each Object.entries(value as Record<string, unknown>) as [k, v] (k)}
+			<dt class="text-muted-foreground font-mono">{k}</dt>
+			<dd class="min-w-0 font-mono break-all">{typeof v === 'string' ? v : oneLine(v)}</dd>
+		{/each}
+	</dl>
 {:else}
 	<!-- contain:inline-size keeps the viewer from widening table cells / grid tracks -->
 	<div bind:this={host} class={cn('w-full min-w-0 [contain:inline-size]', className)} data-testid="json-block" data-preset={preset}>

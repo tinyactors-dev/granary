@@ -14,9 +14,11 @@ import TraceViewerDocs from './previews/TraceViewerDocs.svelte';
 
 import MessageTemplatePreview from './previews/MessageTemplatePreview.svelte';
 import MessageTemplateDocs from './previews/MessageTemplateDocs.svelte';
-import { TEMPLATE_SAMPLES } from '$lib/schemas/message-template';
+import { DEFAULT_TEMPLATES, TEMPLATE_SAMPLES } from '$lib/schemas/message-template';
 
-const templateDefaults = { kind: 'issue', custom: false, template: '', inherited: '', inheritedLabel: '', label: 'Closing message (issues)', readonly: false, sample: '' };
+// Controls show what the canvas shows: the inherited text is the real default, and
+// `template` starts from it so switching `custom` on edits the visible text.
+const templateDefaults = { kind: 'issue', custom: false, template: DEFAULT_TEMPLATES.issue, inherited: DEFAULT_TEMPLATES.issue, inheritedLabel: 'the built-in default', label: 'Closing message (issues)', readonly: false, sample: 'issue' };
 
 const jsonDefaults ={ mode: 'structure', keymap: 'vim', expandDepth: 2, maxStringLength: 200, theme: 'auto', rootLabel: '$', height: '30rem', json: '' };
 
@@ -52,7 +54,7 @@ export const PREVIEWS: PreviewEntry[] = [
 				}
 			},
 			{ id: 'invalid', title: 'Invalid variable', description: 'Unknown variables and stray braces are reported inline.', args: { ...templateDefaults, custom: true, template: 'Closed {{issue_number}} by {{author} — see {{ url }}' } },
-			{ id: 'pull-request', title: 'Pull request', args: { ...templateDefaults, kind: 'pull_request', label: 'Closing message (pull requests)', sample: 'pr' } },
+			{ id: 'pull-request', title: 'Pull request', args: { ...templateDefaults, kind: 'pull_request', template: DEFAULT_TEMPLATES.pull_request, inherited: DEFAULT_TEMPLATES.pull_request, label: 'Closing message (pull requests)', sample: 'pr' } },
 			{
 				id: 'repo-override',
 				title: 'Per-repository override',
