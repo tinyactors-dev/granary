@@ -1,6 +1,6 @@
 # 57. A standalone JsonView component
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted (playground moved to /__dev/ui/json-view, ADR 77)
 
 ## Context
 Several places show structured data: the actor inspector's data model
