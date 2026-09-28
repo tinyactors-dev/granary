@@ -1,0 +1,46 @@
+# granary tasks (ADR 0020). Dev/test env defaults live in config/dev.env and
+# are attached per task, so `prod` never sees fake values.
+
+[tasks.install]
+description = "Install dependencies"
+run = "bun install"
+
+[tasks.dev]
+description = "SvelteKit dev server on Bun (http://localhost:5173)"
+env = { _.file = "config/dev.env" }
+run = "bun --bun vite dev --port 5173 --strictPort"
+
+[tasks.fake-github]
+description = "Fake GitHub server (http://localhost:4010)"
+env = { _.file = "config/dev.env" }
+run = "bun --hot fake-github/server.ts"
+
+[tasks."dev:all"]
+description = "Run fake GitHub and the dev server together"
+depends = ["fake-github", "dev"]
+
+[tasks.build]
+description = "Production build (svelte-adapter-bun) into build/"
+run = "bun --bun vite build"
+
+[tasks.start]
+description = "Run the built app with dev env (fake GitHub)"
+env = { _.file = "config/dev.env", ORIGIN = "http://localhost:3000" }
+run = "bun build/index.js"
+
+[tasks.check]
+description = "Type-check (svelte-kit sync + svelte-check)"
+run = ["bunx svelte-kit sync", "bunx svelte-check --tsconfig ./tsconfig.json --output human"]
+
+[tasks.test]
+description = "Integration tests against the built app (ADR 0007)"
+depends = ["build"]
+run = "bun test tests/"
+
+[tasks.prod]
+description = "Run the built app with production secrets from fnox"
+run = "fnox exec -P prod -- bun build/index.js"
+
+[tools]
+pitchfork = "latest"
+"npm:agent-browser" = "latest"  # interactive browser verification (ADR 0024)

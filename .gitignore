@@ -1,0 +1,48 @@
+# dependencies (bun install)
+node_modules
+
+# SvelteKit / Vite output
+.svelte-kit
+build
+/package
+vite.config.js.timestamp-*
+vite.config.ts.timestamp-*
+
+# local data (SQLite WAL etc.)
+data/*
+!data/.gitkeep
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# output
+out
+dist
+*.tgz
+
+# code coverage
+coverage
+*.lcov
+
+# logs
+logs
+*.log
+
+# dotenv environment variable files (secrets come from fnox)
+.env
+.env.*
+!.env.example
+
+# mise local overrides
+mise.local.toml
+
+# caches
+.eslintcache
+.cache
+*.tsbuildinfo
+
+# IntelliJ based IDEs
+.idea
+
+# Finder (MacOS) folder config
+.DS_Store

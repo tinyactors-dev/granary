@@ -1,0 +1,15 @@
+# Production secrets for granary (ADR 0005, ADR 0020).
+# These are 1Password *references* (item/field in the Personal vault via the
+# global `1password` provider), never values. Create the 1Password item
+# "granary" with these fields before running `mise run prod`.
+# Dev/test uses fake values from config/dev.env instead.
+#
+# They live in the `prod` profile (not the default one) so that shell
+# activation (`fnox activate`) does not try to resolve them on every `cd`
+# into the project (ADR 0025). Use: `fnox exec -P prod -- …` / `mise run prod`.
+
+[profiles.prod.secrets]
+GITHUB_TOKEN = { provider = "1password", value = "granary/github-token", description = "GitHub token used by the outbox relay (issues: write)" }
+GITHUB_WEBHOOK_SECRET = { provider = "1password", value = "granary/webhook-secret", description = "HMAC secret for X-Hub-Signature-256" }
+GITHUB_OAUTH_CLIENT_ID = { provider = "1password", value = "granary/oauth-client-id", description = "GitHub OAuth app client id (UI login)" }
+GITHUB_OAUTH_CLIENT_SECRET = { provider = "1password", value = "granary/oauth-client-secret", description = "GitHub OAuth app client secret (UI login)" }

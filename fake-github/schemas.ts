@@ -1,0 +1,257 @@
+/**
+ * Fake GitHub `/__control` API bodies and responses (ADR 0006, ADR 0035).
+ * GitHub-compatible shapes (issues, comments, webhook payloads) come from
+ * `src/lib/schemas/github.ts`.
+ *
+ * All control requests and responses are JSON. Errors: 400 for a body that
+ * fails its schema, 404 for an unknown repo / issue / delivery; body is
+ * `ControlError`.
+ */
+import { Type, type Static } from '@sinclair/typebox';
+import {
+	AuthorAssociation,
+	Issue,
+	IssueComment,
+	Login,
+	Nullable,
+	RepoName,
+	UserType
+} from '../src/lib/schemas/github';
+import { parse } from '../src/lib/schemas/standard';
+
+const closed = { additionalProperties: false } as const;
+
+/** Control API paths. */
+export const CONTROL_PATHS = {
+	reset: '/__control/reset',
+	users: '/__control/users',
+	repos: '/__control/repos',
+	issues: '/__control/issues',
+	reopen: '/__control/issues/reopen',
+	redeliver: (deliveryId: string) => `/__control/deliveries/${encodeURIComponent(deliveryId)}/redeliver`,
+	faults: '/__control/faults',
+	state: '/__control/state'
+} as const;
+
+// ---------------------------------------------------------------------------
+// Common
+// ---------------------------------------------------------------------------
+
+export const ControlOk = Type.Object({ ok: Type.Literal(true) }, closed);
+export type ControlOk = Static<typeof ControlOk>;
+
+export const ControlError = Type.Object(
+	{
+		error: Type.String(),
+		issues: Type.Optional(
+			Type.Array(Type.Object({ message: Type.String(), path: Type.Array(Type.Union([Type.String(), Type.Number()])) }))
+		)
+	},
+	closed
+);
+export type ControlError = Static<typeof ControlError>;
+
+// ---------------------------------------------------------------------------
+// POST /__control/reset  (no body) → ControlOk
+// ---------------------------------------------------------------------------
+
+export const ResetResponse = ControlOk;
+export type ResetResponse = ControlOk;
+
+// ---------------------------------------------------------------------------
+// POST /__control/users {login, type?} → FakeUser   (idempotent "ensure")
+// ---------------------------------------------------------------------------
+
+export const EnsureUserRequest = Type.Object(
+	{ login: Login, type: Type.Optional(UserType) },
+	closed
+);
+export type EnsureUserRequest = Static<typeof EnsureUserRequest>;
+
+export const FakeUser = Type.Object(
+	{ login: Type.String(), id: Type.Integer(), type: UserType, avatarUrl: Type.String() },
+	closed
+);
+export type FakeUser = Static<typeof FakeUser>;
+
+export const EnsureUserResponse = FakeUser;
+export type EnsureUserResponse = FakeUser;
+
+// ---------------------------------------------------------------------------
+// POST /__control/repos {owner, name} → {id}   (idempotent "ensure"; also ensures the owner user)
+// ---------------------------------------------------------------------------
+
+export const EnsureRepoRequest = Type.Object({ owner: Login, name: RepoName }, closed);
+export type EnsureRepoRequest = Static<typeof EnsureRepoRequest>;
+
+export const EnsureRepoResponse = Type.Object({ id: Type.Integer() }, closed);
+export type EnsureRepoResponse = Static<typeof EnsureRepoResponse>;
+
+export const FakeRepo = Type.Object(
+	{ id: Type.Integer(), owner: Type.String(), name: Type.String(), fullName: Type.String() },
+	closed
+);
+export type FakeRepo = Static<typeof FakeRepo>;
+
+// ---------------------------------------------------------------------------
+// POST /__control/issues → {number, deliveryId}
+// Ensures the repo and the author exist, creates the issue (state open),
+// then delivers `issues`/`opened` to FAKE_GITHUB_WEBHOOK_URL.
+// `association` defaults to 'NONE'; `body` defaults to ''.
+// The response is sent after the delivery attempt finished.
+// ---------------------------------------------------------------------------
+
+export const CreateIssueRequest = Type.Object(
+	{
+		owner: Login,
+		repo: RepoName,
+		author: Login,
+		title: Type.String({ minLength: 1 }),
+		body: Type.Optional(Type.String()),
+		association: Type.Optional(AuthorAssociation)
+	},
+	closed
+);
+export type CreateIssueRequest = Static<typeof CreateIssueRequest>;
+
+export const CreateIssueResponse = Type.Object(
+	{ number: Type.Integer({ minimum: 1 }), deliveryId: Type.String() },
+	closed
+);
+export type CreateIssueResponse = Static<typeof CreateIssueResponse>;
+
+// ---------------------------------------------------------------------------
+// POST /__control/issues/reopen {owner, repo, number, actor} → {deliveryId}
+// Sets state open / state_reason reopened, delivers `issues`/`reopened` with sender = actor.
+// ---------------------------------------------------------------------------
+
+export const ReopenIssueRequest = Type.Object(
+	{ owner: Login, repo: RepoName, number: Type.Integer({ minimum: 1 }), actor: Login },
+	closed
+);
+export type ReopenIssueRequest = Static<typeof ReopenIssueRequest>;
+
+export const ReopenIssueResponse = Type.Object({ deliveryId: Type.String() }, closed);
+export type ReopenIssueResponse = Static<typeof ReopenIssueResponse>;
+
+// ---------------------------------------------------------------------------
+// POST /__control/deliveries/{deliveryId}/redeliver (no body) → RedeliverResponse
+// Resends the stored body with the SAME X-GitHub-Delivery id.
+// ---------------------------------------------------------------------------
+
+export const RedeliverResponse = Type.Object(
+	{ deliveryId: Type.String(), responseCode: Nullable(Type.Integer()) },
+	closed
+);
+export type RedeliverResponse = Static<typeof RedeliverResponse>;
+
+// ---------------------------------------------------------------------------
+// POST /__control/faults → {id}
+// The next `count` REST calls (GitHub-compatible surface only, not /__control,
+// not OAuth) whose method matches (`*` = any) and whose URL pathname matches
+// `new RegExp(pathPattern)` (unanchored) fail with `status` and body
+// `{"message":"injected fault"}`. `retryAfter` (seconds) adds a `Retry-After` header.
+// ---------------------------------------------------------------------------
+
+export const FaultMethod = Type.Union([
+	Type.Literal('GET'),
+	Type.Literal('POST'),
+	Type.Literal('PATCH'),
+	Type.Literal('PUT'),
+	Type.Literal('DELETE'),
+	Type.Literal('*')
+]);
+export type FaultMethod = Static<typeof FaultMethod>;
+
+export const InjectFaultRequest = Type.Object(
+	{
+		method: FaultMethod,
+		pathPattern: Type.String({ minLength: 1 }),
+		status: Type.Integer({ minimum: 400, maximum: 599 }),
+		count: Type.Integer({ minimum: 1 }),
+		retryAfter: Type.Optional(Type.Integer({ minimum: 0 }))
+	},
+	closed
+);
+export type InjectFaultRequest = Static<typeof InjectFaultRequest>;
+
+export const InjectFaultResponse = Type.Object({ id: Type.String() }, closed);
+export type InjectFaultResponse = Static<typeof InjectFaultResponse>;
+
+export const FakeFault = Type.Object(
+	{
+		id: Type.String(),
+		method: FaultMethod,
+		pathPattern: Type.String(),
+		status: Type.Integer(),
+		/** Remaining matching calls that will fail. */
+		remaining: Type.Integer({ minimum: 0 }),
+		retryAfter: Type.Optional(Type.Integer())
+	},
+	closed
+);
+export type FakeFault = Static<typeof FakeFault>;
+
+// ---------------------------------------------------------------------------
+// GET /__control/state → FakeState
+// ---------------------------------------------------------------------------
+
+/** An issue as GitHub would return it, plus where it lives and its comments. */
+export const FakeIssue = Type.Intersect([
+	Issue,
+	Type.Object({
+		repoId: Type.Integer(),
+		owner: Type.String(),
+		repo: Type.String(),
+		comments: Type.Array(IssueComment)
+	})
+]);
+export type FakeIssue = Static<typeof FakeIssue>;
+
+export const FakeDeliveryStatus = Type.Union([
+	Type.Literal('pending'),
+	Type.Literal('delivered'),
+	Type.Literal('failed')
+]);
+export type FakeDeliveryStatus = Static<typeof FakeDeliveryStatus>;
+
+export const FakeDelivery = Type.Object(
+	{
+		id: Type.String(),
+		event: Type.String(),
+		action: Type.String(),
+		/** `delivered`: last attempt got 2xx; `failed`: non-2xx or unreachable. */
+		status: FakeDeliveryStatus,
+		/** HTTP status of the last attempt; null if unreachable / not yet sent. */
+		responseCode: Nullable(Type.Integer()),
+		repoId: Type.Optional(Type.Integer()),
+		issueNumber: Type.Optional(Type.Integer()),
+		/** Number of times sent (1 + redeliveries). */
+		attempts: Type.Optional(Type.Integer()),
+		/** Epoch ms of the last attempt. */
+		lastAttemptAt: Type.Optional(Nullable(Type.Integer()))
+	},
+	closed
+);
+export type FakeDelivery = Static<typeof FakeDelivery>;
+
+export const FakeState = Type.Object(
+	{
+		users: Type.Array(FakeUser),
+		repos: Type.Array(FakeRepo),
+		issues: Type.Array(FakeIssue),
+		/** Oldest first. */
+		deliveries: Type.Array(FakeDelivery),
+		faults: Type.Array(FakeFault)
+	},
+	closed
+);
+export type FakeState = Static<typeof FakeState>;
+export const StateResponse = FakeState;
+export type StateResponse = FakeState;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+export const parseFakeState = (v: unknown): FakeState => parse(FakeState, v, 'fake GitHub state');
