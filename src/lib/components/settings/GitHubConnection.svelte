@@ -1,8 +1,11 @@
 <!--
 	A connected GitHub (ADR 0160, 0162, 0210): the app, whether its credentials
-	work, missed-webhook catch-up, and the installations with a per-repository
-	switch. Disabled repositories still send webhooks; granary records them as
-	ignored.
+	work, missed-webhook catch-up, and the installations with per-repository
+	switches for issues and pull requests (ADR 0280). Pull requests need the
+	app's `pull_requests: write` permission, accepted on each installation
+	(ADR 0281); until then the pull request switch is disabled and a card says
+	how to grant it. Disabled repositories still send webhooks; granary records
+	them as ignored.
 -->
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
@@ -22,7 +25,7 @@
 	import AdminOnly from '$lib/components/app/AdminOnly.svelte';
 	import { describeError } from '$lib/components/app/format';
 	import { disconnectGitHub, refreshGitHubInstallations, setRepoEnabled } from '$lib/remote/settings.remote';
-	import type { GitHubStatus, RepoSummary } from '$lib/schemas/github-app';
+	import type { GitHubStatus, RepoSummary, RepoSwitch } from '$lib/schemas/github-app';
 
 	let { status }: { status: GitHubStatus } = $props();
 
@@ -42,9 +45,16 @@
 			disconnecting = false;
 		}
 	}
-	let toggling = $state<number | null>(null);
+	let toggling = $state<string | null>(null);
 
 	const guarded = $derived(status.installations.reduce((n, i) => n + i.repos.filter((r) => r.enabled).length, 0));
+	const guardedPrs = $derived(status.installations.reduce((n, i) => n + i.repos.filter((r) => r.prsEnabled && r.prAccess).length, 0));
+	const pr = $derived(status.pullRequests);
+	const web = $derived(status.app ? new URL(status.app.htmlUrl).origin : 'https://github.com');
+	const installationSettingsUrl = (inst: { installationId: number; account: string }, accountType: string | undefined) =>
+		accountType === 'Organization'
+			? `${web}/organizations/${encodeURIComponent(inst.account)}/settings/installations/${inst.installationId}`
+			: `${web}/settings/installations/${inst.installationId}`;
 
 	async function refresh() {
 		refreshing = true;
@@ -58,11 +68,12 @@
 		}
 	}
 
-	async function toggle(repo: RepoSummary, enabled: boolean) {
-		toggling = repo.repoId;
+	async function toggle(repo: RepoSummary, enabled: boolean, kind: RepoSwitch = 'issues') {
+		toggling = `${repo.repoId}:${kind}`;
+		const what = kind === 'pull_requests' ? 'pull requests in' : 'issues in';
 		try {
-			await setRepoEnabled({ repoId: repo.repoId, enabled });
-			toast.success(enabled ? `Guarding ${repo.fullName}` : `No longer guarding ${repo.fullName}`);
+			await setRepoEnabled({ repoId: repo.repoId, enabled, kind });
+			toast.success(enabled ? `Guarding ${what} ${repo.fullName}` : `No longer guarding ${what} ${repo.fullName}`);
 		} catch (e) {
 			toast.error(`Could not change ${repo.fullName}`, { description: describeError(e).message });
 		} finally {
@@ -73,12 +84,46 @@
 
 <div class="grid items-start gap-4 lg:grid-cols-[1fr_22rem]">
 	<div class="grid gap-4">
+		{#if pr && !pr.ready}
+			<Card.Root class="border-amber-500/40" data-testid="github-pr-access">
+				<Card.Header>
+					<Card.Title class="flex items-center gap-2"><CircleAlertIcon class="size-4 text-amber-600 dark:text-amber-400" /> Grant pull request access</Card.Title>
+					<Card.Description>
+						granary can also close pull requests from people who aren't on the allowlist, but this app can't touch pull requests yet. Until it can, pull requests are left alone.
+					</Card.Description>
+				</Card.Header>
+				<Card.Content class="grid gap-3 text-sm">
+					<ol class="grid list-decimal gap-2 pl-5">
+						<li class={pr.appPermission && pr.appEvent ? 'text-muted-foreground line-through' : ''}>
+							Open the <a class="underline" href={pr.permissionsUrl} target="_blank" rel="noreferrer">app's permissions on GitHub</a>, set
+							<strong>Repository permissions → Pull requests</strong> to <strong>Read and write</strong>, tick
+							<strong>Subscribe to events → Pull request</strong>, and <strong>Save changes</strong>.
+						</li>
+						<li class={pr.pendingInstallations.length === 0 ? 'text-muted-foreground line-through' : ''}>
+							Accept the new permissions on each installation (GitHub asks the account owner; it also emails them):
+							{#if pr.pendingInstallations.length}
+								<ul class="mt-1 grid gap-1">
+									{#each pr.pendingInstallations as p (p.installationId)}
+										{@const inst = status.installations.find((i) => i.installationId === p.installationId)}
+										<li>
+											<a class="underline" href={installationSettingsUrl(p, inst?.accountType)} target="_blank" rel="noreferrer">{p.account}</a>
+											<span class="text-muted-foreground">→ “Review request” → Accept new permissions</span>
+										</li>
+									{/each}
+								</ul>
+							{/if}
+						</li>
+						<li>Come back and press <strong>Refresh</strong>. The pull request switches unlock per repository.</li>
+					</ol>
+				</Card.Content>
+			</Card.Root>
+		{/if}
 		<Card.Root data-testid="github-installations">
 			<Card.Header class="flex flex-row items-start justify-between gap-3">
 				<div class="grid gap-1.5">
 					<Card.Title>Repositories</Card.Title>
 					<Card.Description>
-						{guarded} guarded. New issues in a guarded repository are checked against the allowlist; the others are left alone.
+						Issues guarded in {guarded}, pull requests in {guardedPrs}. New issues and pull requests in a guarded repository are checked against the allowlist; the others are left alone.
 					</Card.Description>
 				</div>
 				<div class="flex flex-wrap gap-2">
@@ -109,16 +154,35 @@
 								{#each inst.repos as repo (repo.repoId)}
 									<Table.Row data-testid="github-repo">
 										<Table.Cell class="font-medium">{repo.fullName}</Table.Cell>
-										<Table.Cell class="text-muted-foreground text-sm">{repo.enabled ? 'guarded' : 'not guarded'}</Table.Cell>
 										<Table.Cell class="w-0 text-right">
 											<AdminOnly reason="Only admins can change which repositories are guarded">
 												{#snippet children({ disabled })}
-													<Switch
-														checked={repo.enabled}
-														disabled={disabled || toggling === repo.repoId || inst.suspended}
-														aria-label="Guard {repo.fullName}"
-														onCheckedChange={(v) => toggle(repo, v)}
-													/>
+													<label class="flex items-center justify-end gap-2 text-sm whitespace-nowrap">
+														<span class="text-muted-foreground">Issues</span>
+														<Switch
+															checked={repo.enabled}
+															disabled={disabled || toggling === `${repo.repoId}:issues` || inst.suspended}
+															aria-label="Guard issues in {repo.fullName}"
+															data-testid="repo-switch-issues"
+															onCheckedChange={(v) => toggle(repo, v, 'issues')}
+														/>
+													</label>
+												{/snippet}
+											</AdminOnly>
+										</Table.Cell>
+										<Table.Cell class="w-0 text-right">
+											<AdminOnly reason={repo.prAccess ? 'Only admins can change which repositories are guarded' : 'The app has no pull request access on this installation yet'}>
+												{#snippet children({ disabled })}
+													<label class="flex items-center justify-end gap-2 text-sm whitespace-nowrap" title={repo.prAccess ? undefined : 'Grant the app pull request access first (see above)'}>
+														<span class="text-muted-foreground">Pull requests{repo.prAccess ? '' : ' (no access)'}</span>
+														<Switch
+															checked={repo.prsEnabled && repo.prAccess}
+															disabled={disabled || !repo.prAccess || toggling === `${repo.repoId}:pull_requests` || inst.suspended}
+															aria-label="Guard pull requests in {repo.fullName}"
+															data-testid="repo-switch-prs"
+															onCheckedChange={(v) => toggle(repo, v, 'pull_requests')}
+														/>
+													</label>
 												{/snippet}
 											</AdminOnly>
 										</Table.Cell>

@@ -205,6 +205,51 @@ export const parseIssuesWebhook = (body: string): IssuesWebhookPayload =>
 	parseJson(IssuesWebhookPayload, body, 'issues webhook payload');
 
 // ---------------------------------------------------------------------------
+// Webhook: `pull_request` event (X-GitHub-Event: pull_request, ADR 0280)
+// ---------------------------------------------------------------------------
+
+/** A pull request as webhooks and `GET /repos/{o}/{r}/pulls/{n}` show it (subset). */
+export const PullRequest = Type.Object(
+	{
+		id: Type.Integer(),
+		number: Type.Integer({ minimum: 1 }),
+		title: Type.String(),
+		body: Type.Optional(Nullable(Type.String())),
+		state: IssueState,
+		draft: Type.Optional(Type.Boolean()),
+		user: GitHubUser,
+		author_association: AuthorAssociation,
+		html_url: Type.String()
+	},
+	{ ...open, title: 'PullRequest' }
+);
+export type PullRequest = Static<typeof PullRequest>;
+
+export const PullRequestWebhookPayload = Type.Object(
+	{
+		action: Type.String(),
+		pull_request: PullRequest,
+		repository: Repository,
+		sender: GitHubUser
+	},
+	{ ...open, title: 'PullRequestWebhookPayload' }
+);
+export type PullRequestWebhookPayload = Static<typeof PullRequestWebhookPayload>;
+
+/** Parse a raw `pull_request` webhook body (text). Throws SchemaValidationError. */
+export const parsePullRequestWebhook = (body: string): PullRequestWebhookPayload =>
+	parseJson(PullRequestWebhookPayload, body, 'pull_request webhook payload');
+
+/** `PATCH /repos/{owner}/{repo}/pulls/{number}` (granary sends `{state:'closed'}`; pulls have no state_reason). */
+export const UpdatePullRequestRequest = Type.Object(
+	{ state: Type.Optional(IssueState), title: Type.Optional(Type.String()), body: Type.Optional(Nullable(Type.String())) },
+	closed
+);
+export type UpdatePullRequestRequest = Static<typeof UpdatePullRequestRequest>;
+
+export const parsePullRequest = (value: unknown): PullRequest => parse(PullRequest, value, 'pull request');
+
+// ---------------------------------------------------------------------------
 // REST request bodies (what granary sends)
 // ---------------------------------------------------------------------------
 

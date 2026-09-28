@@ -59,8 +59,11 @@ export const GitHubAppManifest = Type.Object(
 );
 export type GitHubAppManifest = Static<typeof GitHubAppManifest>;
 
-export const GITHUB_APP_PERMISSIONS = { issues: 'write', metadata: 'read' } as const;
-export const GITHUB_APP_EVENTS = ['issues'] as const;
+export const GITHUB_APP_PERMISSIONS = { issues: 'write', pull_requests: 'write', metadata: 'read' } as const;
+export const GITHUB_APP_EVENTS = ['issues', 'pull_request'] as const;
+/** Permission and event gating pull requests needs (ADR 0281). */
+export const PR_PERMISSION = 'pull_requests';
+export const PR_EVENT = 'pull_request';
 /** Webhook events granary accepts besides `issues` (installation sync, ADR 0160). */
 export const GITHUB_APP_LIFECYCLE_EVENTS = ['installation', 'installation_repositories'] as const;
 
@@ -131,7 +134,10 @@ export const GitHubAppRow = Type.Object(
 		owner_login: Type.String(),
 		client_id: Type.String(),
 		created_by: Type.String(),
-		created_at: EpochMs
+		created_at: EpochMs,
+		/** JSON of what the app asks for (`GET /app` / manifest conversion), null until known (ADR 0281). */
+		permissions: Nullable(Type.String()),
+		events: Nullable(Type.String())
 	},
 	closed
 );
@@ -144,7 +150,10 @@ export const InstallationRow = Type.Object(
 		account_type: Type.String(),
 		repository_selection: Type.Union([Type.Literal('all'), Type.Literal('selected')]),
 		suspended: Type.Integer({ minimum: 0, maximum: 1 }),
-		synced_at: EpochMs
+		synced_at: EpochMs,
+		/** JSON: accepted permissions / subscribed events (ADR 0281). */
+		permissions: Type.String(),
+		events: Type.String()
 	},
 	closed
 );
@@ -157,6 +166,8 @@ export const RepoRow = Type.Object(
 		installation_id: Nullable(Type.Integer()),
 		/** 1 = guarded (default), 0 = webhooks for it are stored as ignored. */
 		enabled: Type.Integer({ minimum: 0, maximum: 1 }),
+		/** 1 = pull requests gated when the installation has PR access (ADR 0280). */
+		prs_enabled: Type.Integer({ minimum: 0, maximum: 1 }),
 		updated_by: Nullable(Type.String()),
 		updated_at: EpochMs
 	},
@@ -181,11 +192,26 @@ export const GitHubInstallation = Type.Object(
 		id: Type.Integer(),
 		account: Type.Object({ login: Type.String(), type: Type.String() }, open),
 		repository_selection: Type.Union([Type.Literal('all'), Type.Literal('selected')]),
-		suspended_at: Type.Optional(Nullable(Type.String()))
+		suspended_at: Type.Optional(Nullable(Type.String())),
+		/** Permissions the account accepted for this installation (ADR 0281). */
+		permissions: Type.Optional(Type.Record(Type.String(), Type.String())),
+		events: Type.Optional(Type.Array(Type.String()))
 	},
 	open
 );
 export type GitHubInstallation = Static<typeof GitHubInstallation>;
+
+/** `GET /app` (subset): what the app asks for (ADR 0281). */
+export const GitHubAppInfo = Type.Object(
+	{
+		id: Type.Integer(),
+		slug: Type.Optional(Type.String()),
+		permissions: Type.Optional(Type.Record(Type.String(), Type.String())),
+		events: Type.Optional(Type.Array(Type.String()))
+	},
+	open
+);
+export type GitHubAppInfo = Static<typeof GitHubAppInfo>;
 
 /** `GET /installation/repositories` response (subset). */
 export const InstallationRepositories = Type.Object(
@@ -221,7 +247,17 @@ export type AppHookDelivery = Static<typeof AppHookDelivery>;
 // ---------------------------------------------------------------------------
 
 export const RepoSummary = Type.Object(
-	{ repoId: Type.Integer(), fullName: Type.String(), installationId: Nullable(Type.Integer()), enabled: Type.Boolean() },
+	{
+		repoId: Type.Integer(),
+		fullName: Type.String(),
+		installationId: Nullable(Type.Integer()),
+		/** Issues are gated (the original switch). */
+		enabled: Type.Boolean(),
+		/** Pull requests are gated (ADR 0280); effective only with PR access (`prAccess`). */
+		prsEnabled: Type.Boolean(),
+		/** The repo's installation accepted `pull_requests: write` (ADR 0281). */
+		prAccess: Type.Boolean()
+	},
 	closed
 );
 export type RepoSummary = Static<typeof RepoSummary>;
@@ -233,6 +269,8 @@ export const InstallationSummary = Type.Object(
 		accountType: Type.String(),
 		repositorySelection: Type.Union([Type.Literal('all'), Type.Literal('selected')]),
 		suspended: Type.Boolean(),
+		/** Accepted `pull_requests: write` (ADR 0281). */
+		prAccess: Type.Boolean(),
 		repos: Type.Array(RepoSummary),
 		syncedAt: EpochMs
 	},
@@ -275,6 +313,25 @@ export const GitHubStatus = Type.Object(
 			closed
 		),
 		installations: Type.Array(InstallationSummary),
+		/**
+		 * Pull request access (ADR 0281): the app must ask for
+		 * `pull_requests: write` and the `pull_request` event, and each
+		 * installation must accept them. Null while unknown (no app / not checked).
+		 */
+		pullRequests: Nullable(
+			Type.Object(
+				{
+					appPermission: Type.Boolean(),
+					appEvent: Type.Boolean(),
+					/** Installations that have not accepted the permission yet. */
+					pendingInstallations: Type.Array(Type.Object({ installationId: Type.Integer(), account: Type.String() }, closed)),
+					/** `https://github.com/settings/apps/<slug>/permissions` (or the org variant / the fake's). */
+					permissionsUrl: Type.String(),
+					ready: Type.Boolean()
+				},
+				closed
+			)
+		),
 		webhookUrl: Type.String(),
 		catchup: Nullable(CatchupStatus)
 	},
@@ -282,7 +339,13 @@ export const GitHubStatus = Type.Object(
 );
 export type GitHubStatus = Static<typeof GitHubStatus>;
 
-export const SetRepoEnabledInput = Type.Object({ repoId: Type.Integer(), enabled: Type.Boolean() }, closed);
+export const RepoSwitch = Type.Union([Type.Literal('issues'), Type.Literal('pull_requests')]);
+export type RepoSwitch = Static<typeof RepoSwitch>;
+/** `kind` absent = issues (the original switch). */
+export const SetRepoEnabledInput = Type.Object(
+	{ repoId: Type.Integer(), enabled: Type.Boolean(), kind: Type.Optional(RepoSwitch) },
+	closed
+);
 export type SetRepoEnabledInput = Static<typeof SetRepoEnabledInput>;
 
 /** Result of the manifest callback, for the page it redirects to. */

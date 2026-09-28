@@ -73,7 +73,7 @@ import type {
 	ScenarioDetail,
 	ScenarioSummary
 } from '../schemas/dev';
-import { parseIssuesWebhook } from '../schemas/github';
+import { parseIssuesWebhook, parsePullRequestWebhook } from '../schemas/github';
 import { issueKey } from '../schemas/actors';
 import { parse, SchemaValidationError } from '../schemas/standard';
 import {
@@ -200,6 +200,25 @@ export class RealBackend implements Backend {
 	// -- read models ----------------------------------------------------------------
 
 	#issueSummary(row: InboxRow | null): IssueSummary | null {
+		if (row?.event === 'pull_request') {
+			try {
+				const p = parsePullRequestWebhook(row.payload);
+				const pr = p.pull_request;
+				return {
+					kind: 'pull_request',
+					repoId: p.repository.id,
+					owner: p.repository.owner.login,
+					repo: p.repository.name,
+					number: pr.number,
+					title: pr.title,
+					author: pr.user.login,
+					association: pr.author_association,
+					htmlUrl: pr.html_url
+				};
+			} catch {
+				return null;
+			}
+		}
 		if (!row || row.event !== 'issues') return null;
 		try {
 			const p = parseIssuesWebhook(row.payload);

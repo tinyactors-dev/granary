@@ -91,8 +91,10 @@ export interface Overview {
 	generatedAt: number;
 }
 
-/** Issue facts extracted from a stored `issues` webhook payload. */
+/** Issue / pull request facts extracted from a stored `issues` or `pull_request` webhook payload. */
 export interface IssueSummary {
+	/** Absent = issue (ADR 0280). */
+	kind?: 'issue' | 'pull_request';
 	repoId: number;
 	owner: string;
 	repo: string;

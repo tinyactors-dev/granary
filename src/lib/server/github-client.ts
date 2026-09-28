@@ -7,6 +7,9 @@
 import {
 	CreateCommentRequest,
 	UpdateIssueRequest,
+	UpdatePullRequestRequest,
+	parsePullRequest,
+	type PullRequest,
 	parseIssue,
 	parseIssueComment,
 	parseIssueCommentList,
@@ -157,5 +160,12 @@ export class GitHubClient {
 	async closeIssue(owner: string, repo: string, number: number, signal?: AbortSignal): Promise<Issue> {
 		const req = parse(UpdateIssueRequest, { state: 'closed', state_reason: 'not_planned' }, 'update issue request');
 		return parseIssue(await this.#request('PATCH', this.#issuePath(owner, repo, number), req, signal));
+	}
+
+	/** `PATCH /repos/{o}/{r}/pulls/{n}` `{state:'closed'}` — idempotent; needs `pull_requests: write` (ADR 0280). */
+	async closePullRequest(owner: string, repo: string, number: number, signal?: AbortSignal): Promise<PullRequest> {
+		const req = parse(UpdatePullRequestRequest, { state: 'closed' }, 'update pull request request');
+		const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
+		return parsePullRequest(await this.#request('PATCH', path, req, signal));
 	}
 }

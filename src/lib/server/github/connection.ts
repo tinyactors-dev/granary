@@ -19,8 +19,11 @@ import {
 	GITHUB_APP_PERMISSIONS,
 	GITHUB_SECRET_REFS,
 	GITHUB_SETTING_KEYS,
+	GitHubAppInfo,
 	GitHubInstallation,
 	InstallationRepositories,
+	PR_EVENT,
+	PR_PERMISSION,
 	InstallationToken,
 	ManifestConversion,
 	type BeginManifestInput,
@@ -33,6 +36,8 @@ import {
 	type ManifestFormData,
 	type RepoRow,
 	type RepoSummary,
+	type InstallationRow,
+	type RepoSwitch,
 	type SetRepoEnabledInput
 } from '../../schemas/github-app';
 import { check, parse } from '../../schemas/standard';
@@ -171,19 +176,70 @@ export class GitHubConnection {
 	 * ignored. An unknown repo is registered when the (signed) delivery
 	 * names its installation, else ignored.
 	 */
-	repoPolicy(repoId: number, fullName: string, installationId: number | null): RepoPolicy {
-		const repo = this.#store.getRepo(repoId);
+	repoPolicy(repoId: number, fullName: string, installationId: number | null, kind: RepoSwitch = 'issues'): RepoPolicy {
+		let repo = this.#store.getRepo(repoId);
 		if (repo) {
-			if (!repo.enabled) return { guarded: false, reason: 'repo disabled' };
 			if (repo.full_name !== fullName || (installationId !== null && repo.installation_id !== installationId)) {
 				this.#store.upsertRepo(repoId, fullName, installationId ?? repo.installation_id);
+				repo = this.#store.getRepo(repoId) ?? repo;
 			}
-			return { guarded: true };
+		} else {
+			if (installationId === null) return { guarded: false, reason: 'unknown repo (no installation)' };
+			this.#store.upsertRepo(repoId, fullName, installationId);
+			log.info(`github: registered ${fullName} (#${repoId}) from a webhook of installation ${installationId}`);
+			repo = this.#store.getRepo(repoId);
+			if (!repo) return { guarded: false, reason: 'unknown repo' };
 		}
-		if (installationId === null) return { guarded: false, reason: 'unknown repo (no installation)' };
-		this.#store.upsertRepo(repoId, fullName, installationId);
-		log.info(`github: registered ${fullName} (#${repoId}) from a webhook of installation ${installationId}`);
+		if (kind === 'issues') return repo.enabled ? { guarded: true } : { guarded: false, reason: 'repo disabled' };
+		// Pull requests (ADR 0280, 0281): the repo's switch and accepted PR access.
+		if (!repo.prs_enabled) return { guarded: false, reason: 'pull requests disabled for this repo' };
+		if (!this.#installationHasPrAccess(repo.installation_id)) return { guarded: false, reason: 'the app has no pull request access on this installation' };
 		return { guarded: true };
+	}
+
+	// -- pull request access (ADR 0281) ---------------------------------------------------------
+
+	#installationHasPrAccess(installationId: number | null): boolean {
+		if (installationId === null) return false;
+		const inst = this.#store.listInstallations().find((i) => i.installation_id === installationId);
+		return inst ? installationPrAccess(inst) : false;
+	}
+
+	/** App-level PR permission/event, from the stored `GET /app` answer (null = unknown). */
+	#appPrAccess(): { permission: boolean; event: boolean } | null {
+		const app = this.#store.getApp();
+		if (!app || app.permissions === null) return null;
+		const perms = jsonRecord(app.permissions);
+		const events = jsonArray(app.events);
+		return { permission: perms[PR_PERMISSION] === 'write', event: events.includes(PR_EVENT) };
+	}
+
+	/** `https://github.com/settings/apps/<slug>/permissions` (org apps: `/organizations/<org>/settings/apps/<slug>/permissions`). */
+	permissionsUrl(): string | null {
+		const app = this.#store.getApp();
+		if (!app) return null;
+		const web = this.#config.githubWebUrl.replace(/\/+$/, '');
+		const orgOwned = this.#store.listInstallations().some((i) => i.account_login.toLowerCase() === app.owner_login.toLowerCase() && i.account_type === 'Organization');
+		return orgOwned
+			? `${web}/organizations/${encodeURIComponent(app.owner_login)}/settings/apps/${encodeURIComponent(app.slug)}/permissions`
+			: `${web}/settings/apps/${encodeURIComponent(app.slug)}/permissions`;
+	}
+
+	pullRequestAccess(): GitHubStatus['pullRequests'] {
+		const app = this.#store.getApp();
+		const access = this.#appPrAccess();
+		if (!app || !access) return null;
+		const pendingInstallations = this.#store
+			.listInstallations()
+			.filter((i) => !i.suspended && !installationPrAccess(i))
+			.map((i) => ({ installationId: i.installation_id, account: i.account_login }));
+		return {
+			appPermission: access.permission,
+			appEvent: access.event,
+			pendingInstallations,
+			permissionsUrl: this.permissionsUrl() ?? '',
+			ready: access.permission && access.event && pendingInstallations.length === 0
+		};
 	}
 
 	/** Sync from `installation` / `installation_repositories` webhooks. Returns a short note. */
@@ -205,6 +261,14 @@ export class GitHubConnection {
 				});
 			} else if (body.action === 'suspend' || body.action === 'unsuspend') {
 				this.#store.setInstallationSuspended(id, body.action === 'suspend');
+			}
+			// `new_permissions_accepted` carries the installation's accepted permissions (ADR 0281).
+			const perms = (inst as { permissions?: unknown }).permissions;
+			const evs = (inst as { events?: unknown }).events;
+			if (perms && typeof perms === 'object' && !Array.isArray(perms)) {
+				this.#store.setInstallationPermissions(id, perms as Record<string, string>, Array.isArray(evs) ? (evs as string[]) : null);
+				// Tokens minted before carry the old permissions.
+				if (body.action === 'new_permissions_accepted') this.#tokens.invalidate(id);
 			}
 			for (const r of body.repositories ?? []) this.#store.upsertRepo(r.id, r.full_name, id);
 			return `installation ${id} ${body.action}`;
@@ -348,7 +412,9 @@ export class GitHubConnection {
 			owner_login: conv.owner.login,
 			client_id: conv.client_id,
 			created_by: actor,
-			created_at: now
+			created_at: now,
+			permissions: conv.permissions ? JSON.stringify(conv.permissions) : null,
+			events: conv.events ? JSON.stringify(conv.events) : null
 		});
 		this.#tokens.clear();
 		this.#setMode('app', actor);
@@ -378,6 +444,10 @@ export class GitHubConnection {
 
 	async refreshInstallations(actor: string): Promise<InstallationSummary[]> {
 		if (this.mode() !== 'app') throw new BackendError('invalid', 'Installations exist only in GitHub App mode');
+		// Refresh also re-reads what the app asks for (`GET /app`, ADR 0281): after granting
+		// pull request access on GitHub, one Refresh shows it.
+		this.#auth = { ...this.#auth, checkedAt: null };
+		await this.#checkAuth();
 		const seen: number[] = [];
 		let path: string | null = '/app/installations?per_page=100';
 		try {
@@ -435,16 +505,18 @@ export class GitHubConnection {
 			accountType: i.account_type,
 			repositorySelection: i.repository_selection,
 			suspended: i.suspended === 1,
-			repos: repos.filter((r) => r.installation_id === i.installation_id).map(repoSummary),
+			prAccess: installationPrAccess(i),
+			repos: repos.filter((r) => r.installation_id === i.installation_id).map((r) => repoSummary(r, installationPrAccess(i))),
 			syncedAt: i.synced_at
 		}));
 	}
 
 	setRepoEnabled(input: SetRepoEnabledInput, actor: string): RepoSummary {
-		const row = this.#store.setRepoEnabled(input.repoId, input.enabled, actor);
+		const kind = input.kind ?? 'issues';
+		const row = this.#store.setRepoEnabled(input.repoId, input.enabled, actor, Date.now(), kind);
 		if (!row) throw new BackendError('not-found', `Unknown repository ${input.repoId}`);
-		log.info(`github: ${row.full_name} ${input.enabled ? 'enabled' : 'disabled'} by ${actor}`);
-		return repoSummary(row);
+		log.info(`github: ${row.full_name} ${kind === 'pull_requests' ? 'pull requests' : 'issues'} ${input.enabled ? 'enabled' : 'disabled'} by ${actor}`);
+		return repoSummary(row, this.#installationHasPrAccess(row.installation_id));
 	}
 
 	// -- app hook deliveries (ADR 0162) ------------------------------------------------------------
@@ -494,7 +566,9 @@ export class GitHubConnection {
 			return;
 		}
 		try {
-			await this.appRequest('GET', '/app');
+			const info = parse(GitHubAppInfo, await this.appRequest('GET', '/app'), 'GET /app');
+			const app = this.#store.getApp();
+			if (app) this.#store.setAppPermissions(app.app_id, info.permissions ?? {}, info.events ?? []);
 			this.#auth = { ok: true, checkedAt: now, error: null };
 		} catch (e) {
 			const message = e instanceof GitHubHttpError ? `HTTP ${e.status}` : (e as Error).message;
@@ -521,12 +595,43 @@ export class GitHubConnection {
 				: null,
 			auth: { ...this.#auth },
 			installations: this.installations(),
+			pullRequests: mode === 'app' ? this.pullRequestAccess() : null,
 			webhookUrl: `${(this.#config.origin ?? '').replace(/\/+$/, '')}/webhook`,
 			catchup: mode === 'app' ? this.catchupStatus() : null
 		};
 	}
 }
 
-function repoSummary(r: RepoRow): RepoSummary {
-	return { repoId: r.repo_id, fullName: r.full_name, installationId: r.installation_id, enabled: r.enabled === 1 };
+function repoSummary(r: RepoRow, prAccess: boolean): RepoSummary {
+	return {
+		repoId: r.repo_id,
+		fullName: r.full_name,
+		installationId: r.installation_id,
+		enabled: r.enabled === 1,
+		prsEnabled: r.prs_enabled === 1,
+		prAccess
+	};
+}
+
+function jsonRecord(text: string | null): Record<string, string> {
+	try {
+		const v: unknown = text ? JSON.parse(text) : {};
+		return v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, string>) : {};
+	} catch {
+		return {};
+	}
+}
+
+function jsonArray(text: string | null): string[] {
+	try {
+		const v: unknown = text ? JSON.parse(text) : [];
+		return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+/** The installation accepted `pull_requests: write` and subscribes to `pull_request` (ADR 0281). */
+export function installationPrAccess(i: InstallationRow): boolean {
+	return jsonRecord(i.permissions)[PR_PERMISSION] === 'write' && jsonArray(i.events).includes(PR_EVENT);
 }

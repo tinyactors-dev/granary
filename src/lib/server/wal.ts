@@ -168,7 +168,13 @@ const MIGRATIONS: string[] = [
 		expires_at INTEGER,
 		added_by TEXT,
 		added_at INTEGER NOT NULL
-	);`
+	);`,
+	/* 3: pull request gating (ADR 0280, 0281) */
+	`ALTER TABLE github_repos ADD COLUMN prs_enabled INTEGER NOT NULL DEFAULT 1 CHECK (prs_enabled IN (0,1));
+	ALTER TABLE github_installations ADD COLUMN permissions TEXT NOT NULL DEFAULT '{}';
+	ALTER TABLE github_installations ADD COLUMN events TEXT NOT NULL DEFAULT '[]';
+	ALTER TABLE github_app ADD COLUMN permissions TEXT;
+	ALTER TABLE github_app ADD COLUMN events TEXT;`
 ];
 
 export interface InsertInbox {
@@ -307,10 +313,10 @@ export class Wal {
 			.map(parseInboxRow);
 	}
 
-	/** Newest `issues` inbox row per issue key, for a set of keys. */
+	/** Newest `issues` / `pull_request` inbox row per issue key (ADR 0280). */
 	latestIssuesInbox(issueKey: string): InboxRow | null {
 		const r = this.#q(
-			`SELECT * FROM inbox WHERE issue_key = $key AND event = 'issues' ORDER BY (action = 'opened') DESC, received_at DESC LIMIT 1`
+			`SELECT * FROM inbox WHERE issue_key = $key AND event IN ('issues','pull_request') ORDER BY (action = 'opened') DESC, received_at DESC LIMIT 1`
 		).get({ key: issueKey });
 		return r ? parseInboxRow(r) : null;
 	}

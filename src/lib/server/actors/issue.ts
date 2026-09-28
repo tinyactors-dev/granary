@@ -1,6 +1,7 @@
 /**
- * `issue/<repoId>-<number>` — one virtual actor per issue (ADR 0002,
- * ADR 0033). Spawned by the `issue` family loader with an
+ * `issue/<repoId>-<number>` — one virtual actor per issue or pull request
+ * (ADR 0002, ADR 0033, ADR 0280: `issue.opened` data carries `kind`, which
+ * the close request passes on to the relay). Spawned by the `issue` family loader with an
  * `IssueActorData` binding built from SQLite; destroyed when it finishes.
  *
  *   restore ──(phase closing)──────────────────────────────▶ closing
@@ -69,6 +70,7 @@ function doneData(verdict: IssueOutcome) {
 function closeRequest({ data }: Ctx): GitHubCloseData {
 	const i = data.issue!;
 	return {
+		...(i.kind === 'pull_request' ? { kind: 'pull_request' as const } : {}),
 		repoId: i.repoId,
 		owner: i.owner,
 		repo: i.repo,

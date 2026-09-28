@@ -8,7 +8,8 @@
  *      for an existing comment carrying `<!-- granary:<effect_key> -->`;
  *      otherwise / if none, POST the closing comment with that marker.
  *      Store `comment_id`.
- *   2. PATCH the issue `state=closed, state_reason=not_planned` (idempotent).
+ *   2. PATCH the issue `state=closed, state_reason=not_planned`, or for a
+ *      pull request `PATCH …/pulls/{n}` `state=closed` (idempotent, ADR 0280).
  *   3. mark the row `done`, then `system.post(reply_to, 'github.closed', …)`.
  * On failure: `pending` again with exponential backoff (or `Retry-After`),
  * or after MAX_EFFECT_ATTEMPTS `dead` + `github.gave-up` to `reply_to`.
@@ -170,7 +171,8 @@ export class Relay {
 					this.#wal.setCommentId(key, commentId);
 				}
 			}
-			await github.closeIssue(payload.owner, payload.repo, payload.number, signal);
+			if (payload.kind === 'pull_request') await github.closePullRequest(payload.owner, payload.repo, payload.number, signal);
+			else await github.closeIssue(payload.owner, payload.repo, payload.number, signal);
 			this.#wal.markOutboxDone(key);
 			log.info(`relay: ${key} done (comment ${commentId}, attempt ${row.attempts})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'github.comment_id': commentId ?? undefined, 'relay.attempts': row.attempts });
 			this.#reply(replyTo, EVENTS.githubClosed, { effectKey: key, commentId } satisfies GitHubClosedData);

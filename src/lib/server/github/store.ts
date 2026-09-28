@@ -94,10 +94,17 @@ export class GitHubStore {
 		parse(GitHubAppRow, row, 'github_app row');
 		this.db
 			.query(
-				`INSERT INTO github_app (app_id, slug, name, html_url, owner_login, client_id, created_by, created_at)
-				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)`
+				`INSERT INTO github_app (app_id, slug, name, html_url, owner_login, client_id, created_by, created_at, permissions, events)
+				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`
 			)
-			.run(row.app_id, row.slug, row.name, row.html_url, row.owner_login, row.client_id, row.created_by, row.created_at);
+			.run(row.app_id, row.slug, row.name, row.html_url, row.owner_login, row.client_id, row.created_by, row.created_at, row.permissions, row.events);
+	}
+
+	/** Record what the app asks for, from `GET /app` (ADR 0281). */
+	setAppPermissions(appId: number, permissions: Record<string, string>, events: string[]): void {
+		this.db
+			.query('UPDATE github_app SET permissions = ?2, events = ?3 WHERE app_id = ?1')
+			.run(appId, JSON.stringify(permissions), JSON.stringify(events));
 	}
 
 	// -- installations & repos --------------------------------------------------------
@@ -112,12 +119,29 @@ export class GitHubStore {
 	upsertInstallation(inst: GitHubInstallation, now = Date.now()): void {
 		this.db
 			.query(
-				`INSERT INTO github_installations (installation_id, account_login, account_type, repository_selection, suspended, synced_at)
-				 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+				`INSERT INTO github_installations (installation_id, account_login, account_type, repository_selection, suspended, synced_at, permissions, events)
+				 VALUES (?1, ?2, ?3, ?4, ?5, ?6, COALESCE(?7, '{}'), COALESCE(?8, '[]'))
 				 ON CONFLICT(installation_id) DO UPDATE SET account_login = excluded.account_login, account_type = excluded.account_type,
-				   repository_selection = excluded.repository_selection, suspended = excluded.suspended, synced_at = excluded.synced_at`
+				   repository_selection = excluded.repository_selection, suspended = excluded.suspended, synced_at = excluded.synced_at,
+				   permissions = COALESCE(?7, github_installations.permissions), events = COALESCE(?8, github_installations.events)`
 			)
-			.run(inst.id, inst.account.login, inst.account.type, inst.repository_selection, inst.suspended_at ? 1 : 0, now);
+			.run(
+				inst.id,
+				inst.account.login,
+				inst.account.type,
+				inst.repository_selection,
+				inst.suspended_at ? 1 : 0,
+				now,
+				inst.permissions ? JSON.stringify(inst.permissions) : null,
+				inst.events ? JSON.stringify(inst.events) : null
+			);
+	}
+
+	/** Update accepted permissions/events of a known installation (e.g. `new_permissions_accepted`). */
+	setInstallationPermissions(installationId: number, permissions: Record<string, string>, events: string[] | null, now = Date.now()): void {
+		this.db
+			.query('UPDATE github_installations SET permissions = ?2, events = COALESCE(?3, events), synced_at = ?4 WHERE installation_id = ?1')
+			.run(installationId, JSON.stringify(permissions), events ? JSON.stringify(events) : null, now);
 	}
 
 	/** Forget the app, its installations and pending manifests; repos keep their `enabled` choice. */
@@ -188,9 +212,10 @@ export class GitHubStore {
 		this.db.query('UPDATE github_repos SET installation_id = NULL, updated_at = ?2 WHERE repo_id = ?1').run(repoId, now);
 	}
 
-	setRepoEnabled(repoId: number, enabled: boolean, by: string, now = Date.now()): RepoRow | null {
+	setRepoEnabled(repoId: number, enabled: boolean, by: string, now = Date.now(), kind: 'issues' | 'pull_requests' = 'issues'): RepoRow | null {
+		const column = kind === 'pull_requests' ? 'prs_enabled' : 'enabled';
 		const r = this.db
-			.query('UPDATE github_repos SET enabled = ?2, updated_by = ?3, updated_at = ?4 WHERE repo_id = ?1')
+			.query(`UPDATE github_repos SET ${column} = ?2, updated_by = ?3, updated_at = ?4 WHERE repo_id = ?1`)
 			.run(repoId, enabled ? 1 : 0, by, now);
 		return r.changes ? this.getRepo(repoId) : null;
 	}

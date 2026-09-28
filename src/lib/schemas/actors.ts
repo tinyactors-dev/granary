@@ -23,6 +23,16 @@ export type ActorAddress = Static<typeof ActorAddress>;
 
 export const FAMILY = { issue: 'issue', allowlist: 'allowlist' } as const;
 
+/**
+ * What an `issue/<key>` actor gates (ADR 0280). GitHub numbers issues and
+ * pull requests in one sequence per repository, so `<repoId>-<number>` stays
+ * unique and one actor family serves both. Absent = `issue` (rows written
+ * before pull requests were gated).
+ */
+export const ItemKind = Type.Union([Type.Literal('issue'), Type.Literal('pull_request')], { title: 'item kind' });
+export type ItemKind = Static<typeof ItemKind>;
+export const itemKindOf = (v: { kind?: ItemKind } | null | undefined): ItemKind => v?.kind ?? 'issue';
+
 /** `allowlist/main`, spawned at boot. */
 export const ALLOWLIST_ADDRESS: ActorAddress = Object.freeze({ family: FAMILY.allowlist, name: 'main' });
 
@@ -110,6 +120,8 @@ export const IssueOpenedData = Type.Object(
 	{
 		deliveryId: Type.String({ minLength: 1 }),
 		issueKey: IssueKey,
+		/** `pull_request` for a gated pull request; absent = issue (ADR 0280). */
+		kind: Type.Optional(ItemKind),
 		repoId: Type.Integer(),
 		owner: Type.String(),
 		repo: Type.String(),
@@ -181,6 +193,8 @@ export type BlocklistReplaceData = Static<typeof BlocklistReplaceData>;
  */
 export const GitHubCloseData = Type.Object(
 	{
+		/** `pull_request` → the relay closes via the Pulls API; absent = issue (ADR 0280). */
+		kind: Type.Optional(ItemKind),
 		repoId: Type.Integer(),
 		owner: Type.String(),
 		repo: Type.String(),

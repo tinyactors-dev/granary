@@ -6,7 +6,14 @@
  */
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { issueKey, type IssueOpenedData } from '../schemas/actors';
-import { AuthorAssociation, WEBHOOK_HEADERS, parseIssuesWebhook, type IssuesWebhookPayload } from '../schemas/github';
+import {
+	AuthorAssociation,
+	WEBHOOK_HEADERS,
+	parseIssuesWebhook,
+	parsePullRequestWebhook,
+	type IssuesWebhookPayload,
+	type PullRequestWebhookPayload
+} from '../schemas/github';
 import { GITHUB_APP_LIFECYCLE_EVENTS } from '../schemas/github-app';
 import { SchemaValidationError, check } from '../schemas/standard';
 import type { InboxRow } from '../schemas/wal';
@@ -44,11 +51,32 @@ export function issueOpenedData(deliveryId: string, p: IssuesWebhookPayload): Is
 	};
 }
 
-/** `issue.opened` data from a stored `issues`/`opened` inbox row, or null if it does not parse. */
+/** `issue.opened` data (kind `pull_request`) for a parsed `pull_request` payload (ADR 0280). */
+export function pullRequestOpenedData(deliveryId: string, p: PullRequestWebhookPayload): IssueOpenedData {
+	const pr = p.pull_request;
+	return {
+		deliveryId,
+		issueKey: issueKey(p.repository.id, pr.number),
+		kind: 'pull_request',
+		repoId: p.repository.id,
+		owner: p.repository.owner.login,
+		repo: p.repository.name,
+		number: pr.number,
+		author: pr.user.login,
+		authorType: pr.user.type,
+		association: check(AuthorAssociation, pr.author_association) ? pr.author_association : 'NONE',
+		title: pr.title,
+		htmlUrl: pr.html_url
+	};
+}
+
+/** `issue.opened` data from a stored `issues.opened` / `pull_request.opened` inbox row, or null if it does not parse. */
 export function issueOpenedFromInbox(row: InboxRow): IssueOpenedData | null {
-	if (row.event !== 'issues' || row.action !== 'opened') return null;
+	if (row.action !== 'opened') return null;
 	try {
-		return issueOpenedData(row.delivery_id, parseIssuesWebhook(row.payload));
+		if (row.event === 'issues') return issueOpenedData(row.delivery_id, parseIssuesWebhook(row.payload));
+		if (row.event === 'pull_request') return pullRequestOpenedData(row.delivery_id, parsePullRequestWebhook(row.payload));
+		return null;
 	} catch {
 		return null;
 	}
@@ -95,6 +123,7 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 	}
 
 	let payload: IssuesWebhookPayload | null = null;
+	let prPayload: PullRequestWebhookPayload | null = null;
 	let json: unknown = null;
 	let action: string | null = null;
 	let key: string | null = null;
@@ -104,6 +133,10 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 			payload = parseIssuesWebhook(raw);
 			action = payload.action;
 			key = issueKey(payload.repository.id, payload.issue.number);
+		} else if (event === 'pull_request') {
+			prPayload = parsePullRequestWebhook(raw);
+			action = prPayload.action;
+			key = issueKey(prPayload.repository.id, prPayload.pull_request.number);
 		} else {
 			const a = (json as { action?: unknown } | null)?.action;
 			action = typeof a === 'string' ? a : null;
@@ -125,9 +158,13 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 	if (payload) {
 		const policy = rt.github.repoPolicy(payload.repository.id, payload.repository.full_name, installationIdOf(json));
 		if (!policy.guarded) reason = policy.reason;
+	} else if (prPayload && action === 'opened') {
+		// Only `opened` is gated, drafts included (ADR 0280); the policy is per kind.
+		const policy = rt.github.repoPolicy(prPayload.repository.id, prPayload.repository.full_name, installationIdOf(json), 'pull_requests');
+		if (!policy.guarded) reason = policy.reason;
 	}
 
-	const actionable = event === 'issues' && action === 'opened' && reason === null;
+	const actionable = (event === 'issues' || event === 'pull_request') && action === 'opened' && reason === null;
 	const state = actionable ? 'pending' : 'ignored';
 	let inserted: boolean;
 	try {
@@ -143,15 +180,16 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 		'github.event': event,
 		'github.action': action ?? undefined,
 		'github.delivery_id': deliveryId,
-		'github.repository': payload?.repository.full_name,
-		'github.issue.number': payload?.issue.number,
-		'github.issue.author': payload?.issue.user.login,
+		'github.repository': payload?.repository.full_name ?? prPayload?.repository.full_name,
+		'github.issue.number': payload?.issue.number ?? prPayload?.pull_request.number,
+		'github.issue.author': payload?.issue.user.login ?? prPayload?.pull_request.user.login,
 		'granary.issue_key': key ?? undefined,
 		'webhook.outcome': outcome,
 		'webhook.reason': outcome === 'ignored' ? ignoreReason : undefined
 	});
 
 	if (inserted && actionable && payload) rt.postIssueOpened(issueOpenedData(deliveryId, payload), traceparentFor(currentLogContext()));
+	if (inserted && actionable && prPayload) rt.postIssueOpened(pullRequestOpenedData(deliveryId, prPayload), traceparentFor(currentLogContext()));
 
 	return { status: 202, body: { deliveryId, state, duplicate: !inserted, ...(reason ? { reason } : {}), ...(note ? { note } : {}) } };
 }

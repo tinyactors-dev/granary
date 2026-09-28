@@ -83,6 +83,7 @@ export function issueLoaderBinding(wal: Wal, key: string): IssueLoaderBinding {
 			issue: {
 				deliveryId: p.deliveryId,
 				issueKey: key,
+				...(p.kind ? { kind: p.kind } : {}),
 				repoId: p.repoId,
 				owner: p.owner,
 				repo: p.repo,

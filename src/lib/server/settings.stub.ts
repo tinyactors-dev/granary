@@ -73,11 +73,13 @@ export class StubSettings {
 				accountType: 'Organization',
 				repositorySelection: 'selected',
 				suspended: false,
+				// Like an app created before pull request gating: not granted yet (ADR 0281).
+				prAccess: false,
 				syncedAt: at,
 				repos: [
-					{ repoId: 1001, fullName: 'acme/widgets', installationId: 9001, enabled: true },
-					{ repoId: 1002, fullName: 'acme/gadgets', installationId: 9001, enabled: true },
-					{ repoId: 1003, fullName: 'acme/sandbox', installationId: 9001, enabled: false }
+					{ repoId: 1001, fullName: 'acme/widgets', installationId: 9001, enabled: true, prsEnabled: true, prAccess: false },
+					{ repoId: 1002, fullName: 'acme/gadgets', installationId: 9001, enabled: true, prsEnabled: true, prAccess: false },
+					{ repoId: 1003, fullName: 'acme/sandbox', installationId: 9001, enabled: false, prsEnabled: false, prAccess: false }
 				]
 			}
 		];
@@ -201,6 +203,16 @@ export class StubSettings {
 			app: this.#app,
 			auth: this.#mode === 'none' ? { ok: null, checkedAt: null, error: null } : { ok: true, checkedAt: Date.now() - 60_000, error: null },
 			installations: this.#installations,
+			pullRequests:
+				this.#mode === 'app' && this.#app
+					? {
+							appPermission: false,
+							appEvent: false,
+							pendingInstallations: this.#installations.filter((i) => !i.prAccess).map((i) => ({ installationId: i.installationId, account: i.account })),
+							permissionsUrl: `${this.#web}/organizations/${this.#app.owner}/settings/apps/${this.#app.slug}/permissions`,
+							ready: false
+						}
+					: null,
 			webhookUrl: `${this.#origin}/webhook`,
 			catchup: this.#mode === 'app' ? { lastPassAt: Date.now() - 240_000, lastPassRedelivered: 0, totalRedelivered: 3, lastError: null } : null
 		};
@@ -250,8 +262,9 @@ export class StubSettings {
 		for (const i of this.#installations) {
 			const repo = i.repos.find((r) => r.repoId === input.repoId);
 			if (repo) {
-				repo.enabled = input.enabled;
-				this.#log(actor, input.enabled ? 'github.repo.enable' : 'github.repo.disable', repo.fullName);
+				if (input.kind === 'pull_requests') repo.prsEnabled = input.enabled;
+				else repo.enabled = input.enabled;
+				this.#log(actor, input.enabled ? 'github.repo.enable' : 'github.repo.disable', `${repo.fullName}${input.kind === 'pull_requests' ? ' (pull requests)' : ''}`);
 				return repo;
 			}
 		}
