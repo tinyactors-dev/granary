@@ -10,6 +10,7 @@
 	import ConditionCard from '$lib/components/ops/ConditionCard.svelte';
 	import EventTimeline from '$lib/components/ops/EventTimeline.svelte';
 	import ProjectionMeters from '$lib/components/ops/ProjectionMeters.svelte';
+	import ExternalLink from '$lib/components/ops/ExternalLink.svelte';
 	import { DAY, bytes, drillTone, KIND_LABEL } from '$lib/components/ops/format';
 	import {
 		getOpsProjections,
@@ -104,10 +105,12 @@
 				</Card.Header>
 				<Card.Content class="grid gap-2 text-sm">
 					{#each s.telemetry as t (t.sinkId)}
+						{@const grafana = sinkList.find((x) => x.id === t.sinkId)?.grafanaUrl}
 						<div class="flex flex-wrap items-center gap-2" data-testid="ops-telemetry-row">
 							<a class="font-medium hover:underline" href="/ops/telemetry/{t.sinkId}">{sinkList.find((x) => x.id === t.sinkId)?.name ?? t.sinkId}</a>
 							<StateBadge state={t.state} tone={t.state === 'open' ? 'warning' : t.state === 'disabled' ? 'muted' : 'success'} />
 							<span class="text-muted-foreground text-xs">last export <RelativeTime ms={t.lastSuccessAt} />{t.droppedLast24h ? ` · ${t.droppedLast24h} dropped in 24 h` : ''}</span>
+							{#if grafana}<ExternalLink href={grafana} label="Open Grafana" class="ml-auto text-xs" />{/if}
 						</div>
 					{:else}
 						<p class="text-muted-foreground">No telemetry sink. <a class="underline" href="/ops/telemetry/new">Add one</a>.</p>

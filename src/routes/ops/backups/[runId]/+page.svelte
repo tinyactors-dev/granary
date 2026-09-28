@@ -16,6 +16,8 @@
 	import { describeError } from '$lib/components/app/format';
 	import { UPLOAD_STEPS, bytes, duration, runTone, uploadTone } from '$lib/components/ops/format';
 	import { getOpsDownloadLink, getOpsRun, listOpsDestinations } from '$lib/remote/ops.remote';
+	import ExternalLink from '$lib/components/ops/ExternalLink.svelte';
+	import { destinationConsoleLink } from '$lib/ops/contract';
 
 	const runId = $derived(page.params.runId ?? '');
 	const detail = $derived(getOpsRun({ id: runId }));
@@ -65,7 +67,11 @@
 				{@const at = stepIndex(u.state)}
 				<Card.Root data-testid="ops-upload">
 					<Card.Header>
-						<Card.Title class="flex items-center gap-2">{dest?.name ?? u.destinationId} <StateBadge state={u.state} tone={uploadTone(u.state)} /></Card.Title>
+						<Card.Title class="flex flex-wrap items-center gap-2">
+							{dest?.name ?? u.destinationId} <StateBadge state={u.state} tone={uploadTone(u.state)} />
+							{@const link = dest ? destinationConsoleLink(dest) : null}
+							{#if link}<ExternalLink href={link.url} label={link.label} class="ml-auto text-xs font-normal" />{/if}
+						</Card.Title>
 						<Card.Description class="font-mono text-xs break-all">{u.artifactKey ?? 'no object yet'}</Card.Description>
 					</Card.Header>
 					<Card.Content class="grid gap-3 text-sm">

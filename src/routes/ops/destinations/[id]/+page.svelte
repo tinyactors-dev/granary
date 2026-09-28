@@ -10,6 +10,8 @@
 	import PageHeader from '$lib/components/app/PageHeader.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import AdminOnly from '$lib/components/app/AdminOnly.svelte';
+	import ExternalLink from '$lib/components/ops/ExternalLink.svelte';
+	import { destinationConsoleLink } from '$lib/ops/contract';
 	import { describeError } from '$lib/components/app/format';
 	import DestinationForm from '$lib/components/ops/DestinationForm.svelte';
 	import ProjectionMeters from '$lib/components/ops/ProjectionMeters.svelte';
@@ -48,6 +50,8 @@
 	{:else}
 		<PageHeader title={d.name} description="Version {d.version} · {d.origin === 'seed' ? 'seeded from env — editing makes it yours' : 'configured in the UI'}">
 			{#snippet actions()}
+				{@const link = destinationConsoleLink(d)}
+				{#if link}<Button variant="outline" href={link.url} target="_blank" rel="noreferrer" data-testid="external-link">{link.label} ↗</Button>{/if}
 				<AdminOnly reason="Only admins can delete destinations">
 					{#snippet children({ disabled })}
 						<Button variant="outline" {disabled} onclick={() => (confirming = true)}><TrashIcon /> Delete</Button>

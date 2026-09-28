@@ -10,6 +10,8 @@
 	import { isAdmin } from '$lib/components/app/session';
 	import { KIND_LABEL, bytes, destinationWhere } from '$lib/components/ops/format';
 	import { listOpsDestinations } from '$lib/remote/ops.remote';
+	import ExternalLink from '$lib/components/ops/ExternalLink.svelte';
+	import { destinationConsoleLink } from '$lib/ops/contract';
 
 	const destinations = listOpsDestinations();
 </script>
@@ -23,6 +25,8 @@
 <svelte:boundary>
 	<div class="grid gap-4 md:grid-cols-2">
 		{#each await destinations as d (d.id)}
+			{@const link = destinationConsoleLink(d)}
+			<div class="grid content-start gap-1.5">
 			<a href="/ops/destinations/{d.id}" class="group" data-testid="ops-destination">
 				<Card.Root class="group-hover:border-foreground/20 h-full transition-colors">
 					<Card.Header>
@@ -44,6 +48,8 @@
 					</Card.Content>
 				</Card.Root>
 			</a>
+			{#if link}<ExternalLink href={link.url} label={link.label} class="text-muted-foreground px-1 text-xs" />{/if}
+			</div>
 		{:else}
 			<p class="text-muted-foreground text-sm">No destinations yet.</p>
 		{/each}
