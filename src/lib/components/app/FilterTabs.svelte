@@ -12,8 +12,9 @@
 		values,
 		current,
 		labels = {},
-		allLabel = 'All'
-	}: { param?: string; values: readonly string[]; current: string | null; labels?: Record<string, string>; allLabel?: string } = $props();
+		allLabel = 'All',
+		label
+	}: { param?: string; values: readonly string[]; current: string | null; labels?: Record<string, string>; allLabel?: string; label?: string } = $props();
 
 	function href(value: string | null) {
 		const url = new URL(page.url);
@@ -25,7 +26,7 @@
 </script>
 
 <nav
-	aria-label="Filter"
+	aria-label={label ?? `Filter by ${param}`}
 	class="bg-muted text-muted-foreground inline-flex w-fit max-w-full flex-wrap items-center gap-y-[3px] rounded-lg p-[3px] sm:h-9 sm:flex-nowrap sm:overflow-x-auto"
 >
 	{#each options as value (value ?? '')}

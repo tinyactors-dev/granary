@@ -37,7 +37,7 @@
 	data-testid="skip-to-content">Skip to content</a
 >
 <div class="bg-background flex min-h-svh">
-	<aside class="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 border-r lg:block">
+	<aside class="bg-sidebar text-sidebar-foreground hidden w-60 shrink-0 border-r lg:block" aria-label="Sidebar">
 		<div class="sticky top-0 flex h-svh flex-col">
 		<a href="/" class="flex h-14 items-center gap-2 border-b px-4 font-semibold">
 			<img src="/brand/granary.svg" alt="" class="size-7 rounded-[22%] dark:ring-1 dark:ring-white/10" width="28" height="28" />
@@ -49,7 +49,7 @@
 				<ArrowLeftIcon class="size-4" /> Back to app
 			</a>
 			{#each ADMIN_GROUPS as group (group)}
-				<div class="text-sidebar-foreground/50 mt-2 px-2.5 pb-1 text-[11px] font-semibold tracking-wide uppercase">{group}</div>
+				<div class="text-sidebar-foreground/70 mt-2 px-2.5 pb-1 text-[11px] font-semibold tracking-wide uppercase">{group}</div>
 				{#each ADMIN_NAV.filter((i) => i.group === group) as item (item.href)}
 					{@const active = adminActive(page.url.pathname, item) && !(item.children ?? []).some((c) => adminActive(page.url.pathname, c))}
 					{@const available = adminAvailable(item, data.admin)}
@@ -84,7 +84,7 @@
 					{/each}
 				{/each}
 			{/each}
-			<div class="text-sidebar-foreground/50 mt-2 px-2.5 pb-1 text-[11px] font-semibold tracking-wide uppercase">External</div>
+			<div class="text-sidebar-foreground/70 mt-2 px-2.5 pb-1 text-[11px] font-semibold tracking-wide uppercase">External</div>
 			<DevTools compact />
 		</nav>
 		{:else}

@@ -16,7 +16,7 @@
 	<title>Sign in · granary</title>
 </svelte:head>
 
-<div class="relative flex min-h-svh flex-col items-center justify-center px-4 py-12">
+<main class="relative flex min-h-svh flex-col items-center justify-center px-4 py-12">
 	<div class="absolute top-3 right-3"><ModeToggle /></div>
 	<div
 		class="pointer-events-none absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_top,var(--color-muted),transparent_60%)]"
@@ -24,7 +24,7 @@
 	<Card.Root class="w-full max-w-sm">
 		<Card.Header class="items-center text-center">
 			<img src="/brand/granary.svg" alt="" class="mx-auto mb-2 size-12 rounded-[22%] dark:ring-1 dark:ring-white/10" width="48" height="48" />
-			<Card.Title class="text-xl">Sign in to granary</Card.Title>
+			<h1 class="text-xl leading-none font-semibold">Sign in to granary</h1>
 			<Card.Description>
 				granary closes GitHub issues and pull requests opened by people who are not on the allowlist.
 				Sign in to follow its activity and manage the policy.
@@ -44,4 +44,4 @@
 			<p class="text-muted-foreground w-full text-center text-xs">Only admins can sign in.</p>
 		</Card.Footer>
 	</Card.Root>
-</div>
+</main>

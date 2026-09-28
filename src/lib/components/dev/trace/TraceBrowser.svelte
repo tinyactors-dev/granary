@@ -200,6 +200,8 @@
 		--trace-3: #1baf7a;
 		--trace-none: #8a8984;
 		--trace-error: #d03b3b;
+		/* error-coloured TEXT needs ≥ 4.5:1 on the page background (bars/markers use --trace-error) */
+		--trace-error-text: #b42323;
 	}
 	:global(.dark .trace-root:not(.theme-light .trace-root)) {
 		--trace-1: #3987e5;
@@ -207,5 +209,6 @@
 		--trace-3: #199e70;
 		--trace-none: #6f6e69;
 		--trace-error: #d03b3b;
+		--trace-error-text: #f07878;
 	}
 </style>

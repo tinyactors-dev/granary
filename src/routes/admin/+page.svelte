@@ -49,7 +49,7 @@
 	<Card.Root data-testid="admin-runtime">
 		<Card.Header>
 			<Card.Title>Actor system</Card.Title>
-			<Card.Description>granary's runtime. <a class="text-foreground underline-offset-4 hover:underline" href="/admin/actors">Actors →</a></Card.Description>
+			<Card.Description>granary's runtime. <a class="text-foreground underline underline-offset-4" href="/admin/actors">Actors →</a></Card.Description>
 		</Card.Header>
 		<Card.Content>
 			{#if overview}

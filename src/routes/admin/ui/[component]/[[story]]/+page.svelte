@@ -88,7 +88,7 @@
 			</div>
 		</div>
 
-		<aside class="space-y-2">
+		<aside class="space-y-2" aria-label="Story controls">
 			<div class="text-muted-foreground text-xs font-medium tracking-wide uppercase">Controls</div>
 			<div class="rounded-lg border p-3"><Controls controls={entry.controls} bind:args /></div>
 		</aside>

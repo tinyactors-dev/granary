@@ -118,7 +118,7 @@
 				class="space-y-3 rounded-lg border p-4"
 				data-testid="open-issue-form"
 			>
-				<h3 class="flex items-center gap-2 text-sm font-semibold"><SendIcon class="size-4" /> Open an issue or pull request as…</h3>
+				<h2 class="flex items-center gap-2 text-sm font-semibold"><SendIcon class="size-4" /> Open an issue or pull request as…</h2>
 				<div class="flex flex-wrap items-end gap-4">
 					<div class="grid gap-1.5">
 						<Label for="oi-kind">Kind</Label>
@@ -183,7 +183,7 @@
 					class="space-y-3 rounded-lg border p-4"
 					data-testid="fault-form"
 				>
-					<h3 class="flex items-center gap-2 text-sm font-semibold"><ZapIcon class="size-4" /> Inject a REST fault</h3>
+					<h2 class="flex items-center gap-2 text-sm font-semibold"><ZapIcon class="size-4" /> Inject a REST fault</h2>
 					<div class="grid grid-cols-[6rem_1fr] gap-3">
 						<div class="grid gap-1.5">
 							<Label for="f-method">Method</Label>
@@ -226,7 +226,7 @@
 						if (redeliverId.trim()) void redeliver(redeliverId.trim());
 					}}
 				>
-					<h3 class="flex items-center gap-2 text-sm font-semibold"><RadioTowerIcon class="size-4" /> Redeliver a webhook</h3>
+					<h2 class="flex items-center gap-2 text-sm font-semibold"><RadioTowerIcon class="size-4" /> Redeliver a webhook</h2>
 					<div class="flex gap-2">
 						<Input placeholder="delivery id (X-GitHub-Delivery)" class="font-mono" bind:value={redeliverId} aria-label="Delivery id" />
 						<Button type="submit" variant="secondary" disabled={!redeliverId.trim() || busy?.startsWith('redeliver:')}>Redeliver</Button>
@@ -253,7 +253,7 @@
 									<Table.Head>Author</Table.Head>
 									<Table.Head>State</Table.Head>
 									<Table.Head class="text-right">Comments</Table.Head>
-									<Table.Head class="w-0"></Table.Head>
+									<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>
@@ -293,7 +293,7 @@
 									<Table.Head>Status</Table.Head>
 									<Table.Head class="text-right">Attempts</Table.Head>
 									<Table.Head class="text-right">Last attempt</Table.Head>
-									<Table.Head class="w-0"></Table.Head>
+									<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>
 								</Table.Row>
 							</Table.Header>
 							<Table.Body>

@@ -72,7 +72,7 @@
 					</td>
 					<td class="text-muted-foreground px-3 py-1.5 font-mono text-[10px] md:max-w-[220px]" data-label="Events">{t.events.join(' → ') || '—'}</td>
 					<td class="px-3 py-1.5 text-right font-mono" data-label="Spans">
-						{t.spanCount}{#if t.errorCount}<span class="text-[var(--trace-error)]"> · {t.errorCount} err</span>{/if}
+						{t.spanCount}{#if t.errorCount}<span class="text-[var(--trace-error-text)]"> · {t.errorCount} err</span>{/if}
 					</td>
 					<td class="px-3 py-1.5 text-right font-mono whitespace-nowrap" data-label="Duration">{formatDuration(t.durationMs)}</td>
 				</tr>

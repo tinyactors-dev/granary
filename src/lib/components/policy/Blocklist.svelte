@@ -108,7 +108,7 @@
 					</Table.Header>
 					<Table.Body>
 						{#each list as b (b.login)}
-							<Table.Row data-testid="blocked-user" class={b.active ? '' : 'opacity-60'}>
+							<Table.Row data-testid="blocked-user" data-active={b.active}>
 								<Table.Cell class="font-medium">
 									{b.login}
 									{#if b.isAdmin && b.active}<span class="text-muted-foreground block text-xs">An admin: their own issues and pull requests are closed too</span>{/if}

@@ -33,7 +33,7 @@
 <article id={c.id} class="bg-card scroll-mt-20 rounded-xl border p-4 target:ring-2 target:ring-sky-500/40" data-testid="ops-condition" data-state={c.state}>
 	<div class="flex flex-wrap items-start justify-between gap-2">
 		<div class="min-w-0">
-			<h3 class="font-medium">{c.title}</h3>
+			<h2 class="font-medium">{c.title}</h2>
 			<p class="text-muted-foreground font-mono text-xs">{c.id}</p>
 		</div>
 		<div class="flex items-center gap-2">
