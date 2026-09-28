@@ -32,6 +32,7 @@ run = "bun loadgen/cli.ts"
 
 [tasks.up]
 description = "Start dev daemons via pitchfork (fake GitHub + app + loadgen + fake-infra); see pitchfork.toml"
+depends = ["install"]
 run = [
   "pitchfork stop granary/app-real || true",
   "pitchfork start granary/fake-github granary/loadgen granary/fake-infra granary/app",
@@ -52,6 +53,7 @@ run = ["bun tools/dev/s3-create-bucket.ts", "bun --bun vite dev --port 5173 --st
 
 [tasks."up:real"]
 description = "Like `up`, but the app uses real RustFS + Grafana (stops granary/app, starts granary/app-real)"
+depends = ["install"]
 run = [
   "pitchfork stop granary/app || true",
   "pitchfork start granary/fake-github granary/loadgen granary/fake-infra granary/rustfs granary/grafana granary/app-real",
