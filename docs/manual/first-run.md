@@ -64,6 +64,24 @@ credentials. Delete that orphaned app on GitHub (the app's settings →
 - signing in to granary uses the app ("Sign in with GitHub")
 - webhooks are verified with the app's webhook secret
 
+### The app's logo
+
+GitHub doesn't let an app set its own logo (the manifest has no logo field and
+there's no API for it), so this is one manual step. **Settings → GitHub**
+shows an **Add the app logo** card until you dismiss it:
+
+1. **Download the logo**: `granary-github-512.png` (or the 1024 × 1024
+   version), served by granary itself from `/brand/`. It's a flat PNG made for
+   GitHub's circular crop; GitHub rejects webp.
+2. Open the **app's settings on GitHub** (the card links there:
+   `github.com/organizations/<org>/settings/apps/<slug>` or
+   `github.com/settings/apps/<slug>`) → **Display information** → **Upload a
+   logo**.
+3. Set **Badge background color** to `#1d1710`, so any padding GitHub adds
+   around the logo blends in.
+
+Dismiss the card with × once done. Creating a new app shows it again.
+
 ## 4. Install it on repositories
 
 Click **Install on GitHub** (or **Add repositories** later), pick the

@@ -182,6 +182,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0252](0252-template-escaping-and-safe-markdown-preview.md) | Escaping template values and a safe Markdown preview | active |
 | [0260](0260-blocklist-precedence-and-expiry.md) | A blocklist that beats the allowlist and maintainer associations | active |
 | [0270](0270-brand-wheat-logo-and-favicons.md) | Brand: colored wheat logo, favicons and app icons from one source | active |
+| [0271](0271-github-app-logo.md) | A flat logo for GitHub, uploaded by hand | active |
 | [0280](0280-gate-pull-requests-like-issues.md) | Gate pull requests like issues | active |
 | [0281](0281-pull-request-permission-upgrade.md) | Pull request access for existing GitHub Apps | active |
 | [0282](0282-fake-github-pull-requests-and-permissions.md) | Fake GitHub: pull requests and accepted permissions | active |
