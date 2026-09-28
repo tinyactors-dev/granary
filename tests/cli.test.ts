@@ -11,7 +11,7 @@ import { runCli, useHarness, type Harness } from './harness';
 import { consumeLoginLink } from './github-app';
 import { EXIT, DATA_DIR_LAYOUT } from '../src/lib/schemas/cli';
 
-const LIVE = false;
+const LIVE = process.env.GRANARY_TEST_PENDING === '1';
 const live = LIVE ? test : test.todo;
 const T = 60_000;
 

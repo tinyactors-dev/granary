@@ -79,9 +79,6 @@ export async function installationToken(h: Harness, app: CreatedApp, installatio
 // granary side (ADR 0159, 0160, 0161)
 // ---------------------------------------------------------------------------
 
-const decodeEntities = (s: string) =>
-	s.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-
 /** Cookie header value from a response's Set-Cookie headers. */
 export function cookiesOf(res: Response): string {
 	return res.headers
@@ -109,27 +106,62 @@ export async function consumeLoginLink(h: Harness, linkUrl: string): Promise<{ c
 	return { cookie, location: res.headers.get('location') };
 }
 
+/** Remote-function ids (`<hash>/<name>`) found in the client chunks a page loads. */
+async function remoteIds(h: Harness, cookie: string, pagePath: string): Promise<Map<string, string>> {
+	const html = await (await h.fetchApp(pagePath, { headers: { Cookie: cookie } })).text();
+	const queue = [...html.matchAll(/["'](\/_app\/immutable\/[^"']+\.js)["']/g)].map((m) => m[1]!);
+	const seen = new Set<string>();
+	const ids = new Map<string, string>();
+	while (queue.length && seen.size < 200) {
+		const path = queue.shift()!;
+		if (seen.has(path)) continue;
+		seen.add(path);
+		const js = await (await h.fetchApp(path)).text();
+		for (const m of js.matchAll(/[`"']([a-z0-9]{4,12})\/([A-Za-z_$][\w$]*)[`"']/g)) ids.set(m[2]!, `${m[1]}/${m[2]}`);
+		for (const m of js.matchAll(/["'`]\.\/([\w.-]+\.js)["'`]/g)) queue.push(path.replace(/[^/]+$/, m[1]!));
+	}
+	return ids;
+}
+
 /**
- * Walk the in-product setup: GET /settings/github as an admin, submit the
- * manifest form to the fake (auto-confirm), follow GitHub's redirect back to
- * granary's callback. Returns the app the fake created.
+ * Call a SvelteKit remote `command` over HTTP exactly like the browser does
+ * (`POST /_app/remote/<id>`, devalue payload, url-safe base64), as `cookie`.
+ */
+export async function remoteCommand<T>(h: Harness, cookie: string, pagePath: string, name: string, arg: unknown): Promise<T> {
+	const devalue = await import('devalue');
+	const id = (await remoteIds(h, cookie, pagePath)).get(name);
+	if (!id) throw new Error(`remote function ${name} not found in the client chunks of ${pagePath}`);
+	const payload = arg === undefined ? '' : Buffer.from(devalue.stringify(arg)).toString('base64url');
+	const res = await h.fetchApp(`/_app/remote/${id}`, {
+		method: 'POST',
+		headers: {
+			Cookie: cookie,
+			Origin: h.appUrl,
+			'Content-Type': 'application/json',
+			'x-sveltekit-pathname': pagePath,
+			'x-sveltekit-search': ''
+		},
+		body: JSON.stringify({ payload, refreshes: [] })
+	});
+	const body = (await res.json()) as { type: string; data?: string; error?: unknown; status?: number };
+	if (!res.ok || body.type !== 'result') throw new Error(`${name}: ${res.status} ${JSON.stringify(body.error ?? body)}`);
+	return (body.data ? (devalue.parse(body.data) as { _: T })._ : undefined) as T;
+}
+
+/**
+ * Walk the in-product setup like the settings wizard: `beginGitHubAppManifest`
+ * (remote command) → POST the manifest form to GitHub (the fake, auto-confirm)
+ * → follow GitHub's redirect back to granary's callback. Returns the app.
  */
 export async function setupGitHubApp(h: Harness, cookie: string): Promise<{ appId: number; slug: string; callbackStatus: number; callbackLocation: string | null }> {
-	const page = await h.fetchApp('/settings/github', { headers: { Cookie: cookie } });
-	const html = await page.text();
-	const manifest = /name="manifest"[^>]*value="([^"]*)"|value="([^"]*)"[^>]*name="manifest"/.exec(html);
-	const action = /<form[^>]*action="([^"]*\/settings\/apps\/new[^"]*)"/.exec(html);
-	if (!manifest || !action) throw new Error(`no manifest form on /settings/github (status ${page.status})`);
-	const postUrl = new URL(decodeEntities(action[1]!));
+	const form = await remoteCommand<{ postUrl: string; manifest: string; state: string }>(h, cookie, '/settings/github', 'beginGitHubAppManifest', {});
+	const postUrl = new URL(form.postUrl);
 	postUrl.searchParams.set('auto', '1');
 	postUrl.searchParams.set('login', 'admin');
-	const created = await fetch(postUrl, {
-		method: 'POST',
-		body: new URLSearchParams({ manifest: decodeEntities((manifest[1] ?? manifest[2])!) }),
-		redirect: 'manual'
-	});
+	const created = await fetch(postUrl, { method: 'POST', body: new URLSearchParams({ manifest: form.manifest }), redirect: 'manual' });
 	if (created.status !== 302) throw new Error(`fake manifest POST: ${created.status} ${await created.text()}`);
 	const back = new URL(created.headers.get('location')!);
+	if (back.searchParams.get('state') !== form.state) throw new Error('state not echoed');
 	const cb = await h.fetchApp(`${back.pathname}${back.search}`, { headers: { Cookie: cookie } });
 	const apps = (await h.fakeGithub.state()).apps ?? [];
 	const app = apps[apps.length - 1]!;

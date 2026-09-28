@@ -12,7 +12,7 @@ import { useHarness, type Harness } from './harness';
 import { APP_MODE_ENV, setupAppMode } from './github-app';
 import { expectClosedOnce, openIssue, OWNER, settle, waitClosedOnGithub } from './helpers';
 
-const LIVE = false;
+const LIVE = process.env.GRANARY_TEST_PENDING === '1';
 const live = LIVE ? test : test.todo;
 const INTERVAL_MS = 1500;
 const T = 90_000;

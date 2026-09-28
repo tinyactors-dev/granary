@@ -10,8 +10,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { runCli, useHarness, type Harness } from './harness';
-import { consumeLoginLink, cookiesOf, setupGitHubApp } from './github-app';
-import { expectClosedOnce, fakeIssue, openIssue, OWNER, settle, waitClosedOnGithub } from './helpers';
+import { consumeLoginLink, cookiesOf, remoteCommand, setupGitHubApp } from './github-app';
+import { expectClosedOnce, expectUntouched, fakeIssue, openIssue, OWNER, settle, waitClosedOnGithub } from './helpers';
 import { actorFinished } from './traces';
 
 const TOKEN_TTL_MS = 4000;
@@ -22,7 +22,7 @@ const T = 60_000;
  * page with the manifest form) are in `build/`. While false, no harness is
  * started (the current build still requires GitHub env) and tests are todo.
  */
-const LIVE = false;
+const LIVE = process.env.GRANARY_TEST_PENDING === '1';
 const live = LIVE ? test : test.todo;
 
 /** No GitHub env at all: granary must come up in `none` mode (ADR 0157, 0160). */
@@ -140,5 +140,19 @@ describe('GitHub App (in-product)', () => {
 		T
 	);
 
-	test.todo('per-repo disable: webhooks for a disabled repo are stored as ignored (needs a scriptable surface for setRepoEnabled — E6)', () => {});
+	live(
+		'per-repo disable: issues in a disabled repo are left alone; re-enabling guards it again',
+		async () => {
+			const first = await openIssue(h(), 'mallory');
+			await waitClosedOnGithub(h(), first);
+			await remoteCommand(h(), cookie, '/settings/github', 'setRepoEnabled', { repoId: first.repoId, enabled: false });
+			const ignored = await openIssue(h(), 'mallory', { repo: first.repo });
+			await settle(2000);
+			expectUntouched(await fakeIssue(h(), ignored));
+			await remoteCommand(h(), cookie, '/settings/github', 'setRepoEnabled', { repoId: first.repoId, enabled: true });
+			const guarded = await openIssue(h(), 'mallory', { repo: first.repo });
+			expectClosedOnce(await waitClosedOnGithub(h(), guarded), guarded);
+		},
+		T
+	);
 });
