@@ -19,6 +19,7 @@ import {
 	EnsureUserRequest,
 	InjectFaultRequest,
 	ReopenIssueRequest,
+	WebhookOutageRequest,
 	type ControlError,
 	type CreateCommentControlResponse,
 	type CreateIssueResponse,
@@ -52,6 +53,8 @@ import { DELIVERY_EVENTS, deliveryAddress, type DeliveryReply } from './actors/d
 import { issuesEvent, repositoryView, userView, type Bases } from './views';
 import { authorizePage, controlPage } from './page';
 import { EventLog } from './events';
+import { createAppRoutes, type DeliveryTarget } from './app-routes';
+import { APPS_ADDRESS, APPS_EVENTS, repoCovered, type AppRecord, type Covering, type InstallationRecord } from './actors/apps';
 
 const env = process.env;
 const nonEmpty = (v: string | undefined) => (v && v.length ? v : undefined);
@@ -66,9 +69,13 @@ const oauthClientSecret = nonEmpty(env.GITHUB_OAUTH_CLIENT_SECRET);
 /** The user behind the app's REST token (anything that is not an OAuth token). */
 const BOT_LOGIN = 'granary[bot]';
 
+/** ADR 0164: while true, every webhook delivery fails with status_code 0. */
+let webhookOutage = false;
+
 const fake = createFakeSystem({
-	webhook: { url: webhookUrl, secret: webhookSecret },
-	otlpEndpoint: nonEmpty(env.OTEL_EXPORTER_OTLP_ENDPOINT) ?? null
+	webhook: { url: webhookUrl, secret: webhookSecret, outage: () => webhookOutage },
+	otlpEndpoint: nonEmpty(env.OTEL_EXPORTER_OTLP_ENDPOINT) ?? null,
+	outage: () => webhookOutage
 });
 const { system } = fake;
 /** ADR 0075: what happened, for subscribers such as loadgen. */
@@ -172,7 +179,10 @@ async function findRepo(owner: string, name: string) {
 }
 
 /** Delivery metadata for the event log (attempt counts, redelivery). Bounded. */
-const deliveryMeta = new Map<string, { event: string; action: string; repoId: number | null; number: number | null; attempts: number }>();
+const deliveryMeta = new Map<
+	string,
+	{ event: string; action: string; repoId: number | null; number: number | null; attempts: number; appId?: number | null; installationId?: number | null }
+>();
 
 /** Record a finished delivery attempt in the event log. */
 function emitDelivery(r: DeliveryReply, event: string, action: string, repoId: number | null, number: number | null) {
@@ -199,9 +209,11 @@ async function deliver(
 	repoId: number | null,
 	issueNumber: number | null,
 	event = 'issues',
-	id: string = crypto.randomUUID()
+	id: string = crypto.randomUUID(),
+	target: DeliveryTarget | null = null
 ): Promise<DeliveryReply> {
 	const reqId = crypto.randomUUID();
+	const started = Date.now();
 	const waiting = waitForReply<DeliveryReply>(reqId, 30_000);
 	system.spawn(fake.definitions.delivery, {
 		address: deliveryAddress(id),
@@ -218,13 +230,96 @@ async function deliver(
 			lastAttemptAt: null,
 			lastError: null,
 			createdAt: nextId(),
+			url: target?.url ?? null,
+			secret: target?.secret ?? null,
+			appId: target?.appId ?? null,
+			installationId: target?.installationId ?? null,
 			reqIds: [reqId],
 			out: null
 		}
 	});
 	const reply = await waiting;
 	emitDelivery(reply, event, action, repoId, issueNumber);
+	if (target) {
+		const meta = deliveryMeta.get(reply.deliveryId);
+		if (meta) Object.assign(meta, { appId: target.appId, installationId: target.installationId });
+		await recordAppDelivery(target.appId, id, event, action, repoId, target.installationId, false, reply, started);
+	}
 	return reply;
+}
+
+/** ADR 0164: one entry in the app's delivery log per attempt. */
+async function recordAppDelivery(
+	appId: number,
+	guid: string,
+	event: string,
+	action: string,
+	repoId: number | null,
+	installationId: number | null,
+	redelivery: boolean,
+	reply: DeliveryReply,
+	started: number
+) {
+	await ask(system, APPS_ADDRESS, APPS_EVENTS.recordDelivery, {
+		delivery: {
+			id: nextId(),
+			appId,
+			guid,
+			event,
+			action: action || null,
+			deliveredAt: Date.now(),
+			redelivery,
+			statusCode: reply.responseCode ?? 0,
+			durationMs: Date.now() - started,
+			installationId,
+			repositoryId: repoId
+		}
+	});
+}
+
+/**
+ * Deliver a repository event (ADR 0200): to every GitHub App installed on the
+ * repo that subscribes to `event` (payload gains `installation`), else to the
+ * default repo webhook (token mode). Returns the first delivery's reply.
+ */
+async function deliverRepoEvent(
+	event: string,
+	action: string,
+	payload: Record<string, unknown>,
+	repo: { id: number; owner: string; name: string },
+	issueNumber: number | null
+): Promise<DeliveryReply> {
+	const covering = await ask<Covering[]>(system, APPS_ADDRESS, APPS_EVENTS.covering, {
+		fullName: `${repo.owner}/${repo.name}`,
+		owner: repo.owner,
+		event
+	});
+	if (!covering.length) return deliver(action, JSON.stringify(payload), repo.id, issueNumber, event);
+	let first: DeliveryReply | null = null;
+	for (const { app, installation } of covering) {
+		const body = JSON.stringify({ ...payload, installation: { id: installation.id, node_id: `MDIz_fake${installation.id}` } });
+		const reply = await deliver(action, body, repo.id, issueNumber, event, crypto.randomUUID(), {
+			url: app.webhookUrl,
+			secret: app.webhookSecret,
+			appId: app.id,
+			installationId: installation.id
+		});
+		first ??= reply;
+	}
+	return first!;
+}
+
+/** Redeliver by guid (same body, same guid) and log it for its app. */
+async function redeliverGuid(guid: string): Promise<DeliveryReply | null> {
+	if (!system.findActor(deliveryAddress(guid))) return null;
+	const started = Date.now();
+	const result = await ask<DeliveryReply>(system, deliveryAddress(guid), DELIVERY_EVENTS.redeliver, {}, 30_000);
+	const known = deliveryMeta.get(guid);
+	emitDelivery(result, known?.event ?? 'issues', known?.action ?? '', known?.repoId ?? null, known?.number ?? null);
+	if (known?.appId) {
+		await recordAppDelivery(known.appId, guid, known.event, known.action, known.repoId, known.installationId ?? null, true, result, started);
+	}
+	return result;
 }
 
 const issueRef = (repo: { id: number; owner: string; name: string }, number: number) => ({
@@ -232,6 +327,21 @@ const issueRef = (repo: { id: number; owner: string; name: string }, number: num
 	owner: repo.owner,
 	repo: repo.name,
 	number
+});
+
+const appRoutes = createAppRoutes({
+	system,
+	bases,
+	ensureUser,
+	ensureRepoId: async (owner, name) => (await ensureRepo(owner, name)).repo.id,
+	repos: () => fake.snapshot().repos.map((r) => ({ fullName: r.fullName, id: r.id, owner: r.owner, name: r.name })),
+	deliverTo: (target, event, action, body, repoId) => deliver(action, body, repoId, null, event, crypto.randomUUID(), target),
+	redeliver: redeliverGuid,
+	validate: <T,>(schema: unknown, value: unknown, what: string) => validate(schema as TSchema, value, what) as T,
+	readJson,
+	controlError: (status, error) => controlError(status, error),
+	json,
+	githubError
 });
 
 // ---------------------------------------------------------------------------
@@ -254,7 +364,14 @@ async function control(req: Request, path: string): Promise<Response> {
 	}
 	if (method !== 'POST') return controlError(405, `${method} ${path} not allowed`);
 
+	if (path === CONTROL_PATHS.webhookOutage) {
+		const body = validate(WebhookOutageRequest, await readJson(req), 'webhook outage');
+		webhookOutage = body.down;
+		return json({ ok: true });
+	}
+
 	if (path === CONTROL_PATHS.reset) {
+		webhookOutage = false;
 		fake.reset();
 		return json({ ok: true });
 	}
@@ -293,7 +410,7 @@ async function control(req: Request, path: string): Promise<Response> {
 			title: issue.title
 		});
 		const payload = issuesEvent('opened', issue, repositoryView(repo, owner, bases), userView(author, bases));
-		const result = await deliver('opened', JSON.stringify(payload), repo.id, issue.number);
+		const result = await deliverRepoEvent('issues', 'opened', payload as unknown as Record<string, unknown>, repo, issue.number);
 		return json({ number: issue.number, deliveryId: result.deliveryId } satisfies CreateIssueResponse);
 	}
 
@@ -321,7 +438,7 @@ async function control(req: Request, path: string): Promise<Response> {
 			repositoryView(found.repo, found.owner, bases),
 			userView(actor, bases)
 		);
-		const result = await deliver('reopened', JSON.stringify(payload), found.repo.id, issue.number);
+		const result = await deliverRepoEvent('issues', 'reopened', payload as unknown as Record<string, unknown>, found.repo, issue.number);
 		return json({ deliveryId: result.deliveryId } satisfies ReopenIssueResponse);
 	}
 
@@ -329,10 +446,8 @@ async function control(req: Request, path: string): Promise<Response> {
 	if (redeliver) {
 		await readJson(req, { allowEmpty: true }).catch(() => undefined);
 		const id = decodeURIComponent(redeliver[1]!);
-		if (!system.findActor(deliveryAddress(id))) return controlError(404, `Unknown delivery ${id}`);
-		const result = await ask<DeliveryReply>(system, deliveryAddress(id), DELIVERY_EVENTS.redeliver, {}, 30_000);
-		const known = deliveryMeta.get(id);
-		emitDelivery(result, known?.event ?? 'issues', known?.action ?? '', known?.repoId ?? null, known?.number ?? null);
+		const result = await redeliverGuid(id);
+		if (!result) return controlError(404, `Unknown delivery ${id}`);
 		return json({ deliveryId: result.deliveryId, responseCode: result.responseCode } satisfies RedeliverResponse);
 	}
 
@@ -369,7 +484,7 @@ async function control(req: Request, path: string): Promise<Response> {
 			repository: repositoryView(found.repo, found.owner, bases),
 			sender: userView(author, bases)
 		};
-		const result = await deliver('created', JSON.stringify(payload), found.repo.id, body.number, 'issue_comment');
+		const result = await deliverRepoEvent('issue_comment', 'created', payload, found.repo, body.number);
 		return json({ commentId: comment.id, deliveryId: result.deliveryId } satisfies CreateCommentControlResponse);
 	}
 
@@ -414,7 +529,8 @@ async function authorize(url: URL): Promise<Response> {
 		});
 	}
 	const q = query as Static<typeof OAuthAuthorizeQuery>;
-	if (oauthClientId && q.client_id !== oauthClientId) {
+	const appClient = await appRoutes.findApp({ clientId: q.client_id });
+	if (!appClient && oauthClientId && q.client_id !== oauthClientId) {
 		return new Response(`Unknown client_id ${q.client_id}`, { status: 400 });
 	}
 	if (!q.redirect_uri) return new Response('redirect_uri is required by the fake', { status: 400 });
@@ -464,7 +580,12 @@ async function accessToken(req: Request, url: URL): Promise<Response> {
 		return respond({ error: 'invalid_request', error_description: issues.map((i) => i.message).join('; ') });
 	}
 	const b = body as Static<typeof OAuthAccessTokenRequest>;
-	if ((oauthClientId && b.client_id !== oauthClientId) || (oauthClientSecret && b.client_secret !== oauthClientSecret)) {
+	// ADR 0164: a GitHub App's client id/secret work too (user-to-server tokens, `ghu_`).
+	const appClient = await appRoutes.findApp({ clientId: b.client_id });
+	const badClient = appClient
+		? b.client_secret !== appClient.clientSecret
+		: (oauthClientId && b.client_id !== oauthClientId) || (oauthClientSecret && b.client_secret !== oauthClientSecret);
+	if (badClient) {
 		return respond({
 			error: 'incorrect_client_credentials',
 			error_description: 'The client_id and/or client_secret passed are incorrect.'
@@ -473,7 +594,7 @@ async function accessToken(req: Request, url: URL): Promise<Response> {
 	const result = await ask<Record<string, string>>(system, OAUTH_ADDRESS, OAUTH_EVENTS.exchange, {
 		code: b.code,
 		clientId: b.client_id,
-		token: `gho_fake${crypto.randomUUID().replaceAll('-', '')}`,
+		token: `${appClient ? 'ghu' : 'gho'}_fake${crypto.randomUUID().replaceAll('-', '')}`,
 		now: Date.now()
 	});
 	return respond(result);
@@ -485,16 +606,28 @@ function bearer(req: Request): string | null {
 	return m ? m[1]! : null;
 }
 
-/** The user a token acts as: an OAuth token's user, else the app bot. */
+/** ADR 0164: the installation behind a `ghs_` token (null when unknown or expired). */
+async function installationOf(token: string): Promise<{ installation: InstallationRecord; app: AppRecord } | null> {
+	if (!token.startsWith('ghs_')) return null;
+	return ask(system, APPS_ADDRESS, APPS_EVENTS.resolveToken, { token, now: Date.now() });
+}
+
+/**
+ * The user a token acts as: an OAuth token's user, an installation token's
+ * `<slug>[bot]`, else (any other token, token mode) the app bot.
+ */
 async function tokenUser(token: string): Promise<FakeUser> {
 	const login = await ask<string | null>(system, OAUTH_ADDRESS, OAUTH_EVENTS.whoami, { token });
 	if (login) return (await getUser(login)) ?? (await ensureUser(login));
+	const inst = await installationOf(token);
+	if (inst) return ensureUser(`${inst.app.slug}[bot]`, 'Bot');
 	return ensureUser(BOT_LOGIN, 'Bot');
 }
 
 async function currentUser(req: Request): Promise<Response> {
 	const token = bearer(req);
 	if (!token) return githubError(401, 'Requires authentication');
+	if (token.startsWith('ghs_')) return githubError(403, 'Resource not accessible by integration');
 	const u = await tokenUser(token);
 	const view: AuthenticatedUser & Record<string, unknown> = { ...userView(u, bases), avatar_url: u.avatarUrl, name: u.login };
 	return json(view);
@@ -509,6 +642,15 @@ const ISSUE_PATH = /^\/repos\/([^/]+)\/([^/]+)\/issues\/(\d+)(\/comments)?\/?$/;
 async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Response> {
 	const token = bearer(req);
 	if (!token) return githubError(401, 'Requires authentication');
+	// ADR 0164: installation tokens must be valid and cover the repository.
+	let installation: InstallationRecord | null = null;
+	if (token.startsWith('ghs_')) {
+		const inst = await installationOf(token);
+		if (!inst) return githubError(401, 'Bad credentials');
+		installation = inst.installation;
+	} else if (token.startsWith('eyJ')) {
+		return githubError(401, 'A JSON web token could not be used to access this resource');
+	}
 
 	const fault = await ask<FaultHit | null>(system, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
 	if (fault) {
@@ -521,6 +663,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 	const number = Number(numberText);
 	const found = await findRepo(owner!, repoName!);
 	if (!found) return githubError(404, 'Not Found');
+	if (installation && !repoCovered(installation, found.repo.fullName, found.repo.owner)) return githubError(404, 'Not Found');
 	const address = repositoryAddress(found.repo.id);
 	const notFound = (status: number, msg: string) => githubError(status, msg);
 
@@ -605,7 +748,15 @@ async function route(req: Request): Promise<Response> {
 		return new Response(controlPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 	}
 	if (path === '/healthz') return json({ ok: true });
+	const appResponse = await appRoutes.route(req, url);
+	if (appResponse) return appResponse;
 	if (path.startsWith('/__control/')) return control(req, path);
+	if (path === '/installation/repositories' && req.method === 'GET') {
+		const token = bearer(req);
+		const inst = token ? await installationOf(token) : null;
+		if (!inst) return githubError(401, 'Bad credentials');
+		return appRoutes.installationRepos(inst.installation);
+	}
 	if (path === '/login/oauth/authorize' && req.method === 'GET') return authorize(url);
 	if (path === '/login/oauth/access_token' && req.method === 'POST') return accessToken(req, url);
 	if (path === '/user' && req.method === 'GET') return currentUser(req);

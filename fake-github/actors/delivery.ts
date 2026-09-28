@@ -32,6 +32,11 @@ export interface DeliveryData {
 	lastError: string | null;
 	/** Monotonic creation order (`ids.ts`); orders `state.deliveries` oldest first. */
 	createdAt: number;
+	/** ADR 0200: target of a GitHub App delivery (null = the default repo webhook). */
+	url: string | null;
+	secret: string | null;
+	appId: number | null;
+	installationId: number | null;
 	/** Waiters to answer when the current attempt finishes. */
 	reqIds: string[];
 	out: unknown;
@@ -82,6 +87,10 @@ export const deliveryChart = statechart<DeliveryData>({ family: DELIVERY_FAMILY,
 	.data('lastAttemptAt', null)
 	.data('lastError', null)
 	.data('createdAt', 0)
+	.data('url', null)
+	.data('secret', null)
+	.data('appId', null)
+	.data('installationId', null)
 	.dataExpression('reqIds', () => [])
 	.data('out', null)
 	.state('sending', (s) =>
@@ -94,7 +103,7 @@ export const deliveryChart = statechart<DeliveryData>({ family: DELIVERY_FAMILY,
 					})
 					.send('webhook.post', (b) =>
 						b.via(WEBHOOK_IO).data(function (this: DeliveryData): WebhookPost {
-							return { deliveryId: this.id, event: this.event, body: this.body };
+							return { deliveryId: this.id, event: this.event, body: this.body, url: this.url, secret: this.secret, appId: this.appId };
 						})
 					)
 			)

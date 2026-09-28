@@ -4,10 +4,10 @@
  */
 import type { FakeUser } from './schemas';
 
-const esc = (s: string) =>
+export const esc = (s: string) =>
 	s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-const STYLE = `
+export const STYLE = `
 :root { color-scheme: light dark; --bg:#fff; --fg:#1f2328; --muted:#59636e; --border:#d1d9e0; --accent:#0969da; --ok:#1a7f37; --bad:#cf222e; }
 @media (prefers-color-scheme: dark) { :root { --bg:#0d1117; --fg:#e6edf3; --muted:#9198a1; --border:#3d444d; --accent:#4493f8; --ok:#3fb950; --bad:#f85149; } }
 * { box-sizing: border-box; }

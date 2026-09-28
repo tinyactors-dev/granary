@@ -10,12 +10,15 @@ import { FAULTS_ADDRESS, faultsChart, type FaultsData } from './actors/faults';
 import { OAUTH_ADDRESS, oauthChart } from './actors/oauth';
 import { REPOSITORY_FAMILY, commentView, issueView, repositoryChart, type RepositoryData } from './actors/repository';
 import { DELIVERY_FAMILY, deliveryChart, type DeliveryData } from './actors/delivery';
+import { APPS_ADDRESS, appsChart, type AppsData } from './actors/apps';
 import { parseFakeState, type FakeDelivery, type FakeIssue, type FakeState } from './schemas';
 
 export interface FakeSystemOptions {
 	webhook: WebhookConfig;
 	/** OTEL_EXPORTER_OTLP_ENDPOINT (without /v1/traces), or null. */
 	otlpEndpoint: string | null;
+	/** ADR 0200: the simulated webhook outage flag (reported in the snapshot). */
+	outage?: () => boolean;
 }
 
 export function createFakeSystem(options: FakeSystemOptions) {
@@ -45,13 +48,15 @@ export function createFakeSystem(options: FakeSystemOptions) {
 		faults: system.define(faultsChart),
 		oauth: system.define(oauthChart),
 		repository: system.define(repositoryChart),
-		delivery: system.define(deliveryChart)
+		delivery: system.define(deliveryChart),
+		apps: system.define(appsChart)
 	};
 
 	function spawnSingletons() {
 		system.spawn(definitions.registry, { address: REGISTRY_ADDRESS });
 		system.spawn(definitions.faults, { address: FAULTS_ADDRESS });
 		system.spawn(definitions.oauth, { address: OAUTH_ADDRESS });
+		system.spawn(definitions.apps, { address: APPS_ADDRESS });
 	}
 	spawnSingletons();
 
@@ -74,7 +79,17 @@ export function createFakeSystem(options: FakeSystemOptions) {
 
 		/** `GET /__control/state`, read from the actors' live data. */
 		snapshot(): FakeState {
-			const state: FakeState = { users: [], repos: [], issues: [], deliveries: [], faults: [] };
+			const state: FakeState = {
+				users: [],
+				repos: [],
+				issues: [],
+				deliveries: [],
+				faults: [],
+				apps: [],
+				installations: [],
+				appDeliveries: [],
+				webhookOutage: options.outage?.() ?? false
+			};
 			const deliveries: (FakeDelivery & { createdAt: number })[] = [];
 			for (const a of residents()) {
 				const family = a.definition.family;
@@ -82,6 +97,50 @@ export function createFakeSystem(options: FakeSystemOptions) {
 					const d = a.data as RegistryData;
 					state.users.push(...Object.values(d.users).map((u) => ({ ...u })));
 					state.repos.push(...Object.values(d.repos).map((r) => ({ ...r })));
+				} else if (family === 'apps') {
+					const d = a.data as AppsData;
+					state.apps!.push(
+						...d.apps.map((x) => ({
+							id: x.id,
+							slug: x.slug,
+							name: x.name,
+							owner: x.owner,
+							clientId: x.clientId,
+							webhookUrl: x.webhookUrl,
+							redirectUrl: x.redirectUrl,
+							setupUrl: x.setupUrl,
+							callbackUrls: [...x.callbackUrls],
+							permissions: { ...x.permissions },
+							events: [...x.events],
+							createdAt: x.createdAt
+						}))
+					);
+					state.installations!.push(
+						...d.installations.map((i) => ({
+							id: i.id,
+							appId: i.appId,
+							account: i.account,
+							accountType: i.accountType,
+							repositorySelection: i.repositorySelection,
+							repos: [...i.repos],
+							suspended: i.suspended,
+							createdAt: i.createdAt
+						}))
+					);
+					state.appDeliveries!.push(
+						...d.deliveries.map((x) => ({
+							id: x.id,
+							appId: x.appId,
+							guid: x.guid,
+							event: x.event,
+							action: x.action,
+							deliveredAt: x.deliveredAt,
+							redelivery: x.redelivery,
+							statusCode: x.statusCode,
+							installationId: x.installationId,
+							repositoryId: x.repositoryId
+						}))
+					);
 				} else if (family === 'faults') {
 					state.faults.push(...(a.data as FaultsData).faults.map((f) => ({ ...f })));
 				} else if (family === REPOSITORY_FAMILY) {
@@ -117,6 +176,9 @@ export function createFakeSystem(options: FakeSystemOptions) {
 			state.deliveries = deliveries.map(({ createdAt: _c, ...rest }) => rest);
 			state.users.sort((x, y) => x.id - y.id);
 			state.repos.sort((x, y) => x.id - y.id);
+			state.apps!.sort((x, y) => x.id - y.id);
+			state.installations!.sort((x, y) => x.id - y.id);
+			state.appDeliveries!.sort((x, y) => x.id - y.id);
 			state.issues.sort((x, y) => x.repoId - y.repoId || x.number - y.number);
 			return parseFakeState(state);
 		}
