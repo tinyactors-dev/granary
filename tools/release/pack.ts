@@ -99,7 +99,7 @@ async function scan(dir: string): Promise<void> {
 			continue;
 		}
 		if (!/\.(m?js)$/.test(e.name)) continue;
-		const code = await Bun.file(p).text();
+		const code = (await Bun.file(p).text()).replace(/^#!.*\n/, ''); // the scanner rejects shebangs
 		// Bun's own scanner: real import/require specifiers only (no comments/strings).
 		for (const { path: spec } of transpiler.scanImports(code)) {
 			if (spec.startsWith('.') || spec.startsWith('/') || /^(node|bun):/.test(spec)) continue;
