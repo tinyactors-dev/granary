@@ -33,6 +33,7 @@ import type {
 } from '../schemas/api';
 import { formatAddress, parseIssueKey, type ActorAddress } from '../schemas/actors';
 import { AdminStore, AdminStoreError } from './admins';
+import { log } from './log';
 import { masterKeyStatus } from './secrets';
 import type {
 	DapLaunchConfig,
@@ -316,25 +317,32 @@ export class RealBackend implements Backend {
 
 	async addAllowedUser(login: string, addedBy: string): Promise<AddAllowedUserResult> {
 		const { row, added } = this.#wal.addAllowedUser(login, addedBy);
-		if (added) this.#rt.publishAllowlist();
+		if (added) {
+			this.#rt.publishAllowlist();
+			log.info(`allowlist: ${row.login} added by ${addedBy}`, { 'audit.action': 'allowlist.add', 'audit.subject': row.login, 'audit.actor': addedBy });
+		}
 		return { user: { login: row.login, addedBy: row.added_by, addedAt: row.added_at }, added };
 	}
 
-	async removeAllowedUser(login: string, _removedBy: string): Promise<RemoveAllowedUserResult> {
+	async removeAllowedUser(login: string, removedBy: string): Promise<RemoveAllowedUserResult> {
 		const removed = this.#wal.removeAllowedUser(login);
-		if (removed) this.#rt.publishAllowlist();
+		if (removed) {
+			this.#rt.publishAllowlist();
+			log.info(`allowlist: ${login} removed by ${removedBy}`, { 'audit.action': 'allowlist.remove', 'audit.subject': login, 'audit.actor': removedBy });
+		}
 		return { login, removed };
 	}
 
 	// -- effects ------------------------------------------------------------------------
 
-	async retryEffect(effectKey: string, _requestedBy: string): Promise<EffectSummary> {
+	async retryEffect(effectKey: string, requestedBy: string): Promise<EffectSummary> {
 		const row = this.#wal.getOutbox(effectKey);
 		if (!row) throw new BackendError('not-found', `No effect ${effectKey}`);
 		if (row.state === 'done' || row.state === 'inflight')
 			throw new BackendError('conflict', `Effect ${effectKey} is ${row.state}`);
 		const updated = this.#wal.retryOutbox(effectKey);
 		this.#rt.relay.kick();
+		log.info(`relay: ${effectKey} retried by ${requestedBy}`, { 'audit.action': 'effect.retry', 'audit.subject': effectKey, 'audit.actor': requestedBy, 'relay.effect_key': effectKey });
 		return this.#effect(updated);
 	}
 

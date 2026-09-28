@@ -5,6 +5,7 @@
  * session and redirects to the GitHub setup page while setup is incomplete.
  */
 import { fail, redirect } from '@sveltejs/kit';
+import { log } from '$lib/server/log';
 import type { Actions, PageServerLoad } from './$types';
 import { getBackend, hasBackend } from '$lib/server/backend';
 import { setSessionCookie } from '$lib/server/auth';
@@ -21,8 +22,12 @@ export const actions: Actions = {
 		if (!TOKEN_RE.test(params.token) || !hasBackend()) return fail(400, { error: 'This sign-in link is not valid.' });
 		const backend = getBackend();
 		const session = await backend.consumeLoginLink(params.token);
-		if (!session) return fail(410, { error: 'This sign-in link is invalid, expired or already used. Ask for a new one with `granary login-link <login>`.' });
+		if (!session) {
+			log.warn('auth: login link rejected (invalid, expired or already used)', { 'auth.method': 'login-link', 'auth.outcome': 'rejected' });
+			return fail(410, { error: 'This sign-in link is invalid, expired or already used. Ask for a new one with `granary login-link <login>`.' });
+		}
 		setSessionCookie(cookies, session.sessionId, session.expiresAt, url);
+		log.info(`auth: ${session.user.login} signed in with a login link`, { 'auth.method': 'login-link', 'auth.outcome': 'ok', 'user.login': session.user.login });
 		let target = '/';
 		try {
 			if ((await backend.getSetupStatus()).state === 'needs-github') target = '/settings/github';

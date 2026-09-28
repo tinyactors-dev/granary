@@ -44,6 +44,8 @@ export const RawEnv = Type.Object(
 		GRANARY_SEED_ALLOWLIST: Type.Optional(Type.String()),
 		/** `1` enables /__dev and the DAP server outside `vite dev` (ADR 0009). */
 		GRANARY_DEV: Type.Optional(Flag),
+		/** Minimum log level: debug | info (default) | warn | error (ADR 0234). */
+		GRANARY_LOG_LEVEL: Type.Optional(Type.Union(['debug', 'info', 'warn', 'error', ''].map((l) => Type.Literal(l)))),
 		GRANARY_DAP_PORT: Type.Optional(Port),
 		/** Dev only: `origin=user:pass,…` login hints in the /__dev Tools card (ADR 0027). */
 		GRANARY_DEV_LOGIN_HINTS: Type.Optional(Type.String()),
@@ -92,6 +94,8 @@ export interface Config {
 	/** Public app URL, no trailing slash; null if unset (adapter derives it). */
 	origin: string | null;
 	port: number;
+	/** `GRANARY_LOG_LEVEL` (default `info`, ADR 0234). */
+	logLevel: 'debug' | 'info' | 'warn' | 'error';
 	/** `GRANARY_DEV=1` */
 	granaryDev: boolean;
 	/** `GRANARY_STUB_BACKEND=1`: register `StubBackend` instead of the real one (UI work). */
@@ -173,6 +177,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 		origin: raw.ORIGIN ? trimSlash(raw.ORIGIN) : null,
 		port: Number(raw.PORT ?? 3000),
 		granaryDev: raw.GRANARY_DEV === '1',
+		logLevel: (raw.GRANARY_LOG_LEVEL || 'info') as Config['logLevel'],
 		stubBackend: raw.GRANARY_STUB_BACKEND === '1',
 		dapPort: Number(raw.GRANARY_DAP_PORT ?? 4711),
 		devLoginHints: parseLoginHints(raw.GRANARY_DEV_LOGIN_HINTS),

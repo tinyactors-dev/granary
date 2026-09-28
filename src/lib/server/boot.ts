@@ -9,14 +9,14 @@ import type { Config } from '$lib/schemas/config';
 import type { Backend } from './backend';
 import { RealBackend } from './backend.real';
 import { startDapServer, stopDapServer } from './dap';
-import { log } from './log';
+import { log, createLogger, setLogLevel } from './log';
 import { attachLogExport } from './log-export';
 import { getRuntime, onShutdown, startRuntime, type Runtime } from './system';
 import { resolve } from 'node:path';
 import { createOps } from '$lib/ops/index';
 import { hasOpsBackend, setOpsBackend, type OpsModule } from '$lib/ops/contract';
 import { createHostHealth } from './ops-health';
-import { AdminStore } from './admins';
+import { AdminStore, onAdminAudit } from './admins';
 import { startAdminSocket, stopAdminSocket } from './admin-socket';
 import { closeGranarySecrets, openGranarySecrets } from './secrets';
 import { markNotReady, markReady } from './readiness';
@@ -65,7 +65,7 @@ async function startOps(runtime: Runtime, config: Config, opts: { devMode: boole
 		databases: [{ id: 'granary', label: 'granary', path: dbPath }],
 		health: () => hostHealth.health(),
 		telemetry: { subscribe: () => () => {} }, // reserved: granary pushes via ops.telemetrySink instead (ADR 0121)
-		log,
+		log: createLogger('granary-ops'), // ops' operational logs under their own service.name (ADR 0234)
 		env: process.env,
 		dataDir: resolve(config.dataDir),
 		version: VERSION,
@@ -116,8 +116,10 @@ function writePidFile(dataDir: string): void {
 }
 
 export async function bootBackend(config: Config, opts: { devMode: boolean }): Promise<Backend> {
+	setLogLevel(config.logLevel);
 	const runtime = startRuntime(config, opts);
 	const dataDir = resolve(config.dataDir);
+	onAdminAudit((e) => log.info(`audit: ${e.action} ${e.subject} by ${e.actor}`, { 'audit.action': e.action, 'audit.subject': e.subject, 'audit.actor': e.actor }));
 	const admins = new AdminStore(runtime.wal.db);
 	seedAdmins(admins, config);
 	try {

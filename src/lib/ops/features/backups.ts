@@ -56,7 +56,7 @@ export function createBackupsFeature(options: Partial<BackupsOptions> = {}): Bac
 		keysPromise ??= loadMasterKeys({ env: ctx.host.env, dataDir: ctx.host.dataDir, devMode: ctx.host.devMode, log: ctx.host.log });
 		storePromise ??= keysPromise.then((keys) => {
 			rt.keys = keys;
-			rt.secrets = new SecretStore({ db: ctx.db, keys, redactor: ctx.redactor, now: ctx.now, newId: (p) => newId(p, ctx.now()) });
+			rt.secrets = new SecretStore({ db: ctx.db, keys, redactor: ctx.redactor, now: ctx.now, newId: (p) => newId(p, ctx.now()), log: ctx.host.log });
 			return rt.secrets;
 		});
 		return storePromise;
@@ -172,7 +172,7 @@ export function createBackupsFeature(options: Partial<BackupsOptions> = {}): Bac
 
 		async start(ctx: OpsContext) {
 			rt.ctx = ctx;
-			rt.repo = new BackupsRepo(ctx.db, ctx.now);
+			rt.repo = new BackupsRepo(ctx.db, ctx.now, ctx.host.log);
 			const store = await secretStore(ctx);
 			const keys = rt.keys!;
 			if (keys.status === 'missing') ctx.host.log.warn('ops/backups: GRANARY_MASTER_KEY is missing — backups will not run (ADR 0097)');

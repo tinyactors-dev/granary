@@ -171,7 +171,7 @@ export class Relay {
 			}
 			await github.closeIssue(payload.owner, payload.repo, payload.number, signal);
 			this.#wal.markOutboxDone(key);
-			log.info(`relay: ${key} done (comment ${commentId}, attempt ${row.attempts})`);
+			log.info(`relay: ${key} done (comment ${commentId}, attempt ${row.attempts})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'github.comment_id': commentId ?? undefined, 'relay.attempts': row.attempts });
 			this.#reply(replyTo, EVENTS.githubClosed, { effectKey: key, commentId } satisfies GitHubClosedData);
 		} catch (e) {
 			if (this.#stopped && signal.aborted) {
@@ -181,7 +181,7 @@ export class Relay {
 			const message = e instanceof Error ? e.message : String(e);
 			if (row.attempts >= this.#maxAttempts) {
 				this.#wal.markOutboxDead(key, message);
-				log.warn(`relay: ${key} gave up after ${row.attempts} attempts: ${message}`);
+				log.error(`relay: ${key} gave up after ${row.attempts} attempts: ${message}`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts, 'error.message': message });
 				this.#reply(replyTo, EVENTS.githubGaveUp, {
 					effectKey: key,
 					attempts: row.attempts,
@@ -195,7 +195,7 @@ export class Relay {
 			const delay = retryAfter !== null ? Math.max(retryAfter, 0) : backoff + jitter;
 			const next = Date.now() + delay;
 			this.#wal.markOutboxRetry(key, next, message);
-			log.warn(`relay: ${key} attempt ${row.attempts} failed, retry in ${delay} ms: ${message}`);
+			log.warn(`relay: ${key} attempt ${row.attempts} failed, retry in ${delay} ms: ${message}`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts, 'relay.retry_in_ms': delay, 'http.response.status_code': e instanceof GitHubHttpError ? e.status : undefined, 'error.message': message });
 			this.#armTimer(next);
 		}
 	}

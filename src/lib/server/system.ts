@@ -51,7 +51,8 @@ export interface Runtime {
 	issueDefinition: Definition<IssueActorData>;
 	allowlist: Actor<AllowlistActorData>;
 	/** Post `issue.opened` to its issue actor; false when the queue refused it (the sweeper retries). */
-	postIssueOpened(data: IssueOpenedData): boolean;
+	/** `traceparent` makes the actor's trace a child of the request that received the webhook (ADR 0234). */
+	postIssueOpened(data: IssueOpenedData, traceparent?: string): boolean;
 	/** Post `allowlist.replace` with the current `allowed_users`. */
 	publishAllowlist(): void;
 	/** Monotonic counters since process start (ops health, ADR 0124). */
@@ -144,7 +145,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 				const done = parseIssueDoneData(record.data);
 				wal.recordDone(done);
 				tracer?.noteDone(inspection, done);
-				log.info(`issue/${done.issueKey} finished: ${done.verdict} (${done.reason})`);
+				log.info(`issue/${done.issueKey} finished: ${done.verdict} (${done.reason})`, { 'granary.issue_key': done.issueKey, 'granary.verdict': done.verdict, 'granary.reason': done.reason, 'github.delivery_id': done.deliveryId ?? undefined, 'granary.actor.address': `issue/${done.issueKey}` });
 			} catch (e) {
 				log.error(`done hook failed for ${record.finalState}`, e);
 			}
@@ -230,9 +231,9 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		}
 	});
 
-	const postIssueOpened = (data: IssueOpenedData): boolean => {
+	const postIssueOpened = (data: IssueOpenedData, traceparent?: string): boolean => {
 		try {
-			system.post(issueAddressFromKey(data.issueKey), EVENTS.issueOpened, data);
+			system.post(issueAddressFromKey(data.issueKey), EVENTS.issueOpened, data, traceparent ? { traceparent } : undefined);
 			return true;
 		} catch (e) {
 			log.warn(`could not post issue.opened for ${data.issueKey} (sweeper will retry)`, e);

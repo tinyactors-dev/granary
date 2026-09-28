@@ -5,6 +5,7 @@
  * TypeBox on read and write. All multi-step writes are transactions.
  */
 import type { Database } from 'bun:sqlite';
+import type { OpsLogger } from '../contract';
 import { Type, type Static } from '@sinclair/typebox';
 import { parse, parseJson } from '../../schemas/standard';
 import { OpsBackendError } from '../contract';
@@ -47,7 +48,9 @@ export const monthKey = (t: number) => new Date(t).toISOString().slice(0, 7);
 export class BackupsRepo {
 	constructor(
 		readonly db: Database,
-		readonly now: () => number
+		readonly now: () => number,
+		/** The running server's ops logger: audited changes are logged (ADR 0234); absent in the offline CLI. */
+		readonly log: OpsLogger | null = null
 	) {}
 
 	tx<T>(fn: () => T): T {
@@ -58,6 +61,7 @@ export class BackupsRepo {
 		this.db.query('INSERT INTO ops_audit (at, actor, action, area, target_id, detail) VALUES (?,?,?,?,?,?)').run(
 			this.now(), actor, action, area, targetId, detail === undefined ? null : JSON.stringify(detail)
 		);
+		this.log?.info(`audit: ${area}.${action} ${targetId ?? ''} by ${actor}`.replace('  ', ' '), { 'audit.action': `${area}.${action}`, 'audit.subject': targetId ?? undefined, 'audit.actor': actor });
 	}
 
 	/** ops_events is append-for-all (ADR 0110); backups write `info` and `handled` items. */

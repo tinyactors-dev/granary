@@ -108,5 +108,6 @@ async function checkDrill(rt: BackupsRuntime, request: IORequest, reply: (e: str
 		await rm(d.localPath, { force: true });
 	}
 	rt.r.finishDrill(d.drillId, result, detail, rt.now - d.manifest.createdAt);
+	(result === 'ok' ? rt.log.info : rt.log.warn)(`backup: restore drill ${d.drillId}: ${result}`, { 'drill.id': d.drillId, 'drill.result': result, 'drill.detail': detail ?? undefined, 'drill.rpo_ms': rt.now - d.manifest.createdAt, 'backup.database': d.manifest.database });
 	reply('drill.checked', { drillId: d.drillId, result, detail });
 }

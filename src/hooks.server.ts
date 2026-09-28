@@ -6,7 +6,7 @@
  *   /settings/github (ADR 0161, 0163).
  * The actor-system agent owns this file and may extend it.
  */
-import { redirect, type Handle, type HandleValidationError, type ServerInit } from '@sveltejs/kit';
+import { redirect, type Handle, type HandleServerError, type HandleValidationError, type ServerInit } from '@sveltejs/kit';
 import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { loadConfig, isDevMode } from '$lib/schemas/config';
@@ -14,6 +14,8 @@ import { hasBackend, getBackend, setBackend } from '$lib/server/backend';
 import { SESSION_COOKIE } from '$lib/server/auth';
 import { hasOpsBackend, setOpsBackend } from '$lib/ops/contract';
 import type { SetupState } from '$lib/schemas/admins';
+import { log } from '$lib/server/log';
+import { observeRequest, safePath } from '$lib/server/request-log';
 
 /** Setup state changes rarely (GitHub connected); cache it briefly per process. */
 const SETUP_TTL_MS = 2000;
@@ -63,7 +65,10 @@ export const init: ServerInit = async () => {
 	setBackend(await bootBackend(config, { devMode: isDevMode({ dev, env }) }));
 };
 
-export const handle: Handle = async ({ event, resolve }) => {
+/** Every request: access log + request span + log context (ADR 0234). */
+export const handle: Handle = ({ event, resolve }) => observeRequest(event, () => handleRequest({ event, resolve }));
+
+const handleRequest: Handle = async ({ event, resolve }) => {
 	event.locals.devMode = isDevMode({ dev, env });
 	event.locals.sessionId = null;
 	event.locals.user = null;
@@ -88,6 +93,16 @@ export const handle: Handle = async ({ event, resolve }) => {
 		}
 	}
 	return resolve(event);
+};
+
+/**
+ * Unexpected errors (5xx) are logged with their stack (the access log records
+ * every status); replaces SvelteKit's default console output, including its
+ * `[404] GET /.env` lines for scanner traffic (ADR 0234).
+ */
+export const handleError: HandleServerError = ({ error, event, status, message }) => {
+	if (status >= 500) log.error(`unexpected error handling ${event.request.method} ${safePath(event.url)}`, error instanceof Error ? error : { 'error.message': String(error) }, { 'http.response.status_code': status });
+	return { message: status >= 500 ? 'Internal Error' : message };
 };
 
 export const handleValidationError: HandleValidationError = ({ issues }) => ({

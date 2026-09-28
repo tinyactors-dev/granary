@@ -87,6 +87,7 @@ export class Tracer {
 	}
 
 	close(): void {
+		this.#flushOwn();
 		this.#closed = true;
 		this.#sink = null;
 	}
@@ -141,6 +142,35 @@ export class Tracer {
 			this.#export('traces', encodeTraces(spans));
 			if (logs && logs.length) this.#export('logs', logs.slice()); // the sink may hold it for a while
 		}
+		if (this.#keepRecent) this.#remember(spans);
+	}
+
+	#own: DecodedSpan[] = [];
+	#ownTimer: ReturnType<typeof setTimeout> | null = null;
+
+	/**
+	 * Spans granary produces itself (HTTP server spans, ADR 0234), exported in
+	 * small batches alongside the actors' spans and kept in the dev ring buffer.
+	 */
+	emitSpan(span: DecodedSpan): void {
+		if (this.#closed) return;
+		const exporting = this.#sink ? (this.#sink.active?.() ?? true) : false;
+		if (!exporting && !this.#keepRecent) return;
+		this.#own.push(span);
+		if (this.#own.length >= 200) this.#flushOwn();
+		else if (!this.#ownTimer) {
+			this.#ownTimer = setTimeout(() => this.#flushOwn(), 1000);
+			(this.#ownTimer as { unref?: () => void }).unref?.();
+		}
+	}
+
+	#flushOwn(): void {
+		if (this.#ownTimer) clearTimeout(this.#ownTimer);
+		this.#ownTimer = null;
+		const spans = this.#own;
+		this.#own = [];
+		if (!spans.length) return;
+		if (this.#sink && (this.#sink.active?.() ?? true)) this.#export('traces', encodeTraces(spans));
 		if (this.#keepRecent) this.#remember(spans);
 	}
 

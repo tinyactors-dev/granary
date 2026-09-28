@@ -6,7 +6,7 @@
  */
 import type { Database } from 'bun:sqlite';
 import type { Redactor, SecretReader } from '../feature';
-import { OpsBackendError, type KeyStatus, type SecretMeta, type SetSecretInput } from '../contract';
+import { OpsBackendError, type KeyStatus, type OpsLogger, type SecretMeta, type SetSecretInput } from '../contract';
 import { EnvelopeSecretStore, PREVIOUS_VALUE_TTL_MS, REDACT_TTL_MS, type SecretTableRow } from '../../platform/secrets/store';
 import type { MasterKeys } from '../../platform/secrets/keys';
 
@@ -18,6 +18,8 @@ export interface SecretStoreOptions {
 	redactor: Redactor;
 	now(): number;
 	newId(prefix: string): string;
+	/** The running server's ops logger: secret changes are logged, never their values (ADR 0234). */
+	log?: OpsLogger;
 }
 
 export class SecretStore implements SecretReader {
@@ -35,10 +37,12 @@ export class SecretStore implements SecretReader {
 			newId: o.newId,
 			keyName: 'GRANARY_MASTER_KEY (or GRANARY_MASTER_KEY)',
 			error: (code, message) => new OpsBackendError(code, message),
-			audit: (e) =>
+			audit: (e) => {
 				o.db
 					.query('INSERT INTO ops_audit (at, actor, action, area, target_id, detail) VALUES (?,?,?,?,?,?)')
-					.run(e.at, e.actor, e.action, 'secret', e.id, e.detail ? JSON.stringify(e.detail) : null)
+					.run(e.at, e.actor, e.action, 'secret', e.id, e.detail ? JSON.stringify(e.detail) : null);
+				o.log?.info(`audit: secret.${e.action} ${e.id} by ${e.actor}`, { 'audit.action': `secret.${e.action}`, 'audit.subject': e.id, 'audit.actor': e.actor });
+			}
 		});
 	}
 

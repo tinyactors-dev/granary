@@ -68,6 +68,13 @@ export function readGitHubMode(db: Database): string | null {
 	}
 }
 
+/** Server-only audit listener (the running server logs audit entries, ADR 0234; the offline CLI doesn't). */
+type AuditListener = (e: { actor: string; action: AuditAction; subject: string }) => void;
+let auditListener: AuditListener | null = null;
+export function onAdminAudit(listener: AuditListener | null): void {
+	auditListener = listener;
+}
+
 export class AdminStore {
 	readonly db: Database;
 	readonly #now: () => number;
@@ -245,6 +252,11 @@ export class AdminStore {
 		this.db
 			.query('INSERT INTO audit_log (at, actor, action, subject, detail) VALUES (?,?,?,?,?)')
 			.run(this.#now(), actor, action, subject, detail ? JSON.stringify(detail) : null);
+		try {
+			auditListener?.({ actor, action, subject });
+		} catch {
+			/* logging must never fail the audited change */
+		}
 	}
 
 	listAudit(limit: number): AuditEntry[] {

@@ -11,7 +11,7 @@ import { GITHUB_APP_LIFECYCLE_EVENTS } from '../schemas/github-app';
 import { SchemaValidationError, check } from '../schemas/standard';
 import type { InboxRow } from '../schemas/wal';
 import { installationIdOf } from './github/webhooks';
-import { log } from './log';
+import { currentLogContext, log, traceparentFor } from './log';
 import type { Runtime } from './system';
 
 /** Constant-time check of `X-Hub-Signature-256: sha256=<hex hmac>`. */
@@ -77,6 +77,7 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 
 	const body = new Uint8Array(await request.arrayBuffer());
 	if (!verifySignature(secret, body, request.headers.get(WEBHOOK_HEADERS.signature256))) {
+		log.warn('webhook: rejected, invalid signature', { 'github.event': request.headers.get(WEBHOOK_HEADERS.event) ?? undefined, 'github.delivery_id': request.headers.get(WEBHOOK_HEADERS.delivery) ?? undefined });
 		return { status: 401, body: 'Invalid signature' };
 	}
 
@@ -117,7 +118,7 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 	let note: string | null = null;
 	if (LIFECYCLE.has(event) && rt.github.mode() === 'app' && !duplicate) {
 		note = rt.github.applyLifecycleEvent(event, json);
-		log.info(`webhook: ${note}`);
+		log.info(`webhook: ${note}`, { 'github.event': event, 'github.action': action ?? undefined, 'github.delivery_id': deliveryId });
 	}
 
 	let reason: string | null = null;
@@ -136,9 +137,21 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 		log.error(`webhook: could not store delivery ${deliveryId}`, e);
 		return { status: 500, body: 'Could not store delivery' };
 	}
-	if (inserted && reason) log.info(`webhook: ${deliveryId} (${event}.${action}) ignored: ${reason}`);
+	const outcome = !inserted ? 'duplicate' : actionable ? 'accepted' : 'ignored';
+	const ignoreReason = actionable ? undefined : (reason ?? `${action ? `${event}.${action}` : event} is not acted on`);
+	log.info(`webhook: ${event}${action ? `.${action}` : ''} ${outcome}${outcome === 'ignored' && ignoreReason ? ` (${ignoreReason})` : ''}`, {
+		'github.event': event,
+		'github.action': action ?? undefined,
+		'github.delivery_id': deliveryId,
+		'github.repository': payload?.repository.full_name,
+		'github.issue.number': payload?.issue.number,
+		'github.issue.author': payload?.issue.user.login,
+		'granary.issue_key': key ?? undefined,
+		'webhook.outcome': outcome,
+		'webhook.reason': outcome === 'ignored' ? ignoreReason : undefined
+	});
 
-	if (inserted && actionable && payload) rt.postIssueOpened(issueOpenedData(deliveryId, payload));
+	if (inserted && actionable && payload) rt.postIssueOpened(issueOpenedData(deliveryId, payload), traceparentFor(currentLogContext()));
 
 	return { status: 202, body: { deliveryId, state, duplicate: !inserted, ...(reason ? { reason } : {}), ...(note ? { note } : {}) } };
 }

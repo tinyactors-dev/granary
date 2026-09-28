@@ -32,6 +32,7 @@ export class HealthBackend implements OpsBackendHealth {
 			this.ctx.db
 				.query('INSERT INTO ops_audit (at, actor, action, area, target_id, detail) VALUES ($at, $actor, $action, $area, $id, $detail)')
 				.run({ at: this.ctx.now(), actor, action, area: 'telemetry', id: targetId, detail: detail === undefined ? null : JSON.stringify(detail) });
+			this.ctx.host.log.info(`audit: telemetry.${action} ${targetId ?? ''} by ${actor}`, { 'audit.action': `telemetry.${action}`, 'audit.subject': targetId ?? undefined, 'audit.actor': actor });
 		} catch (e) {
 			this.ctx.host.log.warn('ops: audit append failed', e instanceof Error ? e.message : e);
 		}

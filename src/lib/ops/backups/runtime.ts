@@ -72,6 +72,10 @@ export class BackupsRuntime {
 	get system(): System {
 		return this.c.system;
 	}
+	/** The host's logger for ops (`service.name=granary-ops`, ADR 0234). */
+	get log() {
+		return this.c.host.log;
+	}
 	get now(): number {
 		return this.c.now();
 	}

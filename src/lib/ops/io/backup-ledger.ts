@@ -37,6 +37,7 @@ export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 					const startedAt = rt.now;
 					const refuse = (why: string) => {
 						r.event('info', `backup plan ${d.planId}: run not started — ${why}`, { planId: d.planId, trigger: d.trigger });
+						rt.log.warn(`backup: plan ${d.planId} not started — ${why}`, { 'backup.plan_id': d.planId, 'backup.trigger': d.trigger, reason: why });
 						reply('plan.dispatched', { planId: d.planId, runIds: [], startedAt, refused: why });
 					};
 					if (!rt.keys?.current) return refuse('GRANARY_MASTER_KEY is not configured (backups are always encrypted, ADR 0097)');
@@ -52,6 +53,8 @@ export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 						r.audit(d.requestedBy ?? 'system', 'backup.dispatch', 'plan', plan.id, { trigger: d.trigger, runIds: runs.map((x) => x.id) });
 					});
 					reply('plan.dispatched', { planId: plan.id, runIds: runs.map((x) => x.id), startedAt, refused: null });
+					for (const run of runs)
+						rt.log.info(`backup: run ${run.id} started (${run.database})`, { 'backup.run_id': run.id, 'backup.plan_id': plan.id, 'backup.database': run.database, 'backup.trigger': d.trigger, 'backup.destinations': destinationIds.join(',') });
 					for (const run of runs) {
 						post(runAddress(run.id), 'run.start', { runId: run.id, planId: plan.id, database: run.database, destinationIds, trigger: d.trigger });
 					}
@@ -87,6 +90,12 @@ export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 					const d = parseOpsEventData('run.finalize', request.data);
 					const run = r.runRow(d.runId);
 					r.finalizeRun(d.runId, d.state, d.sealedBytes, d.error);
+					{
+						const attrs = { 'backup.run_id': d.runId, 'backup.plan_id': d.planId, 'backup.database': run?.database, 'backup.state': d.state, 'backup.sealed_bytes': d.sealedBytes ?? undefined, duration_ms: run ? rt.now - run.started_at : undefined, 'error.message': d.error ?? undefined };
+						const msg = `backup: run ${d.runId} ${d.state}${run ? ` (${run.database})` : ''}`;
+						if (d.state === 'succeeded' || d.state === 'postponed') rt.log.info(msg, attrs);
+						else rt.log.warn(msg, attrs);
+					}
 					if (run?.raw_path) void rm(run.raw_path, { force: true });
 					if (d.state !== 'succeeded') r.event(d.state === 'postponed' ? 'handled' : 'info', `backup run ${d.runId} (${run?.database ?? '?'}) ${d.state}${d.error ? `: ${d.error}` : ''}`, { runId: d.runId, planId: d.planId, state: d.state });
 					post(planAddress(d.planId), 'run.finished', { runId: d.runId, state: d.state, sealedBytes: d.sealedBytes });
@@ -94,10 +103,12 @@ export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 				}
 				case 'upload.record-retry': {
 					const d = parseOpsEventData('upload.record-retry', request.data);
+					rt.log.warn(`backup: upload ${d.runId} → ${d.destinationId} failed (attempt ${d.attempts}), retrying`, { 'backup.run_id': d.runId, 'backup.destination_id': d.destinationId, 'backup.attempts': d.attempts, 'error.code': d.lastError?.code, 'error.message': d.lastError?.message });
 					return r.setUploadState(d.runId, d.destinationId, 'retry-wait', { attempts: d.attempts, nextAttemptAt: d.nextAttemptAt, lastError: d.lastError });
 				}
 				case 'upload.record-failed': {
 					const d = parseOpsEventData('upload.record-failed', request.data);
+					rt.log.error(`backup: upload ${d.runId} → ${d.destinationId} failed after ${d.attempts} attempt(s)`, { 'backup.run_id': d.runId, 'backup.destination_id': d.destinationId, 'backup.attempts': d.attempts, 'error.code': d.lastError?.code, 'error.message': d.lastError?.message });
 					return r.setUploadState(d.runId, d.destinationId, 'failed', { attempts: d.attempts, lastError: d.lastError });
 				}
 				default:

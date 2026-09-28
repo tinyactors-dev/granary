@@ -162,7 +162,10 @@ async function post(url: string, body: Uint8Array, contentType: string, headers:
 export function otlpProcessor(deps: OtlpDeps): IOProcessor {
 	/** Sink failure logs are rate-limited to one per sink per minute (ADR 0093). */
 	const lastLog = new Map<string, number>();
+	/** Sinks whose last export failed: their next success logs a recovery (ADR 0234). */
+	const failing = new Set<string>();
 	const logFailure = (sinkId: string, msg: string) => {
+		failing.add(sinkId);
 		const now = deps.now();
 		if (now - (lastLog.get(sinkId) ?? 0) < 60_000) return;
 		lastLog.set(sinkId, now);
@@ -214,6 +217,7 @@ export function otlpProcessor(deps: OtlpDeps): IOProcessor {
 			deps.onDelivered(sink.id, b.body.length);
 		}
 		if (ref) deps.secrets().recordUse(ref, true);
+		if (failing.delete(data.sinkId)) deps.log.info(`ops telemetry: sink ${data.sinkId} recovered`, { 'telemetry.sink_id': data.sinkId });
 		reply('sink.sent', { batches: data.batches.length, bytes });
 	}
 

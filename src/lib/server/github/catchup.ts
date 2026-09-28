@@ -112,7 +112,7 @@ export function catchupProcessor(deps: CatchupDeps): IOProcessor {
 			const replyTo: ActorAddress = { family: source.family, name: source.name };
 			const conn = deps.connection();
 			const fail = (error: string) => {
-				log.warn(`catch-up: ${error}`);
+				log.warn(`catch-up: ${error}`, { 'catchup.outcome': 'failed', 'error.message': error });
 				conn?.recordCatchupPass({ at: Date.now(), redelivered: 0, error });
 				ctx.post(replyTo, CATCHUP_EVENTS.failed, { error } satisfies CatchupFailed);
 			};
@@ -123,6 +123,7 @@ export function catchupProcessor(deps: CatchupDeps): IOProcessor {
 					const listed = await listCandidates(conn, deps.wal);
 					if (listed.candidates.length === 0) {
 						conn.recordCatchupPass({ at: Date.now(), redelivered: 0, error: null });
+						log.info('catch-up: pass done, no missed webhooks', { 'catchup.outcome': 'ok', 'catchup.missed': 0, 'catchup.redelivered': 0 });
 						if (listed.newest !== null) conn.setCheckpoint(listed.newest);
 					}
 					ctx.post(replyTo, CATCHUP_EVENTS.listed, listed);
@@ -154,7 +155,13 @@ export function catchupProcessor(deps: CatchupDeps): IOProcessor {
 				}
 				conn.recordCatchupPass({ at: Date.now(), redelivered, error: lastError });
 				if (failed === 0 && input.newest !== null) conn.setCheckpoint(input.newest);
-				if (redelivered) log.info(`catch-up: asked GitHub to redeliver ${redelivered} missed webhook(s)`);
+				(failed ? log.warn : log.info)(`catch-up: pass done, asked GitHub to redeliver ${redelivered} of ${input.ids.length} missed webhook(s)`, {
+					'catchup.outcome': failed ? 'partial' : 'ok',
+					'catchup.missed': input.ids.length,
+					'catchup.redelivered': redelivered,
+					'catchup.failed': failed,
+					'error.message': lastError ?? undefined
+				});
 				ctx.post(replyTo, CATCHUP_EVENTS.redelivered, { redelivered, failed, lastError } satisfies CatchupRedelivered);
 				return;
 			}

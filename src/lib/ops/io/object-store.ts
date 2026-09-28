@@ -148,6 +148,7 @@ async function verify(rt: BackupsRuntime, request: IORequest, reply: (e: string,
 			throw new StoreFailure(storeError('integrity', `artifact ${d.manifest.artifactKey} is ${art ? `${art.size} bytes` : 'missing'} (manifest says ${d.manifest.sealed.bytes}); manifest withdrawn, re-uploading`));
 		}
 		rt.r.setUploadState(d.runId, d.destinationId, 'done', { lastError: null });
+		rt.log.info(`backup: upload ${d.runId} → ${d.destinationId} done`, { 'backup.run_id': d.runId, 'backup.destination_id': d.destinationId, 'backup.sealed_bytes': d.manifest.sealed.bytes, 'backup.artifact_key': d.manifest.artifactKey });
 		reply('store.verified', { runId: d.runId, destinationId: d.destinationId, manifestKey: key, sealedBytes: d.manifest.sealed.bytes });
 	} catch (e) {
 		reply('store.error', { op: 'verify', runId: d.runId, destinationId: d.destinationId, error: asStoreError(e, `verify ${key}`) });
@@ -191,8 +192,10 @@ async function retentionPass(rt: BackupsRuntime, request: IORequest, reply: (e: 
 		iterations = Math.min(iterations, MAX_CONVERGENCE_ITERATIONS);
 		rt.r.kvSet(`retention:${d.destinationId}`, JSON.stringify({ at: rt.now, mode: d.mode, deleted, freedBytes, converged, floorExceedsCap, unknownObjects, sick }));
 		if (deleted) rt.r.event('handled', `retention on ${dest.name}: deleted ${deleted} objects (${freedBytes} bytes)${sick ? ' — caps only, recent uploads failing' : ''}`, { destinationId: d.destinationId, mode: d.mode, deleted, freedBytes });
+		(deleted ? rt.log.info : rt.log.debug ?? (() => {}))(`backup: retention pass on ${d.destinationId}: deleted ${deleted} object(s)`, { 'backup.destination_id': d.destinationId, 'retention.mode': d.mode, 'retention.deleted': deleted, 'retention.freed_bytes': freedBytes, 'retention.converged': converged, 'retention.sick': sick });
 		reply('retention.pass-done', { destinationId: d.destinationId, deleted, freedBytes, converged, iterations, floorExceedsCap, unknownObjects });
 	} catch (e) {
+		rt.log.warn(`backup: retention pass on ${d.destinationId} failed`, { 'backup.destination_id': d.destinationId, 'retention.mode': d.mode, 'error.message': e instanceof Error ? e.message : String(e) });
 		reply('retention.pass-done', { destinationId: d.destinationId, deleted, freedBytes, converged: false, iterations, floorExceedsCap, unknownObjects, error: asStoreError(e, `retention ${d.destinationId}`) });
 	}
 }
@@ -202,6 +205,7 @@ async function drillFetch(rt: BackupsRuntime, request: IORequest, reply: (e: str
 	rt.r.insertDrill({ id: d.drillId, destinationId: d.destinationId, database: d.database });
 	const checked = (result: string, detail: string) => {
 		rt.r.finishDrill(d.drillId, result as never, detail, null);
+		rt.log.warn(`backup: restore drill ${d.drillId} on ${d.destinationId}: ${result}`, { 'drill.id': d.drillId, 'backup.destination_id': d.destinationId, 'drill.result': String(result), 'drill.detail': detail ?? undefined });
 		reply('drill.checked', { drillId: d.drillId, result, detail });
 	};
 	try {

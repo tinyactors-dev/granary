@@ -50,6 +50,8 @@ export * from './schemas/api';
 // ---------------------------------------------------------------------------
 
 export interface OpsLogger {
+	/** Plain-object `rest` items are structured attributes (ADR 0234). */
+	debug?(message: string, ...rest: unknown[]): void;
 	info(message: string, ...rest: unknown[]): void;
 	warn(message: string, ...rest: unknown[]): void;
 	error(message: string, ...rest: unknown[]): void;
