@@ -43,7 +43,8 @@ On **Settings → GitHub**:
 2. Optionally name it (default `granary-<host>`).
 3. Click **Create GitHub App**. GitHub shows the app it is about to create
    (name, webhook URL `https://<origin>/webhook`, permissions *Issues:
-   read & write*, *Metadata: read*, events *Issues*); confirm it.
+   read & write*, *Pull requests: read & write*, *Metadata: read*, events
+   *Issues* and *Pull request*); confirm it.
 
 GitHub sends you back to granary, which stores the app's private key,
 webhook secret and client secret encrypted with the master key. Nothing is
@@ -69,9 +70,31 @@ Click **Install on GitHub** (or **Add repositories** later), pick the
 account and the repositories, and confirm. GitHub sends you back and granary
 lists the installation with its repositories.
 
-Each repository has an on/off switch. Issues in a disabled repository are
-received but ignored; `/deliveries` shows the reason. **Refresh** re-reads
-installations from GitHub if something looks out of date.
+Each repository has two switches: **Issues** and **Pull requests**. Issues
+or pull requests in a repository whose switch is off are received but
+ignored; `/deliveries` shows the reason. **Refresh** re-reads installations
+(and the app's permissions) from GitHub if something looks out of date.
+
+### Granting pull request access to an existing app
+
+Apps created before pull request gating ask only for issues. For them the
+pull request switches are locked (*no access*) and Settings → GitHub shows a
+**Grant pull request access** card. On GitHub:
+
+1. Open the app's settings → **Permissions & events** (the card links there:
+   `https://github.com/settings/apps/<slug>/permissions`, or
+   `https://github.com/organizations/<org>/settings/apps/<slug>/permissions`
+   for an organization's app).
+2. Set **Repository permissions → Pull requests** to **Read and write**.
+3. Under **Subscribe to events**, tick **Pull request**, then **Save changes**.
+4. Accept the new permissions on each installation: GitHub shows a
+   **Review request** on the installation's settings page (and emails the
+   account owner) → **Accept new permissions**.
+5. Back in granary, press **Refresh**. The card disappears and the pull
+   request switches unlock (they are on by default).
+
+Until an installation accepts, GitHub doesn't send granary pull request
+events for its repositories, so nothing is closed there.
 
 ## 5. Missed webhooks
 

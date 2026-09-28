@@ -45,9 +45,15 @@ Single use; built from `ORIGIN`. Exit 4 means wrong user or data directory
 
 - Admins: **Settings → Admins**, or `granary admin add|remove|list`.
 - Allowlist: **Allowlist** in the UI.
-- GitHub: **Settings → GitHub** (installations, per-repo switches, missed
-  webhooks). Webhooks dropped during an outage shorter than 72 hours are
-  re-sent automatically.
+- GitHub: **Settings → GitHub** (installations, per-repo switches for issues
+  and pull requests, missed webhooks). Webhooks dropped during an outage
+  shorter than 72 hours are re-sent automatically.
+- Pull requests not being closed? Settings → GitHub shows **Grant pull
+  request access** when the app lacks `Pull requests: read & write` or the
+  *Pull request* event, or an installation hasn't accepted them yet; follow
+  [First run §4](first-run.md#granting-pull-request-access-to-an-existing-app),
+  then **Refresh**. `granary github status --json` shows the same
+  (`pullRequests`).
 
 ## Backups and restore
 

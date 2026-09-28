@@ -1,9 +1,10 @@
 # Allowlist and policy
 
-## Who may open issues
+## Who may open issues and pull requests
 
-When GitHub reports a newly **opened** issue in a guarded repository,
-granary decides by the first rule that matches:
+When GitHub reports a newly **opened** issue or pull request (drafts
+included) in a guarded repository, granary decides by the first rule that
+matches:
 
 1. the author is on the **blocklist** (and the block hasn't expired) →
    **closed**, even if they are allowlisted or a maintainer;
@@ -22,8 +23,16 @@ closed as *not planned*. By default the comment says:
 
 You can change it — see [The closing message](#the-closing-message).
 
-Only `issues` / `opened` is acted on. Reopened, edited or transferred issues
-are left alone, so a maintainer reopening an issue is final. Everything else
+Pull requests get the pull request template (default: "Thanks for the pull
+request! Pull requests in this repository can only be opened by approved
+contributors, so this one was closed automatically.") and are closed; pull
+requests have no *not planned* reason. They are gated only when the app has
+pull request access and the repository's **Pull requests** switch is on (see
+[First run §4](first-run.md#granting-pull-request-access-to-an-existing-app)).
+
+Only `issues` / `opened` and `pull_request` / `opened` are acted on.
+Reopened, edited, transferred or `ready_for_review` issues and pull requests
+are left alone, so a maintainer reopening one is final. Everything else
 GitHub sends is stored as *ignored*, with the reason visible on
 **Deliveries**.
 

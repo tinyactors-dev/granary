@@ -9,7 +9,7 @@ superseded by N`) and the newer ADR says what changed.
 
 - **Naming and configuration:** ADR 0230 lists every environment variable and
   the naming scheme; it overrides the names in earlier ADRs.
-- **GitHub:** granary connects only as a GitHub App (0160, 0190–0194, 0230).
+- **GitHub:** granary connects only as a GitHub App (0160, 0190–0194, 0230); it gates issues and pull requests (0280, 0281).
 - **Databases:** one baseline migration each for granary.sqlite and
   ops.sqlite (0230).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233).
@@ -182,3 +182,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0252](0252-template-escaping-and-safe-markdown-preview.md) | Escaping template values and a safe Markdown preview | active |
 | [0260](0260-blocklist-precedence-and-expiry.md) | A blocklist that beats the allowlist and maintainer associations | active |
 | [0270](0270-brand-wheat-logo-and-favicons.md) | Brand: colored wheat logo, favicons and app icons from one source | active |
+| [0280](0280-gate-pull-requests-like-issues.md) | Gate pull requests like issues | active |
+| [0281](0281-pull-request-permission-upgrade.md) | Pull request access for existing GitHub Apps | active |
+| [0282](0282-fake-github-pull-requests-and-permissions.md) | Fake GitHub: pull requests and accepted permissions | active |
+| [0283](0283-pull-request-tests.md) | Pull request scenarios | active |
