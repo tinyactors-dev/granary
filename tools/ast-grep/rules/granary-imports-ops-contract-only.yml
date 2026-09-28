@@ -1,0 +1,27 @@
+# ADR 0080: granary code may import only $lib/ops/contract (boot.ts: see boot-imports-ops-index-only).
+id: granary-imports-ops-contract-only
+language: TypeScript
+severity: error
+message: granary may import only `$lib/ops/contract` from the ops module (ADR 0080)
+note: Put what you need into src/lib/ops/contract.ts (or the schemas it re-exports) instead of reaching into ops internals.
+files:
+  - src/**/*.ts
+ignores:
+  - src/lib/ops/**
+  - src/lib/server/boot.ts
+  - src/hooks.server.ts
+utils:
+  ops-source:
+    all:
+      - regex: "\\$lib/ops|/ops/|^['\"]\\.\\.?/ops"
+      - not: { regex: "/ops/contract['\"]$" }
+rule:
+  any:
+    - kind: import_statement
+      has: { field: source, matches: ops-source }
+    - kind: export_statement
+      has: { field: source, matches: ops-source }
+    - kind: call_expression
+      all:
+        - has: { field: function, kind: import }
+        - has: { field: arguments, has: { kind: string, matches: ops-source } }

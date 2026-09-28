@@ -1,0 +1,18 @@
+# ADR 0080: files directly in src/lib/ops/ must not reach granary's src/lib/schemas via ../schemas (except standard).
+id: ops-root-no-granary-schemas
+language: TypeScript
+severity: error
+message: the ops module must not import granary schemas (only ../schemas/standard) (ADR 0080)
+files:
+  - src/lib/ops/*.ts
+utils:
+  forbidden:
+    all:
+      - regex: "^['\"]\\.\\./schemas/"
+      - not: { regex: "\\.\\./schemas/standard['\"]$" }
+rule:
+  any:
+    - kind: import_statement
+      has: { field: source, matches: forbidden }
+    - kind: export_statement
+      has: { field: source, matches: forbidden }

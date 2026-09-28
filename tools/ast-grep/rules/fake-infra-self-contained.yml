@@ -1,0 +1,18 @@
+# ADR 0090: fake-infra stands in for external services; it must not import granary or ops code.
+id: fake-infra-self-contained
+language: TypeScript
+severity: error
+message: fake-infra must not import granary or ops code (only src/lib/schemas/standard and @tinyactors/node)
+files:
+  - fake-infra/**/*.ts
+utils:
+  forbidden:
+    any:
+      - regex: "src/lib/(ops|server|remote|components)/"
+      - all:
+          - regex: "src/lib/schemas/"
+          - not: { regex: "src/lib/schemas/standard['\"]$" }
+      - regex: "\\$lib/"
+rule:
+  kind: import_statement
+  has: { field: source, matches: forbidden }

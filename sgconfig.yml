@@ -1,0 +1,3 @@
+# ast-grep project config (used by `mise run check:boundaries`, ADR 0080/0109)
+ruleDirs:
+  - tools/ast-grep/rules

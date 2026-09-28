@@ -1,6 +1,6 @@
 # 109. M0 scope clarifications
 
-Date: 2026-09-28 · Status: accepted · Amends 105 (M0)
+Date: 2026-09-28 · Status: accepted · Amends 105 (M0) · Partially superseded by 110
 
 ## Decision
 - **ops.sqlite DDL is pinned in M0** (`src/lib/ops/db/ddl.ts`: table

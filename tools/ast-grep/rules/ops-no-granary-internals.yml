@@ -1,0 +1,27 @@
+# ADR 0080: ops talks to granary only through OpsHost; no SvelteKit, no granary server/schemas (except standard.ts).
+id: ops-no-granary-internals
+language: TypeScript
+severity: error
+message: the ops module must not import granary internals, SvelteKit or other domains (ADR 0080)
+note: "Allowed: relative ops files, ../../schemas/standard, @sinclair/typebox, @tinyactors/node, bun:*, node:*."
+files:
+  - src/lib/ops/**/*.ts
+utils:
+  forbidden:
+    any:
+      - regex: "\\$lib/(server|remote|components)/"
+      - all:
+          - regex: "\\$lib/schemas/"
+          - not: { regex: "\\$lib/schemas/standard['\"]$" }
+      - regex: "\\$app/|@sveltejs/kit|\\$env/"
+      - regex: "\\.\\./(server|remote|components)/"
+      - all:
+          - regex: "\\.\\./\\.\\./schemas/"
+          - not: { regex: "\\.\\./\\.\\./schemas/standard['\"]$" }
+      - regex: "(fake-github|fake-infra|loadgen)/"
+rule:
+  any:
+    - kind: import_statement
+      has: { field: source, matches: forbidden }
+    - kind: export_statement
+      has: { field: source, matches: forbidden }

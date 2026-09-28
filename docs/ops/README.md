@@ -77,7 +77,7 @@ Current:
 - [0093 Feedback loops & redaction](../adr/0093-telemetry-feedback-loops-and-redaction.md)
 - [0100 No paging: self-heal, wait until morning](../adr/0100-no-paging-problems-wait-until-morning.md)
 - [0102 Configuration & seeds](../adr/0102-ops-configuration-and-seeds-revision.md)
-- [0105 Implementation plan](../adr/0105-ops-implementation-plan-revision.md) + [0109 M0 scope](../adr/0109-m0-scope-clarifications.md)
+- [0105 Implementation plan](../adr/0105-ops-implementation-plan-revision.md) + [0109 M0 scope](../adr/0109-m0-scope-clarifications.md) + [0110 composition seam & ownership](../adr/0110-m0-composition-seam-and-ownership.md)
 - [0106 EU region & R2 jurisdiction](../adr/0106-eu-region-and-r2-jurisdiction.md)
 - [0107 Egress accounting](../adr/0107-egress-accounting.md)
 - [0108 Confirmed defaults & contract tests](../adr/0108-confirmed-defaults-and-contract-tests.md)

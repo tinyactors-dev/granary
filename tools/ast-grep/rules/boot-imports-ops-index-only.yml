@@ -1,0 +1,21 @@
+# ADR 0080/0109: boot.ts and hooks.server.ts may import $lib/ops/contract and $lib/ops/index, nothing else from ops.
+id: boot-imports-ops-index-only
+language: TypeScript
+severity: error
+message: boot.ts / hooks.server.ts may import only `$lib/ops/contract` and `$lib/ops/index` (ADR 0080)
+files:
+  - src/lib/server/boot.ts
+  - src/hooks.server.ts
+utils:
+  ops-source:
+    all:
+      - regex: "\\$lib/ops|/ops/"
+      - not: { regex: "/ops/(contract|index)['\"]$" }
+rule:
+  any:
+    - kind: import_statement
+      has: { field: source, matches: ops-source }
+    - kind: call_expression
+      all:
+        - has: { field: function, kind: import }
+        - has: { field: arguments, has: { kind: string, matches: ops-source } }

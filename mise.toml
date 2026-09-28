@@ -54,6 +54,10 @@ run = "bun build/index.js"
 description = "Type-check (svelte-kit sync + svelte-check)"
 run = ["bunx svelte-kit sync", "bunx svelte-check --tsconfig ./tsconfig.json --output human"]
 
+[tasks."check:boundaries"]
+description = "Module boundary rules: granary ↔ ops ↔ fake-infra (ADR 0080, 0109)"
+run = ["ast-grep scan", "tools/check-svelte-boundaries.sh"]
+
 [tasks.test]
 description = "Integration tests against the built app (ADR 0007)"
 depends = ["build"]
