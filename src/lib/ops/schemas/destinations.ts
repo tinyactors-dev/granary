@@ -42,7 +42,12 @@ export const R2Settings = Type.Object(
 		prefix: Type.String({ maxLength: 200, pattern: '^([A-Za-z0-9._-]+/)*$' }),
 		/** Not secret (it's the token id), stored in clear for display. */
 		accessKeyId: Type.String({ minLength: 1, maxLength: 128 }),
-		secretAccessKey: SecretRef
+		secretAccessKey: SecretRef,
+		/**
+		 * Dev/test only (agent A, ADR 0112): talk to a stand-in (fake-infra,
+		 * e.g. `http://localhost:4090/s3/eu`) instead of the derived R2 endpoint.
+		 */
+		endpointOverride: Type.Optional(Type.String({ pattern: '^https?://[^\\s]+$' }))
 	},
 	{ additionalProperties: false }
 );
@@ -50,7 +55,8 @@ export const R2Settings = Type.Object(
 export const S3Settings = Type.Object(
 	{
 		kind: Type.Literal('s3'),
-		endpoint: Type.String({ pattern: '^https?://[^\\s/]+(:[0-9]+)?/?$' }),
+		/** Path-style base URL; a path prefix is allowed (e.g. fake-infra's `/s3/eu`). */
+		endpoint: Type.String({ pattern: '^https?://[^\\s/]+(:[0-9]+)?(/[^\\s]*)?$' }),
 		region: Type.String({ minLength: 1, maxLength: 40 }),
 		bucket: Type.String({ minLength: 3, maxLength: 63 }),
 		prefix: Type.String({ maxLength: 200, pattern: '^([A-Za-z0-9._-]+/)*$' }),

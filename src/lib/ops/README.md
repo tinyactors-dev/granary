@@ -18,6 +18,7 @@ also import `$lib/ops/index`. Ops imports no granary internals (only
 | `index.ts` | `createOps` (M0: no-op) + `createStubOpsBackend` | B assembles |
 | `backend.stub.ts` | realistic in-memory OpsBackend for UI work | M0 |
 | `features/backups.ts`, `actors/{ops-config,backup-plan,backup-run,upload,retention,restore-drill}.ts`, `io/{snapshot,object-store}.ts`, `secrets/`, `backend/backups.ts`, `cli/` | backups | A (M1+M2) |
+| `backups/` | backups internals: repo, runtime, seal (zstd + AES-GCM), stores, retention planner, restore, worker client, disk rule, test connection, remediations (ADR 0111–0118) | A |
 | `features/health.ts`, `actors/{telemetry-sink,watchdog,condition,remediator}.ts`, `io/{otlp,remediate}.ts`, `telemetry/`, `backend/{health,index}.ts`, `system.ts` | telemetry & self-healing | B (M3+M4) |
 
 One file per actor in `actors/`; side effects only in `io/`.

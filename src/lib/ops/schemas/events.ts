@@ -47,14 +47,21 @@ export function parseUploadName(name: string): { runId: string; destinationId: s
 }
 
 /** I/O processor types (ADR 0082, 0101). The only code doing side effects. */
-export const OPS_IO = { snapshot: 'snapshot', objectStore: 'object-store', otlp: 'otlp', remediate: 'remediate' } as const;
+export const OPS_IO = {
+	snapshot: 'snapshot',
+	objectStore: 'object-store',
+	otlp: 'otlp',
+	remediate: 'remediate',
+	/** Backups' persistence of run/upload/drill/plan state + config reconcile (ADR 0111). */
+	ledger: 'backup-ledger'
+} as const;
 
 /** Delayed-send ids (cancellable). */
 export const SEND_ID = { tick: 'tick', retry: 'retry', grace: 'grace', flush: 'flush', probe: 'probe' } as const;
 
 const ConfigArea = Type.Union([Type.Literal('destination'), Type.Literal('plan'), Type.Literal('sink'), Type.Literal('budgets'), Type.Literal('secret')]);
 const Empty = Type.Object({}, { additionalProperties: false });
-const RawSnapshot = Type.Object({
+export const RawSnapshot = Type.Object({
 	runId: OpsId,
 	database: DatabaseId,
 	rawPath: Type.String(),
@@ -65,6 +72,8 @@ const RawSnapshot = Type.Object({
 	pageCount: Type.Integer({ minimum: 0 }),
 	rowCounts: Type.Record(Type.String(), Type.Integer({ minimum: 0 }))
 });
+
+export const RunTrigger = Type.Union([Type.Literal('schedule'), Type.Literal('catch-up'), Type.Literal('manual')]);
 
 /** Event name → data schema. Direction noted as `from → to`. */
 export const OPS_EVENTS = {
@@ -84,7 +93,7 @@ export const OPS_EVENTS = {
 	'snapshot.failed': Type.Object({ runId: OpsId, reason: Type.Union([Type.Literal('disk-insufficient'), Type.Literal('integrity'), Type.Literal('sqlite-error'), Type.Literal('worker-crashed')]), detail: Type.String() }),
 
 	// uploads (run → upload → retention/object-store → upload → run)
-	'upload.start': Type.Object({ runId: OpsId, destinationId: OpsId, snapshot: RawSnapshot }),
+	'upload.start': Type.Object({ runId: OpsId, destinationId: OpsId, snapshot: RawSnapshot, /** A (ADR 0111): fixed per run so retries overwrite */ artifactKey: Type.Optional(Type.String()) }),
 	'retention.make-room': Type.Object({ destinationId: OpsId, database: DatabaseId, estimatedBytes: Bytes, runId: OpsId }), // upload → retention
 	'retention.room-made': Type.Object({ runId: OpsId, deletedObjects: Type.Integer({ minimum: 0 }), freedBytes: Bytes }), // retention → upload
 	'store.put-artifact': Type.Object({ runId: OpsId, destinationId: OpsId, snapshot: RawSnapshot, artifactKey: Type.String() }), // upload → object-store
@@ -99,12 +108,22 @@ export const OPS_EVENTS = {
 	// retention (daily + on demand)
 	'retention.tick': Empty,
 	'retention.listed': Type.Object({ destinationId: OpsId, objects: Type.Integer(), manifests: Type.Integer(), bytes: Bytes }),
-	'retention.pass-done': Type.Object({ destinationId: OpsId, deleted: Type.Integer(), freedBytes: Bytes, converged: Type.Boolean(), iterations: Type.Integer() }),
+	'retention.pass-done': Type.Object({
+		destinationId: OpsId,
+		deleted: Type.Integer(),
+		freedBytes: Bytes,
+		converged: Type.Boolean(),
+		iterations: Type.Integer(),
+		/** A (ADR 0112): the floor alone exceeds maxBytes → attention (ADR 0096). */
+		floorExceedsCap: Type.Optional(Type.Boolean()),
+		unknownObjects: Type.Optional(Type.Integer({ minimum: 0 })),
+		error: Type.Optional(StoreError)
+	}),
 
 	// restore drills
 	'drill.tick': Empty,
 	'drill.run-now': Type.Object({ requestedBy: Type.String() }),
-	'drill.fetched': Type.Object({ drillId: OpsId, runId: OpsId, localPath: Type.String(), bytes: Bytes }),
+	'drill.fetched': Type.Object({ drillId: OpsId, runId: OpsId, localPath: Type.String(), bytes: Bytes, /** A (ADR 0111) */ manifest: Type.Optional(BackupManifest) }),
 	'drill.checked': Type.Object({ drillId: OpsId, result: Type.String(), detail: Type.Union([Type.String(), Type.Null()]) }),
 
 	// telemetry (fan-out → sink; sink ↔ otlp processor)
@@ -121,7 +140,25 @@ export const OPS_EVENTS = {
 	'condition.acknowledge': Type.Object({ by: Type.String() }), // OpsBackend → condition
 	remediate: Type.Object({ conditionId: ConditionId, action: RemediationAction, attempt: Type.Integer({ minimum: 1 }) }), // condition → remediator
 	remediated: Type.Object({ conditionId: ConditionId, action: RemediationAction, outcome: Type.Union([Type.Literal('done'), Type.Literal('noop')]), detail: Type.String() }), // remediator → condition
-	'remediation.failed': Type.Object({ conditionId: ConditionId, action: RemediationAction, error: Type.String() })
+	'remediation.failed': Type.Object({ conditionId: ConditionId, action: RemediationAction, error: Type.String() }),
+
+	// ---- backups additions (agent A, ADR 0111): requests to the `backup-ledger`,
+	// `object-store` and `snapshot` processors and their replies. ----
+	'config.reconcile': Type.Object({ area: Type.Union([ConfigArea, Type.Null()]), id: Type.Union([Type.String(), Type.Null()]) }), // ops-config → ledger
+	'config.reconciled': Type.Object({ spawned: Type.Array(Type.String()), replaced: Type.Array(Type.String()), destroyed: Type.Array(Type.String()) }), // ledger → ops-config
+	'plan.dispatch': Type.Object({ planId: OpsId, trigger: RunTrigger, requestedBy: Type.Union([Type.String(), Type.Null()]) }), // plan → ledger
+	'plan.dispatched': Type.Object({ planId: OpsId, runIds: Type.Array(OpsId), startedAt: Timestamp, refused: Type.Union([Type.String(), Type.Null()]) }), // ledger → plan
+	'plan.refresh-interval': Type.Object({ planId: OpsId }), // plan → ledger (after run.finished)
+	'plan.interval': Type.Object({ planId: OpsId, effectiveIntervalMs: Type.Integer({ minimum: 0 }), stretched: Type.Boolean() }), // ledger → plan
+	'run.uploads': Type.Object({ runId: OpsId, destinationIds: Type.Array(OpsId), snapshot: RawSnapshot }), // run → ledger (inserts upload rows, posts upload.start)
+	'run.finalize': Type.Object({ runId: OpsId, planId: OpsId, state: Type.Union([Type.Literal('succeeded'), Type.Literal('partial'), Type.Literal('failed'), Type.Literal('postponed')]), sealedBytes: Type.Union([Bytes, Type.Null()]), error: Type.Union([Type.String(), Type.Null()]) }), // run → ledger
+	'upload.record-retry': Type.Object({ runId: OpsId, destinationId: OpsId, attempts: Type.Integer(), nextAttemptAt: Timestamp, lastError: StoreError }), // upload → ledger
+	'upload.record-failed': Type.Object({ runId: OpsId, destinationId: OpsId, attempts: Type.Integer(), lastError: StoreError }), // upload → ledger
+	'store.verify': Type.Object({ runId: OpsId, destinationId: OpsId, manifest: BackupManifest }), // upload → object-store
+	'store.verified': Type.Object({ runId: OpsId, destinationId: OpsId, manifestKey: Type.String(), sealedBytes: Bytes }), // object-store → upload
+	'retention.pass': Type.Object({ destinationId: OpsId, mode: Type.Union([Type.Literal('daily'), Type.Literal('make-room'), Type.Literal('after-upload')]), database: Type.Union([DatabaseId, Type.Null()]), estimatedBytes: Bytes, runId: Type.Union([OpsId, Type.Null()]) }), // retention → object-store
+	'drill.fetch': Type.Object({ drillId: OpsId, destinationId: OpsId, database: DatabaseId }), // restore-drill → object-store
+	'drill.check': Type.Object({ drillId: OpsId, destinationId: OpsId, runId: OpsId, localPath: Type.String(), manifest: BackupManifest }) // restore-drill → snapshot
 } as const satisfies Record<string, TSchema>;
 
 export type OpsEventName = keyof typeof OPS_EVENTS;

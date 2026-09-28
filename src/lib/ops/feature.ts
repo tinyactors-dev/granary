@@ -9,6 +9,7 @@
 import type { Database } from 'bun:sqlite';
 import type { IOProcessor, Invoker, LoadResult, LoaderOptions, System, ActorAddress } from '@tinyactors/node';
 import type { OpsBackendBackups, OpsBackendHealth, OpsHost, TelemetrySink } from './contract';
+import type { RemediationAction } from './schemas/conditions';
 
 /** Read access to secrets for I/O processors only (ADR 0086). Implemented by the backups feature. */
 export interface SecretReader {
@@ -33,10 +34,30 @@ export interface OpsContext {
 	redactor: Redactor;
 	/** Post into the ops System (e.g. config.changed after a DB commit). */
 	post(target: ActorAddress, event: string, data?: unknown): void;
+	/**
+	 * Spawn a named actor and remember its address for `listOpsActors` and
+	 * trace attribution (additive, ADR 0120). Prefer it over `system.spawn`.
+	 */
+	spawn<Data extends object>(definition: import('@tinyactors/node').Definition<Data>, address: ActorAddress, binding?: Partial<Data>): import('@tinyactors/node').Actor<Data>;
+	/** Never export spans of this definition (telemetry loop breaking, ADR 0093/0120). */
+	excludeFromTraces?(definition: import('@tinyactors/node').Definition<object>): void;
 }
+
+/** A self-healing action contributed by a feature (ADR 0101, 0123). Idempotent; never throws for "nothing to do". */
+export type RemediationHandler = (
+	ctx: OpsContext,
+	request: { conditionId: string; action: RemediationAction; attempt: number; subject: string | null }
+) => Promise<{ outcome: 'done' | 'noop'; detail: string }>;
 
 export interface OpsFeature<Backend> {
 	name: string;
+	/**
+	 * Remediations this feature knows how to perform (additive, ADR 0123). The
+	 * health feature runs them from `remediator/main`; e.g. the backups feature
+	 * contributes `drop-local-copy`, `postpone-backup`, `stretch-interval`,
+	 * `retry-upload` and `rerun-drill`.
+	 */
+	remediations?: Partial<Record<RemediationAction, RemediationHandler>>;
 	/** I/O processors by type (keys from OPS_IO). */
 	io: Record<string, IOProcessor>;
 	invokers?: Record<string, Invoker>;
@@ -48,5 +69,5 @@ export interface OpsFeature<Backend> {
 	backend(ctx: OpsContext): Backend;
 }
 
-export type BackupsFeature = OpsFeature<OpsBackendBackups> & { secrets(ctx: Omit<OpsContext, 'secrets' | 'system' | 'post'>): SecretReader };
+export type BackupsFeature = OpsFeature<OpsBackendBackups> & { secrets(ctx: Omit<OpsContext, 'secrets' | 'system' | 'post' | 'spawn'>): SecretReader };
 export type HealthFeature = OpsFeature<OpsBackendHealth> & { redactor(): Redactor; telemetrySink(ctx: OpsContext): TelemetrySink };

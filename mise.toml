@@ -59,6 +59,10 @@ run = "bun build/index.js"
 description = "Type-check (svelte-kit sync + svelte-check)"
 run = ["bunx svelte-kit sync", "bunx svelte-check --tsconfig ./tsconfig.json --output human"]
 
+[tasks."ops:restore"]
+description = "Restore an ops backup to a file and verify it (ADR 0116). Needs OPS_MASTER_KEY: `fnox exec -P prod -- mise run ops:restore -- --ops-db data/ops.sqlite --dest seed-r2 --latest --out restored.sqlite`"
+run = "bun src/lib/ops/cli/restore.ts"
+
 [tasks."check:boundaries"]
 description = "Module boundary rules: granary ↔ ops ↔ fake-infra (ADR 0080, 0109)"
 run = ["ast-grep scan", "tools/check-svelte-boundaries.sh"]
