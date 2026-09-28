@@ -10,8 +10,14 @@ import { env } from '$env/dynamic/private';
 import { loadConfig, isDevMode } from '$lib/schemas/config';
 import { hasBackend, getBackend, setBackend } from '$lib/server/backend';
 import { SESSION_COOKIE } from '$lib/server/auth';
+import { hasOpsBackend, setOpsBackend } from '$lib/ops/contract';
 
 export const init: ServerInit = async () => {
+	// /ops UI development without the real ops module (ADR 0110, 0140).
+	if (env.GRANARY_STUB_OPS === '1' && !hasOpsBackend()) {
+		const { createStubOpsBackend } = await import('$lib/ops/index');
+		setOpsBackend(await createStubOpsBackend());
+	}
 	if (hasBackend()) return; // HMR: keep the running system
 	const stub = env.GRANARY_STUB_BACKEND === '1';
 	const config = loadConfig(env, { requireSecrets: !stub && !isDevMode({ dev, env }) });

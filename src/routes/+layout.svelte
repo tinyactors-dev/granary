@@ -6,6 +6,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
 	import AppShell from '$lib/components/app/AppShell.svelte';
 	import SignInLanding from '$lib/components/app/SignInLanding.svelte';
+	import OpsBanner from '$lib/components/ops/OpsBanner.svelte';
 
 	let { data, children } = $props();
 
@@ -21,7 +22,11 @@
 <Toaster richColors closeButton />
 <Tooltip.Provider delayDuration={200}>
 	{#if showApp}
-		<AppShell>{@render children()}</AppShell>
+		<AppShell>
+			<!-- "While you were away" (ADR 0100, 0104): signed-in users, outside the dev portal. -->
+			{#if data.user && !isDevRoute}<OpsBanner />{/if}
+			{@render children()}
+		</AppShell>
 	{:else}
 		<SignInLanding />
 	{/if}
