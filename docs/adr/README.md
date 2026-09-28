@@ -12,7 +12,7 @@ superseded by N`) and the newer ADR says what changed.
 - **GitHub:** granary connects only as a GitHub App (0160, 0190–0194, 0230); it gates issues and pull requests (0280, 0281).
 - **Databases:** one baseline migration each for granary.sqlite and
   ops.sqlite (0230).
-- **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290).
+- **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290). On phones tables stack into cards and the nav is a drawer (0295, 0296).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233).
 
 | ADR | Title | State |
@@ -191,3 +191,5 @@ superseded by N`) and the newer ADR says what changed.
 | [0290](0290-admin-section-and-capabilities.md) | An admin section in every environment, gated by capability | active |
 | [0291](0291-structure-activity-policy-and-glossary.md) | Structure: Activity, Policy, one glossary, one header, one banner | active |
 | [0292](0292-readable-labels-and-production-copy.md) | Readable labels everywhere, no tooling talk in production copy | active |
+| [0295](0295-stacked-tables-on-phones.md) | Tables stack into cards on phones | active |
+| [0296](0296-mobile-navigation-drawer.md) | Mobile navigation is a drawer; scrollers show they scroll | active |
