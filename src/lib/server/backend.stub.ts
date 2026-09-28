@@ -672,6 +672,12 @@ export class StubBackend implements Backend {
 	async listAuditLog(limit: number) {
 		return this.settings.listAuditLog(limit);
 	}
+	async listLoginLinks(limit: number) {
+		return this.settings.listLoginLinks(limit);
+	}
+	async revokeLoginLink(id: string, revokedBy: string) {
+		return this.settings.revokeLoginLink(id, revokedBy);
+	}
 	async getGitHubStatus() {
 		return this.settings.getGitHubStatus();
 	}

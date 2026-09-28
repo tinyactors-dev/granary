@@ -87,7 +87,7 @@ import {
 	parseFakeState
 } from '../../../fake-github/schemas';
 import { BackendError, type Backend } from './backend';
-import type { AddAdminResult, Admin, AuditEntry, CreatedLoginLink, CreateLoginLinkInput, RemoveAdminResult, SetupStatus } from '../schemas/admins';
+import type { AddAdminResult, Admin, AuditEntry, CreatedLoginLink, CreateLoginLinkInput, LoginLinkSummary, RemoveAdminResult, RevokeLoginLinkResult, SetupStatus } from '../schemas/admins';
 import type {
 	BeginManifestInput,
 	CompleteManifestResult,
@@ -663,6 +663,12 @@ export class RealBackend implements Backend {
 	}
 	async listAuditLog(limit: number): Promise<AuditEntry[]> {
 		return this.#admins.listAudit(limit);
+	}
+	async listLoginLinks(limit: number): Promise<LoginLinkSummary[]> {
+		return this.#admins.listLoginLinks(limit);
+	}
+	async revokeLoginLink(id: string, revokedBy: string): Promise<RevokeLoginLinkResult> {
+		return this.#adminCall(() => this.#admins.revokeLoginLink(id, revokedBy));
 	}
 
 	// -- GitHub connection (ADR 0160, 0162): src/lib/server/github/connection.ts -------------

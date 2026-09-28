@@ -18,6 +18,9 @@ import {
 	type AuditEntry,
 	type AuditRow,
 	type CreatedLoginLink,
+	type LoginLinkState,
+	type LoginLinkSummary,
+	type RevokeLoginLinkResult,
 	type RemoveAdminResult,
 	type SetupState
 } from '../schemas/admins';
@@ -45,7 +48,6 @@ export interface SettingValue {
 	updatedAt: number;
 }
 
-export type LoginLinkState = 'valid' | 'used' | 'expired' | 'unknown';
 
 const sha256Hex = (s: string) => createHash('sha256').update(s).digest('hex');
 const trimSlash = (s: string) => s.replace(/\/+$/, '');
@@ -164,14 +166,51 @@ export class AdminStore {
 	}
 
 	/** Look at a token without consuming it (the confirm page). */
-	peekLoginLink(token: string): { state: LoginLinkState; login: string | null; expiresAt: number | null } {
+	peekLoginLink(token: string): { state: LoginLinkState | 'unknown'; login: string | null; expiresAt: number | null } {
 		if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return { state: 'unknown', login: null, expiresAt: null };
-		const r = this.db.query('SELECT login, expires_at, used_at FROM login_links WHERE token_hash = ?').get(sha256Hex(token)) as
-			| { login: string; expires_at: number; used_at: number | null }
+		const r = this.db.query('SELECT login, expires_at, used_at, revoked_at FROM login_links WHERE token_hash = ?').get(sha256Hex(token)) as
+			| { login: string; expires_at: number; used_at: number | null; revoked_at: number | null }
 			| null;
 		if (!r) return { state: 'unknown', login: null, expiresAt: null };
-		const state: LoginLinkState = r.used_at !== null ? 'used' : r.expires_at <= this.#now() ? 'expired' : 'valid';
-		return { state, login: r.login, expiresAt: r.expires_at };
+		return { state: this.#linkState(r), login: r.login, expiresAt: r.expires_at };
+	}
+
+	#linkState(r: { expires_at: number; used_at: number | null; revoked_at: number | null }): LoginLinkState {
+		return r.revoked_at !== null ? 'revoked' : r.used_at !== null ? 'used' : r.expires_at <= this.#now() ? 'expired' : 'valid';
+	}
+
+	/** Newest first; tokens are never returned (ADR 0170). */
+	listLoginLinks(limit = 50): LoginLinkSummary[] {
+		const rows = this.db
+			.query('SELECT token_hash, login, created_by, created_at, expires_at, used_at, revoked_at FROM login_links ORDER BY created_at DESC LIMIT ?')
+			.all(Math.max(1, Math.min(limit, 500))) as { token_hash: string; login: string; created_by: string; created_at: number; expires_at: number; used_at: number | null; revoked_at: number | null }[];
+		return rows.map((r) => ({
+			id: r.token_hash.slice(0, 16),
+			login: r.login,
+			createdBy: r.created_by,
+			createdAt: r.created_at,
+			expiresAt: r.expires_at,
+			usedAt: r.used_at,
+			revokedAt: r.revoked_at,
+			state: this.#linkState(r)
+		}));
+	}
+
+	/** Revoke an unused link by id (hash prefix). `revoked: false` when already used, expired or revoked. */
+	revokeLoginLink(id: string, revokedBy: string): RevokeLoginLinkResult {
+		if (!/^[0-9a-f]{16}$/.test(id)) throw new AdminStoreError('invalid', 'a login link id is 16 hex characters');
+		const r = this.db.query('SELECT token_hash, login FROM login_links WHERE substr(token_hash, 1, 16) = ?').all(id) as { token_hash: string; login: string }[];
+		if (r.length === 0) throw new AdminStoreError('not-found', `login link ${id} not found`);
+		const now = this.#now();
+		let revoked = false;
+		this.db.transaction(() => {
+			const changes = this.db
+				.query('UPDATE login_links SET revoked_at = ? WHERE substr(token_hash, 1, 16) = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ?')
+				.run(now, id, now).changes;
+			revoked = changes > 0;
+			if (revoked) this.audit(revokedBy, 'login-link.revoke', r[0]!.login, { id });
+		})();
+		return { id, revoked };
 	}
 
 	/**
@@ -184,7 +223,7 @@ export class AdminStore {
 		let login: string | null = null;
 		this.db.transaction(() => {
 			const r = this.db
-				.query('UPDATE login_links SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND expires_at > ? RETURNING login')
+				.query('UPDATE login_links SET used_at = ? WHERE token_hash = ? AND used_at IS NULL AND revoked_at IS NULL AND expires_at > ? RETURNING login')
 				.get(now, sha256Hex(token), now) as { login: string } | null;
 			if (!r) return;
 			if (!this.isAdmin(r.login)) return;

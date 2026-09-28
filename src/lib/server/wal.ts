@@ -109,7 +109,9 @@ const MIGRATIONS: string[] = [
 		source TEXT NOT NULL CHECK (source IN ('seed','cli','ui')),
 		updated_by TEXT NOT NULL,
 		updated_at INTEGER NOT NULL
-	);`
+	);`,
+	/* 3: revocable login links (ADR 0170) */
+	`ALTER TABLE login_links ADD COLUMN revoked_at INTEGER;`
 ];
 
 export interface InsertInbox {

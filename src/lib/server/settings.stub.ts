@@ -4,7 +4,7 @@
  * real implementations (forks E1, E3) exist. Mutations behave plausibly:
  * creating a manifest then "completing" it switches the mode to `app`.
  */
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { BackendError } from './backend';
 import type {
 	AddAdminResult,
@@ -12,7 +12,9 @@ import type {
 	AuditEntry,
 	CreatedLoginLink,
 	CreateLoginLinkInput,
+	LoginLinkSummary,
 	RemoveAdminResult,
+	RevokeLoginLinkResult,
 	SetupStatus
 } from '$lib/schemas/admins';
 import { LOGIN_LINK_DEFAULT_TTL_MS, LOGIN_LINK_PATH } from '$lib/schemas/admins';
@@ -40,7 +42,7 @@ export interface StubSettingsOptions {
 
 export class StubSettings {
 	#admins = new Map<string, Admin>();
-	#links = new Map<string, { login: string; expiresAt: number; used: boolean }>();
+	#links = new Map<string, { login: string; expiresAt: number; used: boolean; createdBy: string; createdAt: number; usedAt: number | null; revokedAt: number | null }>();
 	#audit: AuditEntry[] = [];
 	#mode: GitHubMode;
 	#app: GitHubStatus['app'] = null;
@@ -112,20 +114,47 @@ export class StubSettings {
 		if (!this.isAdmin(input.login)) throw new BackendError('invalid', `${input.login} is not an admin`);
 		const token = randomBytes(32).toString('base64url');
 		const expiresAt = Date.now() + (input.ttlMs ?? LOGIN_LINK_DEFAULT_TTL_MS);
-		this.#links.set(token, { login: input.login, expiresAt, used: false });
+		this.#links.set(token, { login: input.login, expiresAt, used: false, createdBy, createdAt: Date.now(), usedAt: null, revokedAt: null });
 		this.#log(createdBy, 'login-link.create', input.login);
 		return { url: `${this.#origin}${LOGIN_LINK_PATH}/${token}`, login: input.login, expiresAt };
 	}
 	/** Returns the login to create a session for, or null. */
 	takeLoginLink(token: string): string | null {
 		const link = this.#links.get(token);
-		if (!link || link.used || link.expiresAt < Date.now() || !this.isAdmin(link.login)) return null;
+		if (!link || link.used || link.revokedAt !== null || link.expiresAt < Date.now() || !this.isAdmin(link.login)) return null;
 		link.used = true;
+		link.usedAt = Date.now();
 		this.#log(link.login, 'login-link.use', link.login);
 		return link.login;
 	}
 	async listAuditLog(limit: number): Promise<AuditEntry[]> {
 		return this.#audit.slice(0, limit);
+	}
+	async listLoginLinks(limit: number): Promise<LoginLinkSummary[]> {
+		const now = Date.now();
+		return [...this.#links.entries()]
+			.map(([token, l]) => ({
+				id: createHash('sha256').update(token).digest('hex').slice(0, 16),
+				login: l.login,
+				createdBy: l.createdBy,
+				createdAt: l.createdAt,
+				expiresAt: l.expiresAt,
+				usedAt: l.usedAt,
+				revokedAt: l.revokedAt,
+				state: (l.revokedAt !== null ? 'revoked' : l.used ? 'used' : l.expiresAt <= now ? 'expired' : 'valid') as LoginLinkSummary['state']
+			}))
+			.sort((a, b) => b.createdAt - a.createdAt)
+			.slice(0, limit);
+	}
+	async revokeLoginLink(id: string, revokedBy: string): Promise<RevokeLoginLinkResult> {
+		for (const [token, l] of this.#links) {
+			if (createHash('sha256').update(token).digest('hex').slice(0, 16) !== id) continue;
+			if (l.used || l.revokedAt !== null || l.expiresAt <= Date.now()) return { id, revoked: false };
+			l.revokedAt = Date.now();
+			this.#log(revokedBy, 'login-link.revoke', l.login);
+			return { id, revoked: true };
+		}
+		throw new BackendError('not-found', `login link ${id} not found`);
 	}
 
 	async getGitHubStatus(): Promise<GitHubStatus> {

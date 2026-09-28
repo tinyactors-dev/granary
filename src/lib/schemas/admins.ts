@@ -66,6 +66,32 @@ export const CreateLoginLinkInput = Type.Object(
 );
 export type CreateLoginLinkInput = Static<typeof CreateLoginLinkInput>;
 
+/** Lifecycle of a login link as listed in the UI (ADR 0170). */
+export const LoginLinkState = Type.Union([Type.Literal('valid'), Type.Literal('used'), Type.Literal('expired'), Type.Literal('revoked')]);
+export type LoginLinkState = Static<typeof LoginLinkState>;
+
+/**
+ * A login link without its token (ADR 0170): `id` is the first 16 hex chars
+ * of the token's SHA-256 — enough to revoke it, useless to sign in with.
+ */
+export const LoginLinkSummary = Type.Object(
+	{
+		id: Type.String({ pattern: '^[0-9a-f]{16}$' }),
+		login: Login,
+		createdBy: Type.String(),
+		createdAt: EpochMs,
+		expiresAt: EpochMs,
+		usedAt: Nullable(EpochMs),
+		revokedAt: Nullable(EpochMs),
+		state: LoginLinkState
+	},
+	closed
+);
+export type LoginLinkSummary = Static<typeof LoginLinkSummary>;
+
+export const RevokeLoginLinkResult = Type.Object({ id: Type.String(), revoked: Type.Boolean() }, closed);
+export type RevokeLoginLinkResult = Static<typeof RevokeLoginLinkResult>;
+
 /** Shown once; the URL contains the only copy of the token. */
 export const CreatedLoginLink = Type.Object({ url: Type.String(), login: Login, expiresAt: EpochMs }, closed);
 export type CreatedLoginLink = Static<typeof CreatedLoginLink>;
@@ -99,6 +125,7 @@ export const AuditAction = Type.Union([
 	Type.Literal('admin.remove'),
 	Type.Literal('login-link.create'),
 	Type.Literal('login-link.use'),
+	Type.Literal('login-link.revoke'),
 	Type.Literal('github.app.create'),
 	Type.Literal('github.mode.set'),
 	Type.Literal('github.repo.enable'),

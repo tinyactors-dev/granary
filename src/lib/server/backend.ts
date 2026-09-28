@@ -43,6 +43,8 @@ import type {
 	AuditEntry,
 	CreatedLoginLink,
 	CreateLoginLinkInput,
+	LoginLinkSummary,
+	RevokeLoginLinkResult,
 	RemoveAdminResult,
 	SetupStatus
 } from '$lib/schemas/admins';
@@ -207,6 +209,10 @@ export interface Backend {
 	 * an admin) and create a session. null when invalid/expired/used.
 	 */
 	consumeLoginLink(token: string): Promise<CreatedSession | null>;
+	/** Newest first, without tokens (ADR 0170). */
+	listLoginLinks(limit: number): Promise<LoginLinkSummary[]>;
+	/** `not-found` for an unknown id; `revoked: false` when already used/expired/revoked. */
+	revokeLoginLink(id: string, revokedBy: string): Promise<RevokeLoginLinkResult>;
 	/** Newest first. */
 	listAuditLog(limit: number): Promise<AuditEntry[]>;
 
