@@ -23,7 +23,7 @@ export interface OpenedIssue {
 export async function openIssue(
 	h: Harness,
 	author: string,
-	options: { association?: AuthorAssociation; repo?: string; expectAccepted?: boolean } = {}
+	options: { association?: AuthorAssociation; repo?: string; expectAccepted?: boolean; title?: string } = {}
 ): Promise<OpenedIssue> {
 	const repo = options.repo ?? uniqueName();
 	const { id: repoId } = await h.fakeGithub.ensureRepo({ owner: OWNER, name: repo });
@@ -31,7 +31,7 @@ export async function openIssue(
 		owner: OWNER,
 		repo,
 		author,
-		title: `Issue by ${author}`,
+		title: options.title ?? `Issue by ${author}`,
 		association: options.association
 	});
 	if (!deliveryId) throw new Error(`no GitHub App covers ${OWNER}/${repo} on the fake: nothing was delivered`);
