@@ -33,6 +33,13 @@ ops targets locally we want a real S3 implementation and a real Grafana.
   Tempo traces and Prometheus metrics. Lines about the telemetry pipeline
   itself are not exported (no feedback loop).
 
+- Containers run through `tools/dev/container.sh <name> …`: it removes a
+  leftover container with that exact name before `docker run`, and on
+  SIGTERM/SIGINT runs `docker stop <name>` and waits. Without it, stopping the
+  pitchfork daemon did not wait for the container, so `pitchfork start -f`
+  raced colima's `ssh` port forward ("port 9000 is already in use by process
+  'ssh'"). Removal is by exact container name only, never by pattern.
+
 ## Consequences
 `mise run up:real` gives a clickable local version of the production ops
 targets. Docker (colima) must be running. Tests keep using fake-infra.

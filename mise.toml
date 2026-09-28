@@ -39,11 +39,11 @@ run = [
 
 [tasks."infra:rustfs"]
 description = "RustFS (S3-compatible) in docker: S3 :9000, console :9001/rustfs/console/ (real local stack, ADR 0027)"
-run = "docker run --rm --name granary-rustfs -p 9000:9000 -p 9001:9001 -e RUSTFS_ACCESS_KEY=granary-dev -e RUSTFS_SECRET_KEY=granary-dev-secret -e RUSTFS_CONSOLE_ENABLE=true -v granary-rustfs:/data rustfs/rustfs:latest"
+run = "tools/dev/container.sh granary-rustfs -p 9000:9000 -p 9001:9001 -e RUSTFS_ACCESS_KEY=granary-dev -e RUSTFS_SECRET_KEY=granary-dev-secret -e RUSTFS_CONSOLE_ENABLE=true -v granary-rustfs:/data rustfs/rustfs:latest"
 
 [tasks."infra:grafana"]
 description = "Grafana LGTM in docker: UI :3300, OTLP gRPC :4317 / HTTP :4318 (real local stack, ADR 0027)"
-run = "docker run --rm --name granary-lgtm -p 3300:3000 -p 4317:4317 -p 4318:4318 -v granary-lgtm:/data grafana/otel-lgtm:latest"
+run = "tools/dev/container.sh granary-lgtm -p 3300:3000 -p 4317:4317 -p 4318:4318 -v granary-lgtm:/data grafana/otel-lgtm:latest"
 
 [tasks."dev:real"]
 description = "Dev server wired to the real local stack (RustFS + Grafana) instead of fake-infra sinks"
