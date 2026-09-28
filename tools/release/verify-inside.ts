@@ -79,6 +79,9 @@ await step('granary version', async () => {
 
 const key = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString('hex');
 const serverEnv: Record<string, string> = { NODE_ENV: 'production', PORT: String(PORT), HOST: '127.0.0.1', ORIGIN: `http://127.0.0.1:${PORT}`, GRANARY_MASTER_KEY: key };
+// With the CLI, everything comes from the data dir `granary init` wrote
+// (master key, granary.env); only NODE_ENV is set.
+const cliEnv: Record<string, string> = { NODE_ENV: 'production' };
 // Builds from before in-product GitHub config (ADR 0157/0160) still require
 // these at boot; dummy seeds let the fallback path start the server anyway.
 const legacySeeds: Record<string, string> = {
@@ -89,18 +92,21 @@ const legacySeeds: Record<string, string> = {
 };
 
 if (cliPresent) {
-	await step('granary init --yes', async () => {
-		const r = await run(['granary', 'init', '--yes', '--data', DATA], serverEnv);
+	await step('granary init', async () => {
+		// init generates the master key itself (ADR 0157); confirmation skipped non-interactively
+		const r = await run(['granary', 'init', '--data', DATA, '--origin', `http://127.0.0.1:${PORT}`, '--yes-i-stored-the-key'], cliEnv);
 		if (UNKNOWN.test(r.text) && r.code !== 0) return { ok: false, missing: true, detail: `init not available: ${tail(r.text, 200)}` };
 		return { ok: r.code === 0, detail: r.code === 0 ? 'initialised ' + DATA : tail(r.text) };
 	});
 }
 
 // serve: via the CLI, or (fallback) the bundled server directly
-const serveCmd = cliPresent ? ['granary', 'serve', '--data', DATA] : ['bun', `${PKG}/build/index.js`];
+const serveCmd = cliPresent
+	? ['granary', 'serve', '--data', DATA, '--host', '127.0.0.1', '--port', String(PORT)]
+	: ['bun', `${PKG}/build/index.js`];
 mkdirSync(DATA, { recursive: true });
 const server = Bun.spawn(serveCmd, {
-	env: { ...process.env, ...serverEnv, ...(cliPresent ? {} : legacySeeds), GRANARY_DATA_DIR: DATA, DATABASE_PATH: `${DATA}/granary.sqlite` },
+	env: cliPresent ? { ...process.env, ...cliEnv } : { ...process.env, ...serverEnv, ...legacySeeds, GRANARY_DATA_DIR: DATA, DATABASE_PATH: `${DATA}/granary.sqlite` },
 	stdout: 'pipe',
 	stderr: 'pipe'
 });
@@ -138,7 +144,7 @@ for (const path of ['/healthz', '/readyz']) {
 
 if (cliPresent) {
 	await step('granary doctor', async () => {
-		const r = await run(['granary', 'doctor', '--data', DATA], serverEnv);
+		const r = await run(['granary', 'doctor', '--data', DATA], cliEnv);
 		if (UNKNOWN.test(r.text) && r.code !== 0) return { ok: false, missing: true, detail: `doctor not available: ${tail(r.text, 200)}` };
 		return { ok: r.code === 0, detail: tail(r.text, 300) };
 	});
