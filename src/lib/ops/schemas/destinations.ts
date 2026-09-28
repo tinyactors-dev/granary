@@ -78,6 +78,9 @@ export const LocalDirSettings = Type.Object(
 	{ additionalProperties: false }
 );
 
+/** An http(s) link for humans (storage console, dashboard). */
+export const ConsoleUrl = Type.String({ pattern: '^https?://[^\\s]+$', maxLength: 2000 });
+
 export const DestinationSettings = Type.Union([R2Settings, S3Settings, LocalDirSettings]);
 export type DestinationSettings = Static<typeof DestinationSettings>;
 export type DestinationKind = DestinationSettings['kind'];
@@ -88,6 +91,11 @@ export const Destination = Type.Object(
 		settings: DestinationSettings,
 		retention: RetentionSchedule,
 		caps: RetentionCaps,
+		/**
+		 * Link for humans to the storage provider's console (ADR 0154). Not part
+		 * of `settings`, so editing it never invalidates a passed test connection.
+		 */
+		consoleUrl: Type.Optional(ConsoleUrl),
 		/** Last test connection with the current values; enabling requires ok (ADR 0102). */
 		lastTest: Type.Union([
 			Type.Null(),
@@ -107,6 +115,7 @@ export const DestinationDraft = Type.Object(
 		settings: DestinationSettings,
 		retention: RetentionSchedule,
 		caps: RetentionCaps,
+		consoleUrl: Type.Optional(ConsoleUrl),
 		/** Required when updating an existing row. */
 		version: Type.Optional(Type.Integer({ minimum: 1 }))
 	},
@@ -120,6 +129,21 @@ export function r2Endpoint(accountId: string, jurisdiction: R2Jurisdiction): str
 	return `https://${accountId}${j}.r2.cloudflarestorage.com`;
 }
 export const R2_REGION = 'auto';
+
+/**
+ * Cloudflare's own documented deep link to R2 (ADR 0154). The docs only
+ * publish the account-level overview (`?to=/:account/r2/overview` on
+ * developers.cloudflare.com/r2/api/tokens/ and others); no bucket-level URL
+ * is documented, so we don't derive one — set `consoleUrl` for a deep link.
+ */
+export const R2_DASHBOARD_URL = 'https://dash.cloudflare.com/?to=/:account/r2/overview';
+
+/** Where a human can look at this destination's objects, or null. */
+export function destinationConsoleLink(d: { consoleUrl?: string; settings: DestinationSettings }): { url: string; label: string } | null {
+	if (d.consoleUrl) return { url: d.consoleUrl, label: 'Open storage console' };
+	if (d.settings.kind === 'r2' && !d.settings.endpointOverride) return { url: R2_DASHBOARD_URL, label: 'Open R2 in Cloudflare' };
+	return null;
+}
 
 /** Upload tuning shared by every S3-compatible destination (ADR 0095). */
 export const UPLOAD_TUNING = { partSize: 8 * 1024 ** 2, queueSize: 4, retry: 3 } as const;

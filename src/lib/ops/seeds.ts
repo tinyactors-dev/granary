@@ -63,7 +63,8 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 					...(env.OPS_SEED_R2_ENDPOINT_OVERRIDE ? { endpointOverride: env.OPS_SEED_R2_ENDPOINT_OVERRIDE.replace(/\/+$/, '') } : {})
 				},
 				retention: DEFAULT_SCHEDULE,
-				caps
+				caps,
+				...(env.OPS_SEED_R2_CONSOLE_URL ? { consoleUrl: env.OPS_SEED_R2_CONSOLE_URL } : {})
 			};
 			repo.insertDestination({ id: SEED_IDS.r2, name: 'Cloudflare R2 (seed)', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.r2);
@@ -88,11 +89,18 @@ export async function runSeeds(opts: { env: Record<string, string | undefined>; 
 					secretAccessKey: { secretRef: SEED_IDS.s3Secret }
 				},
 				retention: DEFAULT_SCHEDULE,
-				caps
+				caps,
+				...(env.OPS_SEED_S3_CONSOLE_URL ? { consoleUrl: env.OPS_SEED_S3_CONSOLE_URL } : {})
 			};
 			repo.insertDestination({ id: SEED_IDS.s3, name: 'S3-compatible (seed)', enabled: true, origin: 'seed', config });
 			out.created.push(SEED_IDS.s3);
 		}
+	}
+
+	// Console links (ADR 0154): fill a missing link on seed rows nobody edited,
+	// so an existing database picks up a newly added seed env var.
+	for (const [id, url] of [[SEED_IDS.r2, env.OPS_SEED_R2_CONSOLE_URL], [SEED_IDS.s3, env.OPS_SEED_S3_CONSOLE_URL]] as const) {
+		if (url && repo.fillSeedConsoleUrl(id, url)) out.created.push(`${id} console link`);
 	}
 
 	// Telemetry token seed (ADR 0122, 0150): the health feature's seed sink

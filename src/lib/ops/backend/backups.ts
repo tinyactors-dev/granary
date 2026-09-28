@@ -49,7 +49,7 @@ export function backupsBackend(rt: BackupsRuntime, ctx: OpsContext): OpsBackendB
 		if (s.kind !== 'local-dir' && s.prefix && !s.prefix.endsWith('/')) throw new OpsBackendError('invalid', 'prefix must be empty or end with "/"');
 	}
 
-	const configOf = (d: DestinationDraft): DestinationConfig => ({ settings: d.settings, retention: d.retention, caps: d.caps });
+	const configOf = (d: DestinationDraft): DestinationConfig => ({ settings: d.settings, retention: d.retention, caps: d.caps, ...(d.consoleUrl ? { consoleUrl: d.consoleUrl } : {}) });
 
 	const recomputeInterval = (planId: string) => rt.refreshInterval(planId);
 

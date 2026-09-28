@@ -250,10 +250,11 @@ export class StubOpsBackend implements OpsBackend {
 			if (draft.version !== d.version) throw new OpsBackendError('conflict', `destination ${d.id} changed (version ${d.version})`);
 			const enabling = draft.enabled && !d.enabled;
 			if (enabling && !(d.lastTest?.ok && d.lastTest.versionTested === d.version)) throw new OpsBackendError('invalid', 'run a successful test connection before enabling');
-			Object.assign(d, { name: draft.name, enabled: draft.enabled, settings: draft.settings, retention: draft.retention, caps: draft.caps, version: d.version + 1, updatedAt: now, origin: 'ui' });
+			Object.assign(d, { name: draft.name, enabled: draft.enabled, settings: draft.settings, retention: draft.retention, caps: draft.caps, consoleUrl: draft.consoleUrl, version: d.version + 1, updatedAt: now, origin: 'ui' });
+			if (!draft.consoleUrl) delete d.consoleUrl;
 			return structuredClone(d);
 		}
-		const d: Destination = { id: this.#id('dest'), name: draft.name, enabled: false, origin: 'ui', version: 1, createdAt: now, updatedAt: now, settings: draft.settings, retention: draft.retention, caps: draft.caps, lastTest: null };
+		const d: Destination = { id: this.#id('dest'), name: draft.name, enabled: false, origin: 'ui', version: 1, createdAt: now, updatedAt: now, settings: draft.settings, retention: draft.retention, caps: draft.caps, ...(draft.consoleUrl ? { consoleUrl: draft.consoleUrl } : {}), lastTest: null };
 		this.#destinations.push(d);
 		void actor;
 		return structuredClone(d);

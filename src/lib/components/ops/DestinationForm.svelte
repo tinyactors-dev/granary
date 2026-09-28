@@ -49,6 +49,8 @@
 	let accessKeyId = $state(s0?.kind === 'r2' || s0?.kind === 's3' ? s0.accessKeyId : '');
 	let secretRef = $state<string | null>(s0?.kind === 'r2' || s0?.kind === 's3' ? s0.secretAccessKey.secretRef : null);
 	let secretValue = $state('');
+	// link for humans (ADR 0154); not part of settings, so editing it keeps a passed test
+	let consoleUrl = $state(d0?.consoleUrl ?? '');
 	// local
 	let path = $state(s0?.kind === 'local-dir' ? s0.path : 'backups');
 	// retention & caps
@@ -81,13 +83,15 @@
 			enabled,
 			settings: settings(),
 			retention: { ...retention },
-			caps: { maxBytes: Math.round(capGiB * GiB), maxBackupsPerDatabase }
+			caps: { maxBytes: Math.round(capGiB * GiB), maxBackupsPerDatabase },
+			...(kind !== 'local-dir' && consoleUrl.trim() ? { consoleUrl: consoleUrl.trim() } : {})
 		};
 	}
 
 	function check(): boolean {
 		const i = settingsIssues(settings(), newSecret && !secretValue.trim());
 		if (!name.trim()) i.name = 'Required';
+		if (kind !== 'local-dir' && consoleUrl.trim() && !/^https?:\/\/\S+$/.test(consoleUrl.trim())) i.consoleUrl = 'An http(s) link, e.g. the bucket page in your provider’s dashboard';
 		issues = i;
 		return Object.keys(i).length === 0;
 	}
@@ -201,6 +205,14 @@
 					</div>
 					<div class="sm:col-span-2">
 						<SecretPicker id="d-secret" label="Secret access key" kind={secretKind} {secrets} bind:ref={secretRef} bind:value={secretValue} error={issues.secret} disabled={!admin} />
+					</div>
+					<div class="grid content-start gap-1.5 sm:col-span-2">
+						<Label for="d-console">Storage console link (optional)</Label>
+						<Input id="d-console" bind:value={consoleUrl} spellcheck={false} placeholder={kind === 'r2' ? 'https://dash.cloudflare.com/…/r2/…/buckets/granary-backups' : 'https://console.example.com/…'} disabled={!admin} aria-invalid={issues.consoleUrl ? true : undefined} />
+						{@render err('consoleUrl')}
+						<p class="text-muted-foreground text-xs">
+							Shown as “Open storage console” in /ops. {kind === 'r2' ? 'Without it, the link goes to R2 in the Cloudflare dashboard (paste the bucket page’s URL for a direct link).' : 'Changing it does not require a new test connection.'}
+						</p>
 					</div>
 					{#if kind === 'r2'}
 						<p class="text-muted-foreground text-xs sm:col-span-2">

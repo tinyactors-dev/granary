@@ -22,6 +22,8 @@ export const OpsEnv = Type.Object(
 		OPS_SEED_R2_SECRET_ACCESS_KEY: Type.Optional(NonEmpty),
 		/** Dev/test: point the seeded R2 destination at fake-infra (ADR 0112). */
 		OPS_SEED_R2_ENDPOINT_OVERRIDE: Type.Optional(Type.String({ pattern: '^https?://' })),
+		/** Link for humans to the R2 bucket in the Cloudflare dashboard (ADR 0154). */
+		OPS_SEED_R2_CONSOLE_URL: Type.Optional(Type.String({ pattern: '^https?://' })),
 		// generic S3 seed (fake-infra, RustFS)
 		OPS_SEED_S3_ENDPOINT: Type.Optional(Type.String({ pattern: '^https?://' })),
 		OPS_SEED_S3_REGION: Type.Optional(NonEmpty),
@@ -29,6 +31,8 @@ export const OpsEnv = Type.Object(
 		OPS_SEED_S3_PREFIX: Type.Optional(Type.String()),
 		OPS_SEED_S3_ACCESS_KEY_ID: Type.Optional(NonEmpty),
 		OPS_SEED_S3_SECRET_ACCESS_KEY: Type.Optional(NonEmpty),
+		/** Link for humans to the bucket in the store's console, e.g. RustFS (ADR 0154). */
+		OPS_SEED_S3_CONSOLE_URL: Type.Optional(Type.String({ pattern: '^https?://' })),
 		// plan & budgets
 		OPS_SEED_BACKUP_INTERVAL: Type.Optional(Type.String({ pattern: '^[0-9]+(m|h)$' })),
 		OPS_SEED_EGRESS_BUDGET_GIB: Type.Optional(Type.String({ pattern: '^[0-9]+(\\.[0-9]+)?$' })),
@@ -46,6 +50,8 @@ export const OpsEnv = Type.Object(
 		OPS_SEED_OTLP_TOKEN: Type.Optional(NonEmpty),
 		/** Username for `OPS_SEED_OTLP_AUTH=basic` (ADR 0122); default `granary`. */
 		OPS_SEED_OTLP_USERNAME: Type.Optional(NonEmpty),
+		/** Link for humans to Grafana for the seeded sink, e.g. http://localhost:3300/explore (ADR 0154). */
+		OPS_SEED_OTLP_GRAFANA_URL: Type.Optional(Type.String({ pattern: '^https?://' })),
 		OTEL_EXPORTER_OTLP_ENDPOINT: Type.Optional(Type.String()),
 		OTEL_EXPORTER_OTLP_HEADERS: Type.Optional(Type.String()),
 		// test-only hooks (ADR 0103)

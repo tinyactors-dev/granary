@@ -85,10 +85,12 @@ export function seedSinks(deps: { repo: SinksRepo; env: Record<string, string | 
 		volumeBudgetBytesPerMonth: 5 * GiB,
 		maxBufferBytes: SINK_DEFAULTS.maxBufferBytes,
 		flushIntervalMs,
-		exportOps
+		exportOps,
+		// Link for humans (ADR 0154): the seed env wins; otherwise keep what the row has.
+		...(env.OPS_SEED_OTLP_GRAFANA_URL ? { grafanaUrl: env.OPS_SEED_OTLP_GRAFANA_URL } : existing?.grafanaUrl ? { grafanaUrl: existing.grafanaUrl } : {})
 	};
 	if (existing) {
-		const same = existing.endpoint === body.endpoint && JSON.stringify(existing.auth) === JSON.stringify(body.auth) && existing.exportOps === body.exportOps;
+		const same = existing.endpoint === body.endpoint && JSON.stringify(existing.auth) === JSON.stringify(body.auth) && existing.exportOps === body.exportOps && existing.grafanaUrl === body.grafanaUrl;
 		if (same && existing.enabled === enabled) return [];
 		repo.upsert({ id: SEED_SINK_ID, name: existing.name, enabled, origin: 'seed', body, now: deps.now });
 		return [`seed sink ${SEED_SINK_ID} updated → ${endpoint}${why}`];

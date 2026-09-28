@@ -10,7 +10,7 @@ import { parse, parseJson } from '../../schemas/standard';
 import { OpsBackendError } from '../contract';
 import type { BackupRunRow, BackupPlanRow, DestinationRow, RestoreDrillRow, UploadRow } from '../db/ddl';
 import { DEFAULT_BUDGETS, Budgets } from '../schemas/budgets';
-import { DestinationSettings, RetentionCaps, RetentionSchedule, type Destination } from '../schemas/destinations';
+import { ConsoleUrl, DestinationSettings, RetentionCaps, RetentionSchedule, type Destination } from '../schemas/destinations';
 import { BackupManifest } from '../schemas/manifest';
 import type { BackupPlan } from '../schemas/plans';
 import { RawSnapshot } from '../schemas/events';
@@ -18,7 +18,7 @@ import { StoreError, type BackupRunSummary, type RestoreDrillSummary, type RunSt
 import type { Page } from '../schemas/common';
 
 export const DestinationConfig = Type.Object(
-	{ settings: DestinationSettings, retention: RetentionSchedule, caps: RetentionCaps },
+	{ settings: DestinationSettings, retention: RetentionSchedule, caps: RetentionCaps, consoleUrl: Type.Optional(ConsoleUrl) },
 	{ additionalProperties: false }
 );
 export type DestinationConfig = Static<typeof DestinationConfig>;
@@ -90,6 +90,7 @@ export class BackupsRepo {
 			settings: c.settings,
 			retention: c.retention,
 			caps: c.caps,
+			...(c.consoleUrl ? { consoleUrl: c.consoleUrl } : {}),
 			lastTest: r.last_test_at === null ? null : { at: r.last_test_at, ok: r.last_test_ok === 1, versionTested: r.last_test_version ?? 0 }
 		};
 	}
@@ -126,6 +127,14 @@ export class BackupsRepo {
 		).run(d.name, d.config.settings.kind, d.enabled ? 1 : 0, newVersion, config, this.now(), d.keepTest ? 1 : 0, newVersion, id, fromVersion);
 		if (res.changes !== 1) throw new OpsBackendError('conflict', `destination ${id} changed concurrently (expected version ${fromVersion})`);
 		return newVersion;
+	}
+
+	/** Seeds may fill a missing console link on rows nobody edited (ADR 0154). */
+	fillSeedConsoleUrl(id: string, url: string): boolean {
+		const res = this.db
+			.query(`UPDATE destinations SET config = json_set(config, '$.consoleUrl', ?) WHERE id = ? AND origin = 'seed' AND json_extract(config, '$.consoleUrl') IS NULL`)
+			.run(url, id);
+		return res.changes === 1;
 	}
 
 	recordDestinationTest(id: string, version: number, ok: boolean): void {
