@@ -84,6 +84,11 @@ export interface OpsHost {
 /** granary's Tracer writes here instead of POSTing itself. Never throws, never blocks. */
 export interface TelemetrySink {
 	write(batch: TelemetryBatch): void;
+	/**
+	 * False when no sink is enabled, so the writer can skip encoding work
+	 * (additive, ADR 0121). Absent = assume true.
+	 */
+	active?(): boolean;
 }
 
 export interface OpsModule {

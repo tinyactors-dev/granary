@@ -37,6 +37,12 @@ export const TelemetrySinkConfig = Type.Object(
 		flushIntervalMs: Type.Integer({ minimum: 250, maximum: 60_000, default: 2_000 }),
 		/** Link for humans, e.g. https://granary-grafana.exe.xyz/explore */
 		grafanaUrl: Type.Optional(Type.String({ pattern: '^https?://' })),
+		/**
+		 * Also export ops' own telemetry (`service.name=granary-ops`) to this sink.
+		 * Absent = true. The legacy `OTEL_EXPORTER_OTLP_ENDPOINT` seed sets it
+		 * false so that endpoint keeps receiving exactly what it did before (ADR 0122).
+		 */
+		exportOps: Type.Optional(Type.Boolean()),
 		lastTest: Type.Union([Type.Null(), Type.Object({ at: Type.Integer(), ok: Type.Boolean(), versionTested: Type.Integer() })])
 	},
 	{ additionalProperties: false }
@@ -53,6 +59,7 @@ export const TelemetrySinkDraft = Type.Object(
 		signals: TelemetrySinkConfig.properties.signals,
 		volumeBudgetBytesPerMonth: TelemetrySinkConfig.properties.volumeBudgetBytesPerMonth,
 		grafanaUrl: TelemetrySinkConfig.properties.grafanaUrl,
+		exportOps: TelemetrySinkConfig.properties.exportOps,
 		version: Type.Optional(Type.Integer({ minimum: 1 }))
 	},
 	{ additionalProperties: false }
