@@ -12,13 +12,18 @@
 import type { TSchema, Static } from '@sinclair/typebox';
 import {
 	CONTROL_PATHS,
+	CreateCommentControlRequest,
 	CreateIssueRequest,
+	RawDeliveryRequest,
 	EnsureRepoRequest,
 	EnsureUserRequest,
 	InjectFaultRequest,
 	ReopenIssueRequest,
 	type ControlError,
+	type CreateCommentControlResponse,
 	type CreateIssueResponse,
+	type EventsLogResponse,
+	type RawDeliveryResponse,
 	type EnsureRepoResponse,
 	type FakeUser,
 	type InjectFaultResponse,
@@ -32,7 +37,8 @@ import {
 	UpdateIssueRequest,
 	type AuthenticatedUser,
 	type GitHubUser,
-	type Issue
+	type Issue,
+	type IssueComment
 } from '../src/lib/schemas/github';
 import { issuesOf } from '../src/lib/schemas/standard';
 import { ask, isFailure, waitForReply } from './io/reply';
@@ -45,6 +51,7 @@ import { REPOSITORY_EVENTS, repositoryAddress } from './actors/repository';
 import { DELIVERY_EVENTS, deliveryAddress, type DeliveryReply } from './actors/delivery';
 import { issuesEvent, repositoryView, userView, type Bases } from './views';
 import { authorizePage, controlPage } from './page';
+import { EventLog } from './events';
 
 const env = process.env;
 const nonEmpty = (v: string | undefined) => (v && v.length ? v : undefined);
@@ -64,6 +71,8 @@ const fake = createFakeSystem({
 	otlpEndpoint: nonEmpty(env.OTEL_EXPORTER_OTLP_ENDPOINT) ?? null
 });
 const { system } = fake;
+/** ADR 0075: what happened, for subscribers such as loadgen. */
+const events = new EventLog();
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -162,16 +171,43 @@ async function findRepo(owner: string, name: string) {
 	return { repo, owner: ownerUser };
 }
 
+/** Delivery metadata for the event log (attempt counts, redelivery). Bounded. */
+const deliveryMeta = new Map<string, { event: string; action: string; repoId: number | null; number: number | null; attempts: number }>();
+
+/** Record a finished delivery attempt in the event log. */
+function emitDelivery(r: DeliveryReply, event: string, action: string, repoId: number | null, number: number | null) {
+	const meta = deliveryMeta.get(r.deliveryId) ?? { event, action, repoId, number, attempts: 0 };
+	meta.attempts += 1;
+	deliveryMeta.set(r.deliveryId, meta);
+	if (deliveryMeta.size > 50_000) deliveryMeta.delete(deliveryMeta.keys().next().value!);
+	events.emit({
+		type: 'delivery',
+		deliveryId: r.deliveryId,
+		event,
+		action,
+		repoId,
+		number,
+		responseCode: r.responseCode,
+		attempt: meta.attempts
+	});
+}
+
 /** Spawn a delivery actor for `body` and wait for its first attempt. */
-async function deliver(action: string, body: string, repoId: number, issueNumber: number): Promise<DeliveryReply> {
-	const id = crypto.randomUUID();
+async function deliver(
+	action: string,
+	body: string,
+	repoId: number | null,
+	issueNumber: number | null,
+	event = 'issues',
+	id: string = crypto.randomUUID()
+): Promise<DeliveryReply> {
 	const reqId = crypto.randomUUID();
 	const waiting = waitForReply<DeliveryReply>(reqId, 30_000);
 	system.spawn(fake.definitions.delivery, {
 		address: deliveryAddress(id),
 		binding: {
 			id,
-			event: 'issues',
+			event,
 			action,
 			body,
 			repoId,
@@ -186,8 +222,17 @@ async function deliver(action: string, body: string, repoId: number, issueNumber
 			out: null
 		}
 	});
-	return waiting;
+	const reply = await waiting;
+	emitDelivery(reply, event, action, repoId, issueNumber);
+	return reply;
 }
+
+const issueRef = (repo: { id: number; owner: string; name: string }, number: number) => ({
+	repoId: repo.id,
+	owner: repo.owner,
+	repo: repo.name,
+	number
+});
 
 // ---------------------------------------------------------------------------
 // /__control
@@ -196,6 +241,17 @@ async function deliver(action: string, body: string, repoId: number, issueNumber
 async function control(req: Request, path: string): Promise<Response> {
 	const method = req.method;
 	if (method === 'GET' && path === CONTROL_PATHS.state) return json(fake.snapshot());
+	if (method === 'GET' && path === CONTROL_PATHS.events) {
+		const url = new URL(req.url);
+		const since = Number(url.searchParams.get('since') ?? req.headers.get('last-event-id') ?? 0) || 0;
+		return events.stream(since, req.signal);
+	}
+	if (method === 'GET' && path === CONTROL_PATHS.eventsLog) {
+		const url = new URL(req.url);
+		const since = Number(url.searchParams.get('since') ?? 0) || 0;
+		const limit = Math.min(Math.max(Number(url.searchParams.get('limit') ?? 1000) || 1000, 1), 5000);
+		return json({ events: events.since(since, limit), lastSeq: events.lastSeq } satisfies EventsLogResponse);
+	}
 	if (method !== 'POST') return controlError(405, `${method} ${path} not allowed`);
 
 	if (path === CONTROL_PATHS.reset) {
@@ -229,6 +285,13 @@ async function control(req: Request, path: string): Promise<Response> {
 			}),
 			controlError
 		);
+		events.emit({
+			type: 'issue.opened',
+			...issueRef(repo, issue.number),
+			author: author.login,
+			association: body.association ?? 'NONE',
+			title: issue.title
+		});
 		const payload = issuesEvent('opened', issue, repositoryView(repo, owner, bases), userView(author, bases));
 		const result = await deliver('opened', JSON.stringify(payload), repo.id, issue.number);
 		return json({ number: issue.number, deliveryId: result.deliveryId } satisfies CreateIssueResponse);
@@ -239,6 +302,9 @@ async function control(req: Request, path: string): Promise<Response> {
 		const found = await findRepo(body.owner, body.repo);
 		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
 		const actor = await ensureUser(body.actor);
+		const before = await ask<Issue | { error: string }>(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.getIssue, {
+			number: body.number
+		});
 		const issue = unwrap<Issue>(
 			await ask(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.reopenIssue, {
 				number: body.number,
@@ -246,6 +312,9 @@ async function control(req: Request, path: string): Promise<Response> {
 			}),
 			(status) => controlError(status, `Unknown issue ${body.owner}/${body.repo}#${body.number}`)
 		);
+		if (!isFailure(before) && (before as Issue).state === 'closed') {
+			events.emit({ type: 'issue.reopened', ...issueRef(found.repo, issue.number), by: actor.login });
+		}
 		const payload = issuesEvent(
 			'reopened',
 			issue,
@@ -262,7 +331,59 @@ async function control(req: Request, path: string): Promise<Response> {
 		const id = decodeURIComponent(redeliver[1]!);
 		if (!system.findActor(deliveryAddress(id))) return controlError(404, `Unknown delivery ${id}`);
 		const result = await ask<DeliveryReply>(system, deliveryAddress(id), DELIVERY_EVENTS.redeliver, {}, 30_000);
+		const known = deliveryMeta.get(id);
+		emitDelivery(result, known?.event ?? 'issues', known?.action ?? '', known?.repoId ?? null, known?.number ?? null);
 		return json({ deliveryId: result.deliveryId, responseCode: result.responseCode } satisfies RedeliverResponse);
+	}
+
+	if (path === CONTROL_PATHS.comment) {
+		const body = validate(CreateCommentControlRequest, await readJson(req), 'comment');
+		const found = await findRepo(body.owner, body.repo);
+		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
+		const author = await ensureUser(body.author);
+		const comment = unwrap<IssueComment>(
+			await ask(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.createComment, {
+				number: body.number,
+				id: nextId(),
+				user: userView(author, bases),
+				body: body.body,
+				now: now()
+			}),
+			(status) => controlError(status, `Unknown issue ${body.owner}/${body.repo}#${body.number}`)
+		);
+		events.emit({
+			type: 'comment.created',
+			...issueRef(found.repo, body.number),
+			commentId: comment.id,
+			author: author.login,
+			body: body.body
+		});
+		const issue = unwrap<Issue>(
+			await ask(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.getIssue, { number: body.number }),
+			controlError
+		);
+		const payload = {
+			action: 'created',
+			issue,
+			comment,
+			repository: repositoryView(found.repo, found.owner, bases),
+			sender: userView(author, bases)
+		};
+		const result = await deliver('created', JSON.stringify(payload), found.repo.id, body.number, 'issue_comment');
+		return json({ commentId: comment.id, deliveryId: result.deliveryId } satisfies CreateCommentControlResponse);
+	}
+
+	if (path === CONTROL_PATHS.rawDelivery) {
+		const body = validate(RawDeliveryRequest, await readJson(req), 'raw delivery');
+		const result = await deliver(
+			body.action ?? '(raw)',
+			body.body,
+			null,
+			null,
+			body.event,
+			body.deliveryId ?? crypto.randomUUID()
+		);
+		return json({ deliveryId: result.deliveryId, responseCode: result.responseCode } satisfies RawDeliveryResponse);
 	}
 
 	if (path === CONTROL_PATHS.faults) {
@@ -415,7 +536,28 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		}
 		const issues = issuesOf(UpdateIssueRequest, body);
 		if (issues.length) return json({ message: 'Validation Failed', errors: issues }, 422);
-		return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }), notFound));
+		const before = await ask<Issue | { error: string }>(system, address, REPOSITORY_EVENTS.getIssue, { number });
+		const after = unwrap<Issue>(
+			await ask(system, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
+			notFound
+		);
+		if (!isFailure(before)) {
+			const prev = (before as Issue).state;
+			if (prev !== after.state) {
+				const by = (await tokenUser(token)).login;
+				if (after.state === 'closed') {
+					events.emit({
+						type: 'issue.closed',
+						...issueRef(found.repo, number),
+						by,
+						stateReason: after.state_reason ?? null
+					});
+				} else {
+					events.emit({ type: 'issue.reopened', ...issueRef(found.repo, number), by });
+				}
+			}
+		}
+		return json(after);
 	}
 	if (comments && req.method === 'GET') {
 		return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.listComments, { number }), notFound));
@@ -430,7 +572,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		const issues = issuesOf(CreateCommentRequest, body);
 		if (issues.length) return json({ message: 'Validation Failed', errors: issues }, 422);
 		const user: GitHubUser = userView(await tokenUser(token), bases);
-		const comment = unwrap(
+		const comment = unwrap<IssueComment>(
 			await ask(system, address, REPOSITORY_EVENTS.createComment, {
 				number,
 				id: nextId(),
@@ -440,6 +582,13 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 			}),
 			notFound
 		);
+		events.emit({
+			type: 'comment.created',
+			...issueRef(found.repo, number),
+			commentId: comment.id,
+			author: user.login,
+			body: comment.body ?? ''
+		});
 		return json(comment, 201);
 	}
 	return githubError(404, 'Not Found');

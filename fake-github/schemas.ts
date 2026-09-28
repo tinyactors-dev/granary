@@ -30,7 +30,12 @@ export const CONTROL_PATHS = {
 	reopen: '/__control/issues/reopen',
 	redeliver: (deliveryId: string) => `/__control/deliveries/${encodeURIComponent(deliveryId)}/redeliver`,
 	faults: '/__control/faults',
-	state: '/__control/state'
+	state: '/__control/state',
+	/** ADR 0075 */
+	comment: '/__control/issues/comment',
+	rawDelivery: '/__control/deliveries/raw',
+	events: '/__control/events',
+	eventsLog: '/__control/events/log'
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -249,6 +254,119 @@ export const FakeState = Type.Object(
 export type FakeState = Static<typeof FakeState>;
 export const StateResponse = FakeState;
 export type StateResponse = FakeState;
+
+// ---------------------------------------------------------------------------
+// ADR 0075: user comments, raw deliveries, event stream
+// ---------------------------------------------------------------------------
+
+/** POST /__control/issues/comment — comment as `author`, delivers `issue_comment`/`created`. */
+export const CreateCommentControlRequest = Type.Object(
+	{
+		owner: Login,
+		repo: RepoName,
+		number: Type.Integer({ minimum: 1 }),
+		author: Login,
+		body: Type.String({ minLength: 1, maxLength: 65536 })
+	},
+	closed
+);
+export type CreateCommentControlRequest = Static<typeof CreateCommentControlRequest>;
+
+export const CreateCommentControlResponse = Type.Object(
+	{ commentId: Type.Integer(), deliveryId: Type.String() },
+	closed
+);
+export type CreateCommentControlResponse = Static<typeof CreateCommentControlResponse>;
+
+/** POST /__control/deliveries/raw — sign and deliver an arbitrary body (fuzzing). */
+export const RawDeliveryRequest = Type.Object(
+	{
+		event: Type.String({ minLength: 1, maxLength: 100 }),
+		body: Type.String({ maxLength: 4 * 1024 * 1024 }),
+		action: Type.Optional(Type.String({ maxLength: 100 })),
+		deliveryId: Type.Optional(Type.String({ minLength: 1, maxLength: 200 }))
+	},
+	closed
+);
+export type RawDeliveryRequest = Static<typeof RawDeliveryRequest>;
+
+export const RawDeliveryResponse = Type.Object(
+	{ deliveryId: Type.String(), responseCode: Nullable(Type.Integer()) },
+	closed
+);
+export type RawDeliveryResponse = Static<typeof RawDeliveryResponse>;
+
+const EventBase = {
+	seq: Type.Integer({ minimum: 1 }),
+	/** Epoch ms. */
+	at: Type.Integer()
+};
+const IssueRef = {
+	repoId: Type.Integer(),
+	owner: Type.String(),
+	repo: Type.String(),
+	number: Type.Integer()
+};
+
+/** One entry of the fake's event log (`GET /__control/events[/log]`). */
+export const FakeEvent = Type.Union([
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Literal('issue.opened'),
+			...IssueRef,
+			author: Type.String(),
+			association: AuthorAssociation,
+			title: Type.String()
+		},
+		closed
+	),
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Literal('issue.closed'),
+			...IssueRef,
+			by: Type.String(),
+			stateReason: Nullable(Type.String())
+		},
+		closed
+	),
+	Type.Object({ ...EventBase, type: Type.Literal('issue.reopened'), ...IssueRef, by: Type.String() }, closed),
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Literal('comment.created'),
+			...IssueRef,
+			commentId: Type.Integer(),
+			author: Type.String(),
+			body: Type.String()
+		},
+		closed
+	),
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Literal('delivery'),
+			deliveryId: Type.String(),
+			event: Type.String(),
+			action: Type.String(),
+			repoId: Nullable(Type.Integer()),
+			number: Nullable(Type.Integer()),
+			responseCode: Nullable(Type.Integer()),
+			attempt: Type.Integer()
+		},
+		closed
+	)
+]);
+export type FakeEvent = Static<typeof FakeEvent>;
+/** A FakeEvent before the log assigns `seq` / `at`. */
+export type FakeEventInput = FakeEvent extends infer E ? (E extends FakeEvent ? Omit<E, 'seq' | 'at'> : never) : never;
+
+export const EventsLogResponse = Type.Object(
+	{ events: Type.Array(FakeEvent), lastSeq: Type.Integer({ minimum: 0 }) },
+	closed
+);
+export type EventsLogResponse = Static<typeof EventsLogResponse>;
 
 // ---------------------------------------------------------------------------
 // Helpers
