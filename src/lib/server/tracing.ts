@@ -5,7 +5,9 @@
  * `detail: 'decisions'`, `values: true`. Each pump turn's batch is decoded,
  * every span of a known actor session gets `granary.actor.family`,
  * `granary.actor.name` and `granary.actor.address`, and `scxml.finished`
- * spans of issue actors get `granary.done.*` from the done-data. The batch
+ * spans of issue actors get `granary.done.*` from the done-data. Spans of
+ * known actors are renamed `<family> <kind> …` (ADR 0155), keeping the original
+ * name in `tinyactors.span.name` and the kind in `tinyactors.span.kind`. The batch
  * is then re-encoded and handed to the ops module's telemetry sink
  * (`attachSink`, ADR 0121), which fans it out to the configured OTLP sinks;
  * `OTEL_EXPORTER_OTLP_ENDPOINT` is seeded as one of them (ADR 0122). Without
@@ -14,6 +16,7 @@
  * `/v1/logs` directly, as before. In dev mode the last SPAN_BUFFER_SIZE spans are kept
  * in memory for `/__dev` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
  */
+import { applyFamilySpanName, spanKindOf } from '../trace/span-name';
 import { decodeTraces, stepSpanID, type ActorInspection, type DecodedSpan, type System } from '@tinyactors/node';
 import type { GetRecentSpansInput, ListRecentTracesInput, SpanAttributeValue, SpanSummary, TraceSummary } from '../schemas/dev';
 import { summarizeTraces } from './trace-summary';
@@ -169,7 +172,10 @@ export class Tracer {
 				s.attributes[GRANARY_ATTRS.name] = address.name;
 				s.attributes[GRANARY_ATTRS.address] = formatAddress(address);
 			}
-			if (s.name === 'scxml.finished') {
+			const kind = spanKindOf(s);
+			// `scxml.macrostep issue.opened` → `issue macrostep issue.opened` (ADR 0155)
+			applyFamilySpanName(s, address?.family);
+			if (kind === 'finished') {
 				const done = this.#done.get(key);
 				if (done) {
 					s.attributes[GRANARY_ATTRS.doneVerdict] = done.verdict;
@@ -178,7 +184,7 @@ export class Tracer {
 					this.#done.delete(key);
 				}
 			}
-			if (s.name === 'scxml.destroyed') destroyed.push(key);
+			if (kind === 'destroyed') destroyed.push(key);
 		}
 		for (const key of destroyed) {
 			this.#sessions.delete(key);

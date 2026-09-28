@@ -7,7 +7,8 @@
  */
 import { createSystem, type Actor, type ActorAddress, type Definition, type IOProcessor, type System } from '@tinyactors/node';
 import type { OpsLogger, TelemetryBatch } from './contract';
-import { filterSpans } from './telemetry/otlp-wire';
+import { filterSpans, rewriteSpans, type SpanFacts, type SpanEdit } from './telemetry/otlp-wire';
+import { familySpanName, parseTinyactorsName, SPAN_KIND_ATTR, SPAN_NAME_ATTR } from './telemetry/span-name';
 import { OPS_SERVICE } from './telemetry/fanout';
 
 export interface OpsSystem {
@@ -37,6 +38,36 @@ export function createOpsSystem(opts: {
 	const stats = { deadLetters: 0, faults: 0 };
 	const addresses = new Map<string, ActorAddress>();
 	const excluded = new Set<number>();
+	/** scxml session id → address, for naming spans (ADR 0155). */
+	const sessions = new Map<string, ActorAddress>();
+	const remember = (actor: Actor<object> | Actor<never> | undefined, address: ActorAddress) => {
+		try {
+			if (actor && !actor.destroyed) sessions.set(String(system.inspect(actor).sessionID), address);
+		} catch {
+			/* gone already */
+		}
+	};
+	const addressOf = (session: string): ActorAddress | undefined => {
+		const hit = sessions.get(session);
+		if (hit) return hit;
+		for (const a of addresses.values()) remember(system.findActor(a) as Actor<object> | undefined, a); // loaded/respawned actors
+		if (sessions.size > 10_000) sessions.clear();
+		return sessions.get(session);
+	};
+	/** `scxml.macrostep x` → `<family> macrostep x`, plus actor and tinyactors attributes. */
+	const nameSpan = (span: SpanFacts): SpanEdit | null => {
+		const p = parseTinyactorsName(span.name);
+		if (!p) return null;
+		const session = span.attr('scxml.session_id');
+		const address = session === undefined ? undefined : addressOf(String(session));
+		const attributes: Record<string, string> = { [SPAN_NAME_ATTR]: span.name, [SPAN_KIND_ATTR]: p.kind };
+		if (address) {
+			attributes['granary.actor.family'] = address.family;
+			attributes['granary.actor.name'] = address.name;
+			attributes['granary.actor.address'] = key(address);
+		}
+		return { name: familySpanName(span.name, address?.family), attributes };
+	};
 	const system = createSystem({
 		io: opts.io,
 		fault(record) {
@@ -65,7 +96,8 @@ export function createOpsSystem(opts: {
 			try {
 				const r = excluded.size ? filterSpans(traces, (s) => !excluded.has(Number(s.attr('scxml.definition') ?? -1))) : { bytes: traces };
 				if (!r.bytes) return;
-				opts.exportTraces({ signal: 'traces', contentType: 'application/x-protobuf', bytes: r.bytes, service: OPS_SERVICE, producedAt: Date.now() });
+				const named = rewriteSpans(r.bytes, nameSpan).bytes;
+				opts.exportTraces({ signal: 'traces', contentType: 'application/x-protobuf', bytes: named, service: OPS_SERVICE, producedAt: Date.now() });
 			} catch (e) {
 				opts.log.warn('ops: could not filter an ops trace batch; dropped', e instanceof Error ? e.message : e);
 			}
@@ -78,11 +110,13 @@ export function createOpsSystem(opts: {
 		stats,
 		note(address) {
 			addresses.set(key(address), address);
+			remember(system.findActor(address) as Actor<object> | undefined, address);
 		},
 		known: () => [...addresses.values()],
 		spawn(definition, address, binding) {
 			const actor = system.spawn(definition, { address, ...(binding ? { binding } : {}) });
 			addresses.set(key(address), address);
+			remember(actor as Actor<object>, address);
 			return actor;
 		},
 		post(target, event, data) {

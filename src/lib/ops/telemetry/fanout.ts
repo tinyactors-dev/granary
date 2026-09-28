@@ -14,13 +14,19 @@
 import type { TelemetryBatch, TelemetrySink, OpsLogger } from '../contract';
 import type { TelemetrySinkConfig } from '../schemas/sinks';
 import type { QueuedBatch } from '../io/otlp';
-import { filterSpans, maskSensitiveAttributes, SENSITIVE_KEY, traceSampled } from './otlp-wire';
+import { filterSpans, maskSensitiveAttributes, SENSITIVE_KEY, traceSampled, type SpanFacts } from './otlp-wire';
+import { parseTinyactorsName, SPAN_KIND_ATTR } from './span-name';
 import type { SecretRedactor } from './redactor';
 import type { Database } from 'bun:sqlite';
 
 export const OPS_SERVICE = 'granary-ops';
 /** tinyactors lifecycle spans are always kept when sampling (ADR 0099). */
-const LIFECYCLE = new Set(['scxml.spawned', 'scxml.loaded', 'scxml.unloaded', 'scxml.finished', 'scxml.destroyed']);
+const LIFECYCLE = new Set(['spawned', 'loaded', 'unloaded', 'finished', 'destroyed']);
+/** A span's tinyactors kind: `tinyactors.span.kind` (renamed spans, ADR 0155), else parsed from `scxml.<kind> …`. */
+const kindOf = (s: SpanFacts): string | null => {
+	const k = s.attr(SPAN_KIND_ATTR);
+	return typeof k === 'string' ? k : (parseTinyactorsName(s.name)?.kind ?? null);
+};
 export const MIN_SAMPLE_RATIO = 0.01;
 
 export interface FanoutStats {
@@ -99,7 +105,7 @@ export class TelemetryFanout implements TelemetrySink {
 		if (!bytes) return;
 		if (batch.signal === 'traces' && !isOps && this.#ratio < 1 && batch.contentType === 'application/x-protobuf') {
 			const ratio = this.#ratio;
-			const r = filterSpans(bytes, (s) => s.statusCode === 2 || LIFECYCLE.has(s.name) || traceSampled(s.traceId, ratio));
+			const r = filterSpans(bytes, (s) => s.statusCode === 2 || LIFECYCLE.has(kindOf(s) ?? '') || traceSampled(s.traceId, ratio));
 			this.stats.sampledOutSpans += r.dropped;
 			if (!r.bytes) return;
 			bytes = r.bytes;

@@ -311,3 +311,69 @@ export function traceSampled(traceId: Uint8Array, ratio: number): boolean {
 	const bound = BigInt(Math.floor(ratio * 2 ** 53)) << 11n;
 	return v < bound;
 }
+
+/** What `rewriteSpans` changes on one span: a new name and/or extra string attributes. */
+export interface SpanEdit {
+	name?: string;
+	attributes?: Record<string, string>;
+}
+
+const utf8 = new TextEncoder();
+
+/** KeyValue { 1 key, 2 AnyValue { 1 string_value } } */
+function stringKeyValue(key: string, value: string): Out {
+	const any = new Out();
+	any.field(1, utf8.encode(value));
+	const kv = new Out();
+	kv.field(1, utf8.encode(key));
+	kv.field(2, any);
+	return kv;
+}
+
+/**
+ * Rebuild an ExportTraceServiceRequest, applying `edit` to every span
+ * (ADR 0155): a replaced name (Span field 5) and appended string attributes
+ * (Span field 9). Everything else is copied verbatim; returns the input when
+ * no span changed.
+ */
+export function rewriteSpans(buf: Uint8Array, edit: (span: SpanFacts) => SpanEdit | null): { bytes: Uint8Array; changed: number } {
+	let changed = 0;
+	const req = new Out();
+	for (const top of fields(buf)) {
+		if (top.no !== 1 || top.wire !== LEN) {
+			req.push(buf.subarray(top.tagStart, top.end));
+			continue;
+		}
+		const rs = new Out();
+		for (const r of fields(buf, top.start, top.end)) {
+			if (r.no !== 2 || r.wire !== LEN) {
+				rs.push(buf.subarray(r.tagStart, r.end));
+				continue;
+			}
+			const ss = new Out();
+			for (const s of fields(buf, r.start, r.end)) {
+				if (s.no !== 2 || s.wire !== LEN) {
+					ss.push(buf.subarray(s.tagStart, s.end));
+					continue;
+				}
+				const e = edit(spanFacts(buf, s.start, s.end));
+				if (!e || (e.name === undefined && !e.attributes)) {
+					ss.push(buf.subarray(s.tagStart, s.end));
+					continue;
+				}
+				changed++;
+				const span = new Out();
+				for (const f of fields(buf, s.start, s.end)) {
+					if (e.name !== undefined && f.no === 5 && f.wire === LEN) continue;
+					span.push(buf.subarray(f.tagStart, f.end));
+				}
+				if (e.name !== undefined) span.field(5, utf8.encode(e.name));
+				for (const [k, v] of Object.entries(e.attributes ?? {})) span.field(9, stringKeyValue(k, v));
+				ss.field(2, span);
+			}
+			rs.field(2, ss);
+		}
+		req.field(1, rs);
+	}
+	return changed ? { bytes: req.bytes(), changed } : { bytes: buf, changed };
+}
