@@ -10,6 +10,7 @@ import {
 	EnsureRepoResponse,
 	EnsureUserResponse,
 	InjectFaultResponse,
+	InstallAppResponse,
 	RedeliverResponse,
 	ReopenIssueResponse,
 	ResetResponse,
@@ -20,6 +21,7 @@ import {
 	type FakeIssue,
 	type FakeState,
 	type InjectFaultRequest,
+	type InstallAppRequest,
 	type ReopenIssueRequest
 } from '../fake-github/schemas';
 import { parse } from '../src/lib/schemas/standard';
@@ -69,6 +71,14 @@ export class FakeGithubClient {
 	}
 	injectFault(body: InjectFaultRequest) {
 		return this.call(InjectFaultResponse, 'POST', CONTROL_PATHS.faults, body);
+	}
+	/** ADR 0164: install a GitHub App without the UI (sends `installation` webhooks). */
+	installApp(appId: number, body: InstallAppRequest) {
+		return this.call(InstallAppResponse, 'POST', CONTROL_PATHS.appInstallations(appId), body);
+	}
+	/** ADR 0164: while down, deliveries fail with status_code 0. */
+	webhookOutage(down: boolean) {
+		return this.call(ResetResponse, 'POST', CONTROL_PATHS.webhookOutage, { down });
 	}
 	async state(): Promise<FakeState> {
 		const res = await fetch(`${this.baseUrl}${CONTROL_PATHS.state}`);
