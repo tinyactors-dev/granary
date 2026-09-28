@@ -2,6 +2,7 @@
 import GaugeIcon from '@lucide/svelte/icons/gauge';
 import LogInIcon from '@lucide/svelte/icons/log-in';
 import GithubIcon from '@lucide/svelte/icons/git-branch';
+import CloudIcon from '@lucide/svelte/icons/cloud';
 import ActivityIcon from '@lucide/svelte/icons/activity';
 import UsersIcon from '@lucide/svelte/icons/users';
 import WaypointsIcon from '@lucide/svelte/icons/waypoints';
@@ -29,6 +30,7 @@ export const DEV_NAV: DevNavItem[] = [
 	{ href: '/__dev', label: 'Overview', icon: GaugeIcon, group: 'Console', description: 'Status of everything', exact: true },
 	{ href: '/__dev/sessions', label: 'Sessions', icon: LogInIcon, group: 'Console', description: 'Log in as anyone' },
 	{ href: '/__dev/github', label: 'Fake GitHub', icon: GithubIcon, group: 'Console', description: 'Open issues, faults, deliveries' },
+	{ href: '/__dev/infra', label: 'Fake infra', icon: CloudIcon, group: 'Console', description: 'Fake R2, OTLP intake, exe.dev proxy' },
 	{ href: '/__dev/load', label: 'Load tester', icon: ActivityIcon, group: 'Load', description: 'Scenarios, metrics, invariants', exact: true },
 	{ href: '/__dev/load/personas', label: 'Personas', icon: UsersIcon, group: 'Load', description: 'Who is doing what, and why' },
 	{ href: '/__dev/traces', label: 'Traces', icon: WaypointsIcon, group: 'Inspect', description: 'Span trees' },

@@ -12,6 +12,7 @@
  * until the process exits. No actor system, DB or network is touched.
  */
 import { StubLoadgen } from './loadgen.stub';
+import { StubFakeInfra } from './fake-infra.stub';
 import type {
 	ActorDetail,
 	ActorSnapshot,
@@ -619,5 +620,14 @@ export class StubBackend implements Backend {
 	}
 	async resetLoadgen() {
 		this.#loadgen.reset();
+	}
+
+	// -- fake-infra (ADR 0139) ---------------------------------------------------
+	#fakeInfra = new StubFakeInfra();
+	async getFakeInfraStatus() {
+		return this.#fakeInfra.info();
+	}
+	async fakeInfraControl(action: import('$lib/schemas/dev').FakeInfraAction) {
+		return this.#fakeInfra.control(action);
 	}
 }

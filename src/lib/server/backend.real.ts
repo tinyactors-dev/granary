@@ -6,6 +6,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { LoadgenClient } from './loadgen-client';
+import { FakeInfraClient } from './fake-infra-client';
 import { TinyactorsError, type ActorInspection } from '@tinyactors/node';
 import type { TSchema, Static } from '@sinclair/typebox';
 import type {
@@ -50,6 +51,9 @@ import type {
 	TraceSummary,
 	CreateScenarioRequest as LoadgenCreateScenarioRequest,
 	LoadgenInfo,
+	FakeInfraAction,
+	FakeInfraActionResult,
+	FakeInfraInfo,
 	ListPersonasQuery,
 	PersonaDetail,
 	PersonaKind,
@@ -538,5 +542,19 @@ export class RealBackend implements Backend {
 	}
 	resetLoadgen(): Promise<void> {
 		return this.#loadgen.reset();
+	}
+
+	// -- fake-infra (ADR 0139) ---------------------------------------------------
+
+	#fakeInfraClient: FakeInfraClient | null = null;
+	get #fakeInfra(): FakeInfraClient {
+		this.#requireDev();
+		return (this.#fakeInfraClient ??= new FakeInfraClient(this.#rt.config.fakeInfraUrl));
+	}
+	getFakeInfraStatus(): Promise<FakeInfraInfo> {
+		return this.#fakeInfra.info();
+	}
+	fakeInfraControl(action: FakeInfraAction): Promise<FakeInfraActionResult> {
+		return this.#fakeInfra.control(action);
 	}
 }

@@ -288,3 +288,55 @@ export const GetPersonaInput = Type.Object(
 	closed
 );
 export type GetPersonaInput = Static<typeof GetPersonaInput>;
+
+// ---------------------------------------------------------------------------
+// fake-infra (ADR 0130–0139). Shapes come from `fake-infra/schemas.ts`.
+// ---------------------------------------------------------------------------
+
+import {
+	ClockRequest as FakeInfraClockRequest,
+	CreateBucketRequest as FakeInfraCreateBucketRequest,
+	ExeProxyRequest as FakeInfraExeProxyRequest,
+	FidelityRequest as FakeInfraFidelityRequest,
+	InjectFaultRequest as FakeInfraInjectFaultRequest,
+	IssueCredentialRequest as FakeInfraIssueCredentialRequest,
+	IssuedCredential as FakeInfraIssuedCredential,
+	FakeInfraState
+} from '../../../fake-infra/schemas';
+export { FakeInfraState as FakeInfraStateSchema };
+export type FakeInfraStateValue = Static<typeof FakeInfraState>;
+export type FakeInfraIssued = Static<typeof FakeInfraIssuedCredential>;
+
+/** `getFakeInfraStatus`: reachability plus the fake's full state (never throws when it is down). */
+export interface FakeInfraInfo {
+	url: string;
+	reachable: boolean;
+	error: string | null;
+	state: FakeInfraStateValue | null;
+	/** Where the exe.dev proxy fronts listen, as URLs (null when off/unknown). */
+	exeTokenUrl: string | null;
+	exePeerUrl: string | null;
+}
+
+/** One control action on the fake (the dev portal's buttons and forms). */
+export const FakeInfraAction = Type.Union([
+	Type.Object({ action: Type.Literal('reset') }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('create-bucket'), bucket: FakeInfraCreateBucketRequest }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('delete-bucket'), name: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('issue-credential'), credential: FakeInfraIssueCredentialRequest }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('revoke-credential'), id: Type.String({ minLength: 1 }) }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('inject-fault'), fault: FakeInfraInjectFaultRequest }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('clear-faults') }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('set-fidelity'), fidelity: Type.Partial(FakeInfraFidelityRequest) }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('set-clock'), clock: FakeInfraClockRequest }, { additionalProperties: false }),
+	Type.Object({ action: Type.Literal('set-exe-proxy'), proxy: FakeInfraExeProxyRequest }, { additionalProperties: false })
+]);
+export type FakeInfraAction = Static<typeof FakeInfraAction>;
+
+export interface FakeInfraActionResult {
+	ok: true;
+	/** `issue-credential`: the secret material, shown once. */
+	issued?: FakeInfraIssued;
+	/** `inject-fault`: the new fault's id. */
+	faultId?: string;
+}

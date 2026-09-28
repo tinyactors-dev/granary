@@ -55,6 +55,9 @@ import type {
 	TraceSummary,
 	CreateScenarioRequest,
 	LoadgenInfo,
+	FakeInfraAction,
+	FakeInfraActionResult,
+	FakeInfraInfo,
 	ListPersonasQuery,
 	PersonaDetail,
 	PersonaKind,
@@ -166,6 +169,13 @@ export interface Backend {
 	listPersonaKinds(): Promise<PersonaKindInfo[]>;
 	/** Stop everything and forget all scenarios. */
 	resetLoadgen(): Promise<void>;
+
+	// -- fake-infra (ADR 0130–0139), dev only; proxies FAKE_INFRA_URL -------------------
+
+	/** Never throws for an unreachable fake-infra: `reachable: false` instead. */
+	getFakeInfraStatus(): Promise<FakeInfraInfo>;
+	/** One control action (buckets, credentials, faults, fidelity, clock, exe proxy, reset). */
+	fakeInfraControl(action: FakeInfraAction): Promise<FakeInfraActionResult>;
 }
 
 // ---------------------------------------------------------------------------
