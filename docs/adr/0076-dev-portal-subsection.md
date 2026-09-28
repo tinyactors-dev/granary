@@ -1,6 +1,6 @@
 # 76. The dev portal is a subsection with its own navigation
 
-Date: 2026-09-28 · Status: accepted (supersedes the single-page layout of ADR 53)
+Date: 2026-09-28 · Status: accepted (supersedes the single-page layout of ADR 53) · Partially superseded by 290
 
 ## Decision
 Under `/__dev` the app's **left sidebar itself switches** to the dev

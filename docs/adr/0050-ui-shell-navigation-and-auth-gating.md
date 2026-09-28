@@ -1,6 +1,6 @@
 # 50. UI shell, navigation and auth gating
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 291
 
 ## Context
 The admin UI (ADR 0008, 0021) needs one consistent frame for Overview,

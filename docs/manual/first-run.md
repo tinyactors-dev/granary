@@ -90,7 +90,7 @@ lists the installation with its repositories.
 
 Each repository has two switches: **Issues** and **Pull requests**. Issues
 or pull requests in a repository whose switch is off are received but
-ignored; `/deliveries` shows the reason. **Refresh** re-reads installations
+ignored; **Activity** shows the reason on the item's page. **Refresh** re-reads installations
 (and the app's permissions) from GitHub if something looks out of date.
 
 ### Granting pull request access to an existing app

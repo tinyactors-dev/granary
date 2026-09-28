@@ -1,6 +1,6 @@
 # 9. The /__dev route and the debugger
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 290
 
 ## Decision
 When dev mode is on (ADR 5), `/__dev` offers:

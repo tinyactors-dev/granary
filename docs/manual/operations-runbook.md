@@ -44,7 +44,7 @@ Single use; built from `ORIGIN`. Exit 4 means wrong user or data directory
 ## Admins, allowlist, GitHub
 
 - Admins: **Settings → Admins**, or `granary admin add|remove|list`.
-- Allowlist: **Allowlist** in the UI.
+- Allowlist and blocklist: **Policy** in the UI.
 - GitHub: **Settings → GitHub** (installations, per-repo switches for issues
   and pull requests, missed webhooks). Webhooks dropped during an outage
   shorter than 72 hours are re-sent automatically.

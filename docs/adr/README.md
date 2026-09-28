@@ -12,6 +12,7 @@ superseded by N`) and the newer ADR says what changed.
 - **GitHub:** granary connects only as a GitHub App (0160, 0190–0194, 0230); it gates issues and pull requests (0280, 0281).
 - **Databases:** one baseline migration each for granary.sqlite and
   ops.sqlite (0230).
+- **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233).
 
 | ADR | Title | State |
@@ -24,7 +25,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0006](0006-fake-github-contract.md) | Fake GitHub contract | partly superseded |
 | [0007](0007-testing-through-traces.md) | Tests run against a running system and assert on traces | active |
 | [0008](0008-sveltekit-on-bun-with-vite.md) | SvelteKit on Bun (Vite is the one exception to "no Vite") | active |
-| [0009](0009-dev-route-and-debugger.md) | The /__dev route and the debugger | active |
+| [0009](0009-dev-route-and-debugger.md) | The /__dev route and the debugger | partly superseded |
 | [0020](0020-package-and-tooling-layout.md) | Package and tooling layout | active |
 | [0021](0021-shadcn-svelte-setup.md) | shadcn-svelte setup | active |
 | [0022](0022-native-addon-under-vite-and-adapter-bun.md) | Loading the @tinyactors/node native addon under Vite and adapter-bun | active |
@@ -43,10 +44,10 @@ superseded by N`) and the newer ADR says what changed.
 | [0040](0040-runtime-boot-and-lifecycle.md) | Runtime boot, issue actor states and process lifecycle | partly superseded |
 | [0041](0041-outbox-relay-behaviour.md) | Outbox relay behaviour and its observable effects | partly superseded |
 | [0042](0042-trace-vocabulary.md) | Observable trace vocabulary | partly superseded |
-| [0050](0050-ui-shell-navigation-and-auth-gating.md) | UI shell, navigation and auth gating | active |
+| [0050](0050-ui-shell-navigation-and-auth-gating.md) | UI shell, navigation and auth gating | partly superseded |
 | [0051](0051-data-loading-with-remote-functions.md) | Data loading with remote functions | active |
 | [0052](0052-ui-components-and-visual-conventions.md) | UI components and visual conventions | active |
-| [0053](0053-dev-console-design.md) | Developer console (`/__dev`) design | active |
+| [0053](0053-dev-console-design.md) | Developer console (`/__dev`) design | partly superseded |
 | [0054](0054-jaeger-style-trace-explorer.md) | Jaeger-style trace explorer in /__dev | active |
 | [0056](0056-actor-inspector.md) | Actor inspector: snapshots of an actor's inside | active |
 | [0057](0057-json-view-component.md) | A standalone JsonView component | active |
@@ -61,7 +62,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0073](0073-observation-metrics-and-invariants.md) | Observation, metrics and invariants | active |
 | [0074](0074-fuzzing-and-chaos.md) | Fuzzing and chaos personas | active |
 | [0075](0075-fake-github-event-stream-comments-raw.md) | Fake GitHub: event stream, user comments, raw deliveries | active |
-| [0076](0076-dev-portal-subsection.md) | The dev portal is a subsection with its own navigation | active |
+| [0076](0076-dev-portal-subsection.md) | The dev portal is a subsection with its own navigation | partly superseded |
 | [0077](0077-ui-component-previews.md) | Storybook-style component previews under /__dev/ui | active |
 | [0080](0080-ops-domain-module-boundary.md) | Operations is a separate domain module with a pinned contract | active |
 | [0081](0081-ops-process-and-system-placement.md) | Ops runs in the app process, in its own tinyactors System | partly superseded |
@@ -187,3 +188,5 @@ superseded by N`) and the newer ADR says what changed.
 | [0281](0281-pull-request-permission-upgrade.md) | Pull request access for existing GitHub Apps | active |
 | [0282](0282-fake-github-pull-requests-and-permissions.md) | Fake GitHub: pull requests and accepted permissions | active |
 | [0283](0283-pull-request-tests.md) | Pull request scenarios | active |
+| [0290](0290-admin-section-and-capabilities.md) | An admin section in every environment, gated by capability | active |
+| [0291](0291-structure-activity-policy-and-glossary.md) | Structure: Activity, Policy, one glossary, one header, one banner | active |

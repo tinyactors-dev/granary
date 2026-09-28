@@ -148,9 +148,12 @@ architecture, and add a new ADR for every new decision.
 - **Fake GitHub.** A separate system (`fake-github/`) emulates the subset of
   GitHub we use (REST, webhooks, OAuth) so things can be tested interactively
   and automatically.
-- **`/__dev` route** exists only in development: log somebody in
-  automatically, trigger actions (e.g. open an issue on the fake GitHub as any
-  user), and attach a DAP debugger to the running actor system.
+- **`/admin` section** (ADR 0290): for admins in every environment — actors
+  and the inspector, traces, the debugger, the simulation services (fake
+  GitHub, fake-infra, load tester) and component previews. Each area is gated
+  by a capability: impersonation ("log in as") and the dev JSON API only in
+  development mode; the debugger with `GRANARY_DEBUGGER=1`; simulation
+  services when their URL is configured.
 - **UI:** SvelteKit + shadcn-svelte (https://github.com/huntabyte/shadcn-svelte).
   Frontend/backend communication uses SvelteKit remote functions.
 - **Schemas:** `@sinclair/typebox` at every serialization boundary (webhooks,

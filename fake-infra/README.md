@@ -5,7 +5,7 @@ System (one actor per file in `actors/`). Must not import granary or ops code
 (`mise run check:boundaries`).
 
 Run: `mise run up` (pitchfork daemon `fake-infra`) or `mise run fake-infra`.
-Page: http://localhost:4090/ · dev portal: `/__dev/infra`.
+Page: http://localhost:4090/ · dev portal: `/admin/infra`.
 
 | Surface | URL |
 |---|---|

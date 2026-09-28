@@ -1,6 +1,6 @@
 # 53. Developer console (`/__dev`) design
 
-Date: 2026-09-28 · Status: accepted
+Date: 2026-09-28 · Status: accepted · Partially superseded by 290
 
 ## Context
 ADR 0009 lists what `/__dev` offers. It must work before anyone is logged in

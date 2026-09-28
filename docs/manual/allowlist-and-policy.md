@@ -38,7 +38,7 @@ GitHub sends is stored as *ignored*, with the reason visible on
 
 ## The closing message
 
-**Settings → Closing message** (admins edit, everyone else can read) sets
+**Policy → Closing message** (admins edit, everyone else can read) sets
 the comment's text: one template for issues, one for pull requests, and
 optional overrides per repository. Templates are Markdown with variables in
 double braces; the page shows a live preview with sample data.
@@ -70,7 +70,7 @@ sudo -u granary granary config set messages.closing \
 
 ## Managing the allowlist
 
-**Allowlist** in the UI: admins add and remove logins, everyone signed in
+**Policy → Allowlist & blocklist** in the UI: admins add and remove logins, everyone signed in
 can view them. Changes take effect for the next issue.
 
 For a first install you can seed logins with the environment variable
@@ -79,7 +79,7 @@ removes or overrides anything edited in the UI.
 
 ## The blocklist
 
-**Allowlist → Blocklist** in the UI: admins block a login for 1 hour,
+**Policy → Allowlist & blocklist** in the UI: admins block a login for 1 hour,
 1 day, 7 days or until removed, with an optional note; everyone signed in
 can view the list. Expired blocks stay listed (dimmed) and are no longer
 enforced; there's nothing to clean up. Re-blocking a login replaces its

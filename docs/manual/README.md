@@ -42,7 +42,7 @@ sudo -u granary granary login-link <your-github-login> --data /var/lib/granary
 Set the final public hostname (`ORIGIN`) before the next step: the GitHub App
 bakes it into its URLs ([Install §7](install.md#7-settle-the-public-hostname-before-the-github-app)).
 Then, in the browser: create the GitHub App (one click), install it on the
-repositories to guard, add allowed users under **Allowlist**, and add a
+repositories to guard, add allowed users under **Policy**, and add a
 backup destination under **Ops → Destinations**.
 
 ## Contents

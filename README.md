@@ -28,10 +28,10 @@ All tasks are [mise](https://mise.jdx.dev) tasks (`mise tasks ls`):
 | `mise run release -- --channel dev\|latest [--yes]` | pack → verify → publish to npm (dry run without `--yes`; ADR 0186) |
 
 Typical dev loop: `mise run install && mise run up`, then open
-http://localhost:5173. In development, http://localhost:5173/__dev is the
+http://localhost:5173. In development, http://localhost:5173/admin is the
 developer console (the sidebar switches to it): sessions, fake GitHub, the
-load tester and its personas (`/__dev/load`), traces, actors & debugger, and
-component previews (`/__dev/ui`).
+load tester and its personas (`/admin/load`), traces, actors & debugger, and
+component previews (`/admin/ui`).
 
 ## Configuration
 
@@ -89,13 +89,13 @@ telemetry to the shared `ta-metrics` Grafana.
 src/
   app.html, app.css, app.d.ts
   hooks.server.ts            # boots the backend (actor system, ops)
-  routes/                    # pages, /webhook, /__dev
+  routes/                    # pages, /webhook, /admin
   lib/
     components/ui/           # shadcn-svelte components
     utils.ts                 # cn() etc.
     schemas/                 # TypeBox schemas (all serialization boundaries)
     remote/                  # SvelteKit remote functions (*.remote.ts)
-    dev-ui/                  # component preview registry (/__dev/ui)
+    dev-ui/                  # component preview registry (/admin/ui)
     trace/                   # browser-safe trace summaries and fixtures
     server/                  # system boot, WAL, relay, I/O processors
       actors/                # one file per actor (main system)

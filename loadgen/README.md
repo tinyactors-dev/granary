@@ -9,7 +9,7 @@ and checks invariants against the policy oracle.
 
 ```
 mise run up                                   # fake GitHub + app + loadgen daemons
-open http://localhost:5173/__dev/load         # portal: scenarios, personas, invariants
+open http://localhost:5173/admin/load         # portal: scenarios, personas, invariants
 mise run load:run -- --preset chaos --seed 7  # headless; exit 1 on violations
 ```
 
