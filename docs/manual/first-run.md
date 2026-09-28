@@ -21,11 +21,12 @@ GitHub sign-in needs the GitHub App, which you haven't created yet. A
 **login link** gets you in the first time:
 
 ```sh
-granary login-link <your-github-login> --data /var/lib/granary
+sudo -u granary granary login-link <your-github-login> --data /var/lib/granary
 # https://granary.example.com/auth/link/…   (valid 15 minutes, single use)
 ```
 
-Open the link and click **Continue**. The link works once. Only a hash of it
+The link is built from `ORIGIN` in `granary.env`; without it the command
+refuses rather than print a localhost URL. Open the link and click **Continue**. The link works once. Only a hash of it
 is stored, and opening it shows a confirmation page first, so chat and mail
 link previews can't use it up. `--ttl 2h` makes it last longer (at most
 24 h). Admins can also create links for each other under **Settings → Login

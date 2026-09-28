@@ -57,6 +57,7 @@ been published, so none of this history protects anybody; it only confuses.
 | `GRANARY_TEST_CATCHUP_FIRST_DELAY_MS`, `GRANARY_TEST_CATCHUP_INTERVAL_MS` | app | missed-webhook catch-up cadence |
 | `GRANARY_TEST_WATCHDOG_INTERVAL_MS`, `GRANARY_TEST_GRACE_SCALE`, `GRANARY_TEST_RETRY_BASE_MS`, `GRANARY_TEST_RETENTION_INTERVAL_MS`, `GRANARY_TEST_STATFS_OVERRIDE` | app (ops) | ops timings and disk simulation |
 | `GRANARY_TEST_VERBOSE` | test harness | stream subprocess output |
+| `GRANARY_TEST_SYSTEM_DATA_DIR` | CLI | stands in for `/var/lib/granary` in the CLI's data-dir resolution (ADR 0232) |
 | `FAKE_GITHUB_PORT`, `FAKE_GITHUB_URL`, `FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS`, `FAKE_GITHUB_OTLP_ENDPOINT` | fake GitHub (URL also app, loadgen) | the fake GitHub |
 | `FAKE_INFRA_PORT`, `FAKE_INFRA_URL`, `FAKE_INFRA_EXE_TOKEN_PORT`, `FAKE_INFRA_EXE_PEER_PORT`, `FAKE_INFRA_SEED_{BUCKET,JURISDICTION,ACCESS_KEY_ID,SECRET_ACCESS_KEY,EXE_TOKEN}`, `FAKE_INFRA_OTLP_ENDPOINT` | fake-infra (URL also app) | the fake R2 / OTLP / exe.dev proxy |
 | `LOADGEN_PORT`, `LOADGEN_URL`, `LOADGEN_ALLOWLISTED`, `LOADGEN_GRANARY_LOGIN`, `LOADGEN_OTLP_ENDPOINT` | loadgen (URL: app) | the load generator |

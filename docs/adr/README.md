@@ -172,3 +172,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0222](0222-manual-walkthrough-findings.md) | The manual is verified by walking through it | active |
 | [0230](0230-one-naming-scheme-no-legacy-before-first-release.md) | One naming scheme, no legacy before the first release | active |
 | [0231](0231-production-deployment-on-exe-dev.md) | Production deployment: ta-granary and the shared ta-metrics stack | active |
+| [0232](0232-cli-never-writes-to-an-unexpected-data-dir.md) | The CLI never writes to an unexpected data dir | active |

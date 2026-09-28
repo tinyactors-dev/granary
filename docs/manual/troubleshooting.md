@@ -3,7 +3,7 @@
 ## Start here
 
 ```sh
-granary doctor --data /var/lib/granary     # Bun, data dir, master key, databases, disk, ORIGIN, GitHub
+sudo -u granary granary doctor --data /var/lib/granary   # Bun, data dir, master key, databases, disk, ORIGIN, GitHub
 curl -s localhost:3000/readyz              # what the running server thinks of itself
 journalctl -u granary -e                   # logs
 ```
@@ -40,7 +40,18 @@ be recovered; the encrypted secrets and backups are gone with it.
 you under Settings → Admins, or run `granary admin add <login>` on the
 server.
 
-**Nobody can sign in.** Run `granary login-link <admin-login>` on the server.
+**Nobody can sign in.** Run `sudo -u granary granary login-link <admin-login>`
+on the server.
+
+**A command exits 4 ("data dir … does not exist / is not initialised /
+cannot access").** The CLI looked at the wrong data directory or ran as the
+wrong user. The message names the directory and how it was chosen (`--data`,
+`GRANARY_DATA_DIR`, `/var/lib/granary`, or the per-user default). Run it as the
+data directory's owner, e.g. `sudo -u granary granary <command> --data
+/var/lib/granary`. Nothing was created or written.
+
+**"no ORIGIN configured" from `login-link`.** Set `ORIGIN=https://…` (granary's
+public URL) in `granary.env`, restart granary if it runs, and try again.
 
 **Missed webhooks after an outage.** The catch-up re-sends failed deliveries
 from the last 72 hours every 10 minutes (**Settings → GitHub → Missed

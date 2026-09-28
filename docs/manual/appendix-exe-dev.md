@@ -47,6 +47,10 @@ sudo -u granary granary login-link <your-github-login> --data /var/lib/granary
 
 Open the login link and continue with [First run](first-run.md).
 
+Always run `granary` as the service user (`sudo -u granary granary …`): as
+`exedev` the CLI can't read `/var/lib/granary` and refuses with a `sudo -u
+granary` hint (exit 4) instead of working on some other directory.
+
 ## 2. Grafana on a second, private VM (optional)
 
 ```sh

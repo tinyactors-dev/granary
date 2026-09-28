@@ -33,8 +33,13 @@ sudo useradd --system --home /var/lib/granary --shell /usr/sbin/nologin granary
 sudo install -d -o granary -g granary -m 0700 /var/lib/granary
 ```
 
-Without `--data`, commands use `GRANARY_DATA_DIR`, else
-`$XDG_STATE_HOME/granary`, else `~/.local/state/granary`.
+Without `--data`, commands use `GRANARY_DATA_DIR`, else `/var/lib/granary`
+if it exists, else `$XDG_STATE_HOME/granary`, else `~/.local/state/granary`.
+Run every `granary` command on the server as the service user
+(`sudo -u granary granary …`): the data directory is private to it. Only
+`init` and `serve` create anything; any other command refuses (exit 4) a data
+directory that is missing, not initialised, or not readable by you, and names
+the directory it looked at — it never quietly writes somewhere else.
 
 ## 4. `granary init`
 
