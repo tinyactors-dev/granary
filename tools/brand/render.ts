@@ -16,6 +16,12 @@
  *            (favicon.ico, favicon-32.png) where the outlines turn to mud
  *   - full:  full-bleed square, wheat inside the maskable safe zone
  *            (apple-touch-icon, manifest "maskable" icon)
+ *   - github: flat avatar for the GitHub App logo (ADR 0271): one solid
+ *            colour (GITHUB_BG) over the whole canvas — no gradient, no inner
+ *            tile — and flat grain fills, the wheat sized to sit well inside the
+ *            circle GitHub crops avatars to. Set the app's badge background to
+ *            GITHUB_BG so any padding GitHub adds blends in. PNG, since GitHub
+ *            rejects webp.
  */
 import sharp from 'sharp';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -51,14 +57,19 @@ const PALETTE = {
 	tileBottom: '#15100B'
 };
 
-type Variant = 'mark' | 'tile' | 'small' | 'full';
+/** The GitHub App logo's background, also entered as the app's "badge background color". */
+export const GITHUB_BG = '#1D1710';
+
+type Variant = 'mark' | 'tile' | 'small' | 'full' | 'github';
 
 function wheat(v: Variant): string {
 	const small = v === 'small';
 	const outlineW = small ? 0 : 0.75;
 	const stalkW = small ? 2.6 : 2.2;
+	// github: flat fills — a gradient inside a circular crop reads as a smudge at avatar sizes
+	const fill = v === 'github' ? PALETTE.grainMid : 'url(#grain)';
 	const kernel = (d: string) =>
-		`<path d="${d}" fill="url(#grain)"${outlineW ? ` stroke="${PALETTE.outline}" stroke-width="${outlineW}" stroke-linejoin="round"` : ''}/>`;
+		`<path d="${d}" fill="${fill}"${outlineW ? ` stroke="${PALETTE.outline}" stroke-width="${outlineW}" stroke-linejoin="round"` : ''}/>`;
 	return [
 		// straw stalk with a darker edge so it separates from light and dark backgrounds
 		`<path d="${STALK}" stroke="${PALETTE.stalkEdge}" stroke-width="${stalkW + (small ? 0 : 0.9)}" stroke-linecap="round"/>`,
@@ -80,7 +91,11 @@ function svg(v: Variant): string {
 </defs>`;
 	const fit = (scale: number) => `translate(12 12) scale(${scale}) translate(-12 -12)`;
 	let body: string;
-	if (v === 'mark') body = `<g fill="none" transform="${fit(0.92)}">${wheat(v)}</g>`;
+	if (v === 'github')
+		// the wheat's diagonal extent is 10·√2·scale from the centre; 0.68 keeps its tips at ≈80 % of the
+		// inscribed circle's radius (≈20 % margin inside the crop)
+		body = `<rect width="24" height="24" fill="${GITHUB_BG}"/><g fill="none" transform="${fit(0.68)}">${wheat(v)}</g>`;
+	else if (v === 'mark') body = `<g fill="none" transform="${fit(0.92)}">${wheat(v)}</g>`;
 	else if (v === 'full') body = `<rect width="24" height="24" fill="url(#tile)"/><g fill="none" transform="${fit(0.6)}">${wheat('tile')}</g>`;
 	else body = `<rect width="24" height="24" rx="5.2" fill="url(#tile)"/><g fill="none" transform="${fit(v === 'small' ? 0.8 : 0.74)}">${wheat(v)}</g>`;
 	return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">${defs}${body}</svg>\n`;
@@ -125,7 +140,8 @@ const files: [string, string | Buffer][] = [
 	['brand/granary-mark.svg', svg('mark')],
 	['brand/granary-small.svg', svg('small')],
 	['brand/granary-maskable.svg', svg('full')],
-	['favicon.svg', svg('tile')]
+	['favicon.svg', svg('tile')],
+	['brand/granary-github.svg', svg('github')]
 ];
 for (const size of [128, 512, 1024]) {
 	files.push([`brand/granary-${size}.webp`, await webp('tile', size)]);
@@ -137,6 +153,9 @@ files.push(['apple-touch-icon.png', await png('full', 180)]);
 files.push(['brand/icon-192.png', await png('tile', 192)]);
 files.push(['brand/icon-512.png', await png('tile', 512)]);
 files.push(['brand/icon-maskable-512.png', await png('full', 512)]);
+// GitHub App logo: PNG (GitHub rejects webp), opaque, < 1 MB
+files.push(['brand/granary-github-512.png', await sharp(await png('github', 512)).flatten({ background: GITHUB_BG }).png({ compressionLevel: 9 }).toBuffer()]);
+files.push(['brand/granary-github-1024.png', await sharp(await png('github', 1024)).flatten({ background: GITHUB_BG }).png({ compressionLevel: 9 }).toBuffer()]);
 files.push([
 	'manifest.webmanifest',
 	JSON.stringify(

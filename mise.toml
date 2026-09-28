@@ -94,6 +94,10 @@ run = "bun tools/docs/cli.ts"
 description = "Regenerate the wheat logo, favicons and app icons in static/ (ADR 0270)"
 run = "bun tools/brand/render.ts"
 
+[tasks."brand:preview-github"]
+description = "GitHub App logo as GitHub crops it (circle on light/dark, 200 to 20 px): mise run brand:preview-github -- <out.png>"
+run = "bun tools/brand/preview-github.ts ."
+
 [tasks."brand:preview"]
 description = "Contact sheet of the brand assets (tile, mark on light/dark, 16/32 px favicon): mise run brand:preview -- <out.png>"
 run = "bun tools/brand/preview.ts ."
