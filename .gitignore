@@ -50,5 +50,8 @@ mise.local.toml
 # release artefacts (ADR 0180)
 /release/
 
-# agent worktrees (Claude Code)
-/.claude/
+# Claude Code: worktrees and local settings stay out; the shared settings
+# and branch hooks are committed (CLAUDE.md, "Work on main")
+/.claude/*
+!/.claude/settings.json
+!/.claude/hooks/
