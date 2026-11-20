@@ -3,14 +3,14 @@
  *
  * `POST /v1/traces` (protobuf) is decoded with tinyactors' `decodeTraces`;
  * `POST /v1/logs` (protobuf) with the small decoder below — tinyactors ships
- * no logs decoder, and the logs carry the `tinyactors.definition.registered`
- * records that map a span's numeric `scxml.definition` to its family.
+ * no logs decoder. A span's family is its `tinyactors.chart.name`.
  *
  * Every span/log is tagged with the `epoch` of its service at arrival: the
  * harness bumps the app's epoch before it restarts the app, so session ids
  * (which restart from the same values in a new process) stay distinct.
  */
-import { decodeTraces, type DecodedSpan } from '@tinyactors/node-legacy';
+import { decodeTraces } from '@tinyactors/node';
+import { fromTinyactors, type DecodedSpan } from '../src/lib/server/otlp-encode';
 
 export interface CollectedSpan extends DecodedSpan {
 	/** `resource.attributes['service.name']` (e.g. `granary`, `fake-github`). */
@@ -266,13 +266,16 @@ export class Collector {
 	}
 
 	familyOf(span: CollectedSpan): string | undefined {
+		// A span names its chart (@tinyactors/node 0.4); 0.1 hosts named it in a log record.
+		const chart = span.attributes['tinyactors.chart.name'];
+		if (typeof chart === 'string') return chart;
 		const def = span.attributes['scxml.definition'];
 		return def === undefined ? undefined : this.families.get(`${span.service}:${span.epoch}:${String(def)}`);
 	}
 
 	private addTraces(bytes: Uint8Array) {
 		if (!bytes.byteLength) return;
-		for (const span of decodeTraces(bytes)) {
+		for (const span of decodeTraces(bytes).map(fromTinyactors)) {
 			const service = String(span.resource.attributes['service.name'] ?? 'unknown');
 			this.spans.push(Object.assign(span, { service, epoch: this.epochOf(service), seq: this.seq++ }));
 		}
