@@ -8,7 +8,7 @@ import { WEBHOOK_IO, webhookProcessor, type WebhookConfig } from './io/webhook';
 import { REGISTRY_ADDRESS, REGISTRY_CHART, registryChart, type RegistryData } from './actors/registry';
 import { FAULTS_ADDRESS, FAULTS_CHART, faultsChart, type FaultsData } from './actors/faults';
 import { OAUTH_ADDRESS, OAUTH_CHART, oauthChart } from './actors/oauth';
-import { REPOSITORY_FAMILY, commentView, issueView, repositoryAddress, repositoryChart, type RepositoryData } from './actors/repository';
+import { REPOSITORY_FAMILY, commentView, discussionNodeId, issueView, repositoryAddress, repositoryChart, type RepositoryData } from './actors/repository';
 import { DELIVERY_FAMILY, deliveryAddress, deliveryChart, type DeliveryData } from './actors/delivery';
 import { APPS_ADDRESS, APPS_CHART, APPS_EVENTS, appsChart, type AppsData } from './actors/apps';
 import { parseFakeState, type FakeDelivery, type FakeIssue, type FakeState } from './schemas';
@@ -119,7 +119,9 @@ export function createFakeSystem(options: FakeSystemOptions) {
 				apps: [],
 				installations: [],
 				appDeliveries: [],
-				webhookOutage: options.outage?.() ?? false
+				webhookOutage: options.outage?.() ?? false,
+				discussionSettings: [],
+				discussions: []
 			};
 			for (const d of await read<RegistryData>(REGISTRY_CHART)) {
 				state.users.push(...Object.values(d.users).map((u) => ({ ...u })));
@@ -173,6 +175,30 @@ export function createFakeSystem(options: FakeSystemOptions) {
 			}
 			for (const d of await read<FaultsData>(FAULTS_CHART)) state.faults.push(...d.faults.map((f) => ({ ...f })));
 			for (const d of await read<RepositoryData>(REPOSITORY_FAMILY)) {
+				const categories = d.categories ?? [];
+				if (d.discussionsEnabled !== undefined || categories.length) {
+					state.discussionSettings!.push({
+						repoId: d.id,
+						fullName: `${d.owner}/${d.name}`,
+						enabled: d.discussionsEnabled ?? false,
+						categories: categories.map((c) => ({ id: c.id, name: c.name, slug: c.slug, emoji: c.emoji, description: c.description }))
+					});
+				}
+				for (const x of d.discussions ?? []) {
+					state.discussions!.push({
+						repoId: d.id,
+						owner: d.owner,
+						repo: d.name,
+						number: x.number,
+						nodeId: discussionNodeId(d.id, x.number),
+						title: x.title,
+						body: x.body,
+						category: categories.find((c) => c.id === x.categoryId)?.slug ?? '',
+						author: x.user.login,
+						htmlUrl: `${d.webBase}/${d.owner}/${d.name}/discussions/${x.number}`,
+						comments: x.comments.map((c) => ({ id: c.id, author: c.user.login, body: c.body, createdAt: c.created_at }))
+					});
+				}
 				for (const i of d.issues) {
 					const issue: FakeIssue = {
 						...issueView(d, i),
@@ -209,6 +235,8 @@ export function createFakeSystem(options: FakeSystemOptions) {
 			state.installations!.sort((x, y) => x.id - y.id);
 			state.appDeliveries!.sort((x, y) => x.id - y.id);
 			state.issues.sort((x, y) => x.repoId - y.repoId || x.number - y.number);
+			state.discussionSettings!.sort((x, y) => x.repoId - y.repoId);
+			state.discussions!.sort((x, y) => x.repoId - y.repoId || x.number - y.number);
 			return parseFakeState(state);
 		}
 	};

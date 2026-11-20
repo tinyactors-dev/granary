@@ -47,7 +47,17 @@ export const CONTROL_PATHS = {
 	/** ADR 0282: change what an app asks for (installations keep the old set until they accept). */
 	appPermissions: (appId: number) => `/__control/apps/${appId}/permissions`,
 	/** ADR 0282: the account accepts the app's current permissions; delivers `installation`/`new_permissions_accepted`. */
-	acceptPermissions: (installationId: number) => `/__control/installations/${installationId}/accept-permissions`
+	acceptPermissions: (installationId: number) => `/__control/installations/${installationId}/accept-permissions`,
+	/** ADR 0310: turn Discussions on or off for a repository (GitHub: Settings → Features). */
+	discussionsEnabled: '/__control/discussions/enabled',
+	/** ADR 0310: add a discussion category (GitHub has no API for it; the fake's control API stands in for the web UI). */
+	discussionCategories: '/__control/discussions/categories',
+	/** ADR 0310: open a discussion as a user; delivers `discussion`/`created`. */
+	discussions: '/__control/discussions',
+	/** ADR 0310: edit or move a discussion; delivers `discussion`/`edited` or `category_changed`. */
+	editDiscussion: '/__control/discussions/edit',
+	/** ADR 0310: delete a discussion; delivers `discussion`/`deleted`. */
+	deleteDiscussion: '/__control/discussions/delete'
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -377,6 +387,95 @@ export const AppAutoInstallRequest = Type.Object({ enabled: Type.Boolean() }, cl
 export type AppAutoInstallRequest = Static<typeof AppAutoInstallRequest>;
 
 /** POST /__control/webhook-outage */
+// ---------------------------------------------------------------------------
+// Discussions (ADR 0310)
+// ---------------------------------------------------------------------------
+
+export const SetDiscussionsEnabledRequest = Type.Object({ owner: Login, repo: RepoName, enabled: Type.Boolean() }, closed);
+export type SetDiscussionsEnabledRequest = Static<typeof SetDiscussionsEnabledRequest>;
+
+export const CreateCategoryRequest = Type.Object(
+	{
+		owner: Login,
+		repo: RepoName,
+		name: Type.String({ minLength: 1, maxLength: 100 }),
+		slug: Type.Optional(Type.String({ pattern: '^[a-z0-9-]+$', maxLength: 100 })),
+		emoji: Type.Optional(Type.String({ maxLength: 50 })),
+		description: Type.Optional(Type.String({ maxLength: 500 }))
+	},
+	closed
+);
+export type CreateCategoryRequest = Static<typeof CreateCategoryRequest>;
+
+export const FakeCategory = Type.Object({ id: Type.Integer(), name: Type.String(), slug: Type.String(), emoji: Type.String(), description: Type.String() }, closed);
+export type FakeCategory = Static<typeof FakeCategory>;
+
+/** POST /__control/discussions — `category` is a slug or a name (case-insensitive). */
+export const CreateDiscussionRequest = Type.Object(
+	{
+		owner: Login,
+		repo: RepoName,
+		author: Login,
+		category: Type.String({ minLength: 1 }),
+		title: Type.String({ minLength: 1 }),
+		body: Type.Optional(Type.String({ maxLength: 65536 })),
+		association: Type.Optional(AuthorAssociation)
+	},
+	closed
+);
+export type CreateDiscussionRequest = Static<typeof CreateDiscussionRequest>;
+
+export const CreateDiscussionResponse = Type.Object({ number: Type.Integer({ minimum: 1 }), nodeId: Type.String(), deliveryId: Nullable(Type.String()) }, closed);
+export type CreateDiscussionResponse = Static<typeof CreateDiscussionResponse>;
+
+/** POST /__control/discussions/edit — a new `category` delivers `category_changed`, else `edited`. */
+export const EditDiscussionRequest = Type.Object(
+	{
+		owner: Login,
+		repo: RepoName,
+		number: Type.Integer({ minimum: 1 }),
+		actor: Type.Optional(Login),
+		title: Type.Optional(Type.String({ minLength: 1 })),
+		body: Type.Optional(Type.String({ maxLength: 65536 })),
+		category: Type.Optional(Type.String({ minLength: 1 }))
+	},
+	closed
+);
+export type EditDiscussionRequest = Static<typeof EditDiscussionRequest>;
+
+export const DeleteDiscussionRequest = Type.Object({ owner: Login, repo: RepoName, number: Type.Integer({ minimum: 1 }), actor: Type.Optional(Login) }, closed);
+export type DeleteDiscussionRequest = Static<typeof DeleteDiscussionRequest>;
+
+export const DiscussionDeliveryResponse = Type.Object({ deliveryId: Nullable(Type.String()) }, closed);
+export type DiscussionDeliveryResponse = Static<typeof DiscussionDeliveryResponse>;
+
+export const FakeDiscussionComment = Type.Object({ id: Type.Integer(), author: Type.String(), body: Type.String(), createdAt: Type.String() }, closed);
+
+export const FakeDiscussion = Type.Object(
+	{
+		repoId: Type.Integer(),
+		owner: Type.String(),
+		repo: Type.String(),
+		number: Type.Integer(),
+		nodeId: Type.String(),
+		title: Type.String(),
+		body: Type.String(),
+		category: Type.String({ description: 'slug' }),
+		author: Type.String(),
+		htmlUrl: Type.String(),
+		comments: Type.Array(FakeDiscussionComment)
+	},
+	closed
+);
+export type FakeDiscussion = Static<typeof FakeDiscussion>;
+
+/** Per repository: Discussions on/off and its categories. */
+export const FakeDiscussionSettings = Type.Object(
+	{ repoId: Type.Integer(), fullName: Type.String(), enabled: Type.Boolean(), categories: Type.Array(FakeCategory) },
+	closed
+);
+export type FakeDiscussionSettings = Static<typeof FakeDiscussionSettings>;
+
 export const WebhookOutageRequest = Type.Object({ down: Type.Boolean() }, closed);
 export type WebhookOutageRequest = Static<typeof WebhookOutageRequest>;
 
@@ -392,7 +491,10 @@ export const FakeState = Type.Object(
 		apps: Type.Optional(Type.Array(FakeApp)),
 		installations: Type.Optional(Type.Array(FakeInstallation)),
 		appDeliveries: Type.Optional(Type.Array(FakeAppDelivery)),
-		webhookOutage: Type.Optional(Type.Boolean())
+		webhookOutage: Type.Optional(Type.Boolean()),
+		/** ADR 0310. */
+		discussionSettings: Type.Optional(Type.Array(FakeDiscussionSettings)),
+		discussions: Type.Optional(Type.Array(FakeDiscussion))
 	},
 	closed
 );
@@ -494,6 +596,28 @@ export const FakeEvent = Type.Union([
 		{
 			...EventBase,
 			type: Type.Literal('comment.created'),
+			...IssueRef,
+			commentId: Type.Integer(),
+			author: Type.String(),
+			body: Type.String()
+		},
+		closed
+	),
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Union([Type.Literal('discussion.created'), Type.Literal('discussion.edited'), Type.Literal('discussion.category_changed'), Type.Literal('discussion.deleted')]),
+			...IssueRef,
+			author: Type.String(),
+			category: Type.String(),
+			title: Type.String()
+		},
+		closed
+	),
+	Type.Object(
+		{
+			...EventBase,
+			type: Type.Literal('discussion_comment.created'),
 			...IssueRef,
 			commentId: Type.Integer(),
 			author: Type.String(),

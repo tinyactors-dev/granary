@@ -23,6 +23,14 @@ import {
 	InjectFaultRequest,
 	ReopenIssueRequest,
 	WebhookOutageRequest,
+	SetDiscussionsEnabledRequest,
+	CreateCategoryRequest,
+	CreateDiscussionRequest,
+	EditDiscussionRequest,
+	DeleteDiscussionRequest,
+	type CreateDiscussionResponse,
+	type DiscussionDeliveryResponse,
+	type FakeCategory,
 	type ControlError,
 	type CreateCommentControlResponse,
 	type CreateIssueResponse,
@@ -60,6 +68,7 @@ import { issuesEvent, repositoryView, userView, type Bases } from './views';
 import { authorizePage, controlPage } from './page';
 import { EventLog } from './events';
 import { createAppRoutes, type DeliveryTarget } from './app-routes';
+import { createGraphQL } from './graphql';
 import { APPS_ADDRESS, APPS_EVENTS, repoCovered, type AppRecord, type Covering, type InstallationRecord } from './actors/apps';
 
 const env = process.env;
@@ -328,6 +337,162 @@ const appRoutes = createAppRoutes({
 	githubError
 });
 
+const graphqlApi = createGraphQL({
+	host,
+	bases,
+	findRepo: async (owner, name) => {
+		const found = await findRepo(owner, name);
+		return found ? { repo: found.repo } : null;
+	},
+	findRepoById: async (id) => {
+		const r = (await fake.registry()).repos.find((x) => x.id === id);
+		return r && fake.repositoryExists(r.id) ? { id: r.id, owner: r.owner, name: r.name, fullName: r.fullName } : null;
+	},
+	userView: (u) => userView(u, bases),
+	onDiscussionComment: (e) => events.emit({ type: 'discussion_comment.created', ...e })
+});
+
+/** ADR 0310: the `discussion` webhook body (payload gains `installation` in `deliverRepoEvent`). */
+async function discussionEvent(
+	action: string,
+	discussion: Record<string, unknown>,
+	found: { repo: EnsureRepoResult['repo']; owner: FakeUser },
+	sender: FakeUser,
+	changes?: Record<string, unknown>
+): Promise<DiscussionDeliveryResponse> {
+	const category = (discussion.category as { slug?: string } | null)?.slug ?? '';
+	events.emit({
+		type: `discussion.${action}` as 'discussion.created',
+		...issueRef(found.repo, discussion.number as number),
+		author: (discussion.user as { login: string }).login,
+		category,
+		title: discussion.title as string
+	});
+	const payload = {
+		action,
+		discussion,
+		...(changes ? { changes } : {}),
+		repository: repositoryView(found.repo, found.owner, bases),
+		sender: userView(sender, bases)
+	};
+	const result = await deliverRepoEvent('discussion', action, payload, found.repo, discussion.number as number);
+	return { deliveryId: result?.deliveryId ?? null };
+}
+
+/** ADR 0310: Discussions control endpoints, or null when `path` is not one of them. */
+async function discussionsControl(req: Request, path: string): Promise<Response | null> {
+	if (path === CONTROL_PATHS.discussionsEnabled) {
+		const body = validate(SetDiscussionsEnabledRequest, await readJson(req), 'discussions switch');
+		const { repo } = await ensureRepo(body.owner, body.repo);
+		await askActor(host, repositoryAddress(repo.id), REPOSITORY_EVENTS.setDiscussions, { enabled: body.enabled });
+		return json({ ok: true });
+	}
+	if (path === CONTROL_PATHS.discussionCategories) {
+		const body = validate(CreateCategoryRequest, await readJson(req), 'category');
+		const found = await findRepo(body.owner, body.repo);
+		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
+		const c = unwrap<Record<string, unknown>>(
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.createCategory, {
+				id: nextId(),
+				name: body.name,
+				slug: body.slug,
+				emoji: body.emoji,
+				description: body.description,
+				now: now()
+			}),
+			controlError
+		);
+		return json({ id: c.id, name: c.name, slug: c.slug, emoji: c.emoji, description: c.description } as FakeCategory);
+	}
+	if (path === CONTROL_PATHS.discussions) {
+		const body = validate(CreateDiscussionRequest, await readJson(req), 'discussion');
+		const found = await findRepo(body.owner, body.repo);
+		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
+		const author = await ensureUser(body.author);
+		const discussion = unwrap<Record<string, unknown>>(
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.createDiscussion, {
+				id: nextId(),
+				author: userView(author, bases),
+				association: body.association ?? 'NONE',
+				title: body.title,
+				body: body.body ?? '',
+				category: body.category,
+				now: now()
+			}),
+			controlError
+		);
+		const delivered = await discussionEvent('created', discussion, found, author);
+		return json({ number: discussion.number as number, nodeId: discussion.node_id as string, ...delivered } satisfies CreateDiscussionResponse);
+	}
+	if (path === CONTROL_PATHS.editDiscussion) {
+		const body = validate(EditDiscussionRequest, await readJson(req), 'discussion edit');
+		const found = await findRepo(body.owner, body.repo);
+		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
+		const r = unwrap<{ before: Record<string, unknown>; after: Record<string, unknown> }>(
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.updateDiscussion, {
+				number: body.number,
+				title: body.title,
+				body: body.body,
+				category: body.category,
+				now: now()
+			}),
+			controlError
+		);
+		const actor = await ensureUser(body.actor ?? (r.after.user as { login: string }).login);
+		const beforeCat = r.before.category as Record<string, unknown> | null;
+		const afterCat = r.after.category as Record<string, unknown> | null;
+		if (beforeCat?.id !== afterCat?.id) {
+			return json(await discussionEvent('category_changed', r.after, found, actor, { category: { from: beforeCat } }));
+		}
+		const changes: Record<string, unknown> = {};
+		if (body.title !== undefined && body.title !== r.before.title) changes.title = { from: r.before.title };
+		if (body.body !== undefined && body.body !== r.before.body) changes.body = { from: r.before.body };
+		return json(await discussionEvent('edited', r.after, found, actor, changes));
+	}
+	if (path === CONTROL_PATHS.deleteDiscussion) {
+		const body = validate(DeleteDiscussionRequest, await readJson(req), 'discussion delete');
+		const found = await findRepo(body.owner, body.repo);
+		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
+		const view = unwrap<Record<string, unknown>>(
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.deleteDiscussion, { number: body.number }),
+			controlError
+		);
+		const actor = await ensureUser(body.actor ?? (view.user as { login: string }).login);
+		return json(await discussionEvent('deleted', view, found, actor));
+	}
+	return null;
+}
+
+/** `POST /graphql` (ADR 0310): installation or user token; answers 200 with `errors`, as GitHub does. */
+async function graphqlRoute(req: Request): Promise<Response> {
+	const token = bearer(req);
+	if (!token) return githubError(401, 'This endpoint requires you to be authenticated.');
+	let installation: InstallationRecord | null = null;
+	if (token.startsWith('ghs_')) {
+		const inst = await installationOf(token);
+		if (!inst) return githubError(401, 'Bad credentials');
+		installation = inst.installation;
+	} else if (token.startsWith('eyJ')) {
+		return githubError(401, 'A JSON web token could not be used to access this resource');
+	}
+	const user = await tokenUser(token);
+	if (!user) return githubError(401, 'Bad credentials');
+	const fault = await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path: '/graphql' });
+	if (fault) {
+		const headers: Record<string, string> = {};
+		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
+		return json({ message: 'injected fault' }, fault.status, headers);
+	}
+	let body: unknown;
+	try {
+		body = JSON.parse(await req.text());
+	} catch {
+		return githubError(400, 'Problems parsing JSON');
+	}
+	const result = await graphqlApi.execute(body, { user, installation });
+	return json(result.body, result.status);
+}
+
 // ---------------------------------------------------------------------------
 // /__control
 // ---------------------------------------------------------------------------
@@ -351,6 +516,9 @@ async function control(req: Request, path: string): Promise<Response> {
 		return json({ events: events.since(since, limit), lastSeq: events.lastSeq } satisfies EventsLogResponse);
 	}
 	if (method !== 'POST') return controlError(405, `${method} ${path} not allowed`);
+
+	const discussionResponse = await discussionsControl(req, path);
+	if (discussionResponse) return discussionResponse;
 
 	if (path === CONTROL_PATHS.webhookOutage) {
 		const body = validate(WebhookOutageRequest, await readJson(req), 'webhook outage');
@@ -847,6 +1015,7 @@ async function route(req: Request): Promise<Response> {
 	if (path === '/login/oauth/authorize' && req.method === 'GET') return authorize(url);
 	if (path === '/login/oauth/access_token' && req.method === 'POST') return accessToken(req, url);
 	if (path === '/user' && req.method === 'GET') return currentUser(req);
+	if (path === '/graphql' && req.method === 'POST') return graphqlRoute(req);
 	const m = ISSUE_PATH.exec(path);
 	if (m) return rest(req, path, m);
 	const pm = PULL_PATH.exec(path);

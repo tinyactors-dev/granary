@@ -53,6 +53,34 @@ export interface RepositoryData {
 	apiBase: string;
 	nextNumber: number;
 	issues: StoredIssue[];
+	/** ADR 0310: Discussions (GraphQL-only on GitHub). Absent in repos spawned before; read with `?? …`. */
+	discussionsEnabled?: boolean;
+	categories?: StoredCategory[];
+	discussions?: StoredDiscussion[];
+}
+
+/** A discussion category (ADR 0310). GitHub has no API to create one; the fake's control API does. */
+export interface StoredCategory {
+	id: number;
+	name: string;
+	slug: string;
+	emoji: string;
+	description: string;
+	isAnswerable: boolean;
+	created_at: string;
+}
+
+export interface StoredDiscussion {
+	id: number;
+	number: number;
+	title: string;
+	body: string;
+	categoryId: number;
+	user: GitHubUser;
+	author_association: AuthorAssociation;
+	created_at: string;
+	updated_at: string;
+	comments: StoredComment[];
 }
 
 export const REPOSITORY_EVENTS = {
@@ -62,8 +90,43 @@ export const REPOSITORY_EVENTS = {
 	updateIssue: 'issue.update',
 	reopenIssue: 'issue.reopen',
 	createComment: 'comment.create',
-	listComments: 'comment.list'
+	listComments: 'comment.list',
+	/** ADR 0310: Discussions. */
+	setDiscussions: 'discussions.set-enabled',
+	createCategory: 'category.create',
+	discussionInfo: 'discussions.info',
+	createDiscussion: 'discussion.create',
+	updateDiscussion: 'discussion.update',
+	deleteDiscussion: 'discussion.delete',
+	getDiscussion: 'discussion.get',
+	addDiscussionComment: 'discussion.comment'
 } as const;
+
+export interface CreateCategoryEvent {
+	id: number;
+	name: string;
+	slug?: string;
+	emoji?: string;
+	description?: string;
+	now: string;
+}
+export interface CreateDiscussionEvent {
+	id: number;
+	author: GitHubUser;
+	association: AuthorAssociation;
+	title: string;
+	body: string;
+	/** Category slug or name (case-insensitive). */
+	category: string;
+	now: string;
+}
+export interface UpdateDiscussionEvent {
+	number: number;
+	title?: string;
+	body?: string;
+	category?: string;
+	now: string;
+}
 
 export interface CreateIssueEvent {
 	id: number;
@@ -160,6 +223,78 @@ export function commentView(d: RepositoryData, i: StoredIssue, c: StoredComment)
 	};
 }
 
+/** `slugify` as GitHub does for category slugs: lower case, runs of other characters → `-`. */
+export function categorySlug(name: string): string {
+	return name
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '');
+}
+
+/** GraphQL node ids: the repository id is encoded so a node id alone finds its repository actor. */
+export function discussionNodeId(repoId: number, number: number): string {
+	return `D_fake${repoId}_${number}`;
+}
+
+/** Webhook / GraphQL view of a category (`repository_id` as in the webhook payload). */
+export function categoryView(d: RepositoryData, c: StoredCategory): Record<string, unknown> {
+	return {
+		id: c.id,
+		node_id: `DIC_fake${d.id}_${c.id}`,
+		repository_id: d.id,
+		name: c.name,
+		slug: c.slug,
+		emoji: c.emoji,
+		description: c.description,
+		is_answerable: c.isAnswerable,
+		created_at: c.created_at,
+		updated_at: c.created_at
+	};
+}
+
+/** The `discussion` object of a `discussion` webhook (subset of GitHub's). */
+export function discussionView(d: RepositoryData, x: StoredDiscussion): Record<string, unknown> {
+	const c = (d.categories ?? []).find((k) => k.id === x.categoryId);
+	return {
+		id: x.id,
+		node_id: discussionNodeId(d.id, x.number),
+		number: x.number,
+		title: x.title,
+		body: x.body,
+		state: 'open',
+		locked: false,
+		comments: x.comments.length,
+		user: { ...x.user },
+		author_association: x.author_association,
+		created_at: x.created_at,
+		updated_at: x.updated_at,
+		html_url: `${d.webBase}/${d.owner}/${d.name}/discussions/${x.number}`,
+		repository_url: `${d.apiBase}/repos/${d.owner}/${d.name}`,
+		category: c ? categoryView(d, c) : null
+	};
+}
+
+export function discussionCommentView(d: RepositoryData, x: StoredDiscussion, c: StoredComment): Record<string, unknown> {
+	return {
+		id: c.id,
+		node_id: `DC_fake${d.id}_${c.id}`,
+		body: c.body,
+		user: { ...c.user },
+		created_at: c.created_at,
+		updated_at: c.updated_at,
+		html_url: `${d.webBase}/${d.owner}/${d.name}/discussions/${x.number}#discussioncomment-${c.id}`
+	};
+}
+
+function findCategory(d: RepositoryData, nameOrSlug: string): StoredCategory | undefined {
+	const k = nameOrSlug.toLowerCase();
+	return (d.categories ?? []).find((c) => c.slug === k || c.name.toLowerCase() === k);
+}
+
+function findDiscussion(d: RepositoryData, n: number): StoredDiscussion | undefined {
+	return (d.discussions ?? []).find((x) => x.number === n);
+}
+
 /** Chart helpers below are embedded with `Function.prototype.toString`: self-contained. */
 function find(d: RepositoryData, n: number) {
 	return d.issues.find((i) => i.number === n);
@@ -168,7 +303,7 @@ function find(d: RepositoryData, n: number) {
 export const repositoryChart = handlerChart<RepositoryData>({
 	name: REPOSITORY_FAMILY,
 	initial: { id: 0, owner: '', ownerId: 0, name: '', webBase: '', apiBase: '', nextNumber: 1, issues: [] },
-	helpers: { issueUrls, pullView, issueView, commentView, find },
+	helpers: { issueUrls, pullView, issueView, commentView, find, categorySlug, discussionNodeId, categoryView, discussionView, discussionCommentView, findCategory, findDiscussion },
 	handlers: {
 		[REPOSITORY_EVENTS.createIssue]: (d, e: CreateIssueEvent) => {
 			const issue: StoredIssue = {
@@ -239,6 +374,85 @@ export const repositoryChart = handlerChart<RepositoryData>({
 		[REPOSITORY_EVENTS.listComments]: (d, e: { number: number }) => {
 			const i = find(d, e.number);
 			return i ? i.comments.map((c) => commentView(d, i, c)) : { error: 'Not Found', status: 404 };
+		},
+		[REPOSITORY_EVENTS.setDiscussions]: (d, e: { enabled: boolean }) => {
+			d.discussionsEnabled = e.enabled;
+			return { enabled: e.enabled };
+		},
+		[REPOSITORY_EVENTS.createCategory]: (d, e: CreateCategoryEvent) => {
+			if (!d.discussionsEnabled) return { error: 'Discussions are not enabled on this repository', status: 422 };
+			const slug = e.slug ?? categorySlug(e.name);
+			const existing = findCategory(d, slug) ?? findCategory(d, e.name);
+			if (existing) return categoryView(d, existing);
+			const c: StoredCategory = {
+				id: e.id,
+				name: e.name,
+				slug,
+				emoji: e.emoji ?? ':speech_balloon:',
+				description: e.description ?? '',
+				isAnswerable: false,
+				created_at: e.now
+			};
+			d.categories = [...(d.categories ?? []), c];
+			return categoryView(d, c);
+		},
+		[REPOSITORY_EVENTS.discussionInfo]: (d) => ({
+			enabled: d.discussionsEnabled ?? false,
+			categories: (d.categories ?? []).map((c) => categoryView(d, c))
+		}),
+		[REPOSITORY_EVENTS.createDiscussion]: (d, e: CreateDiscussionEvent) => {
+			if (!d.discussionsEnabled) return { error: 'Discussions are not enabled on this repository', status: 422 };
+			const c = findCategory(d, e.category);
+			if (!c) return { error: `Unknown category ${e.category}`, status: 422 };
+			const x: StoredDiscussion = {
+				id: e.id,
+				number: d.nextNumber++,
+				title: e.title,
+				body: e.body,
+				categoryId: c.id,
+				user: e.author,
+				author_association: e.association,
+				created_at: e.now,
+				updated_at: e.now,
+				comments: []
+			};
+			d.discussions = [...(d.discussions ?? []), x];
+			return discussionView(d, x);
+		},
+		[REPOSITORY_EVENTS.updateDiscussion]: (d, e: UpdateDiscussionEvent) => {
+			const x = findDiscussion(d, e.number);
+			if (!x) return { error: 'Not Found', status: 404 };
+			const before = discussionView(d, x);
+			if (e.category !== undefined) {
+				const c = findCategory(d, e.category);
+				if (!c) return { error: `Unknown category ${e.category}`, status: 422 };
+				x.categoryId = c.id;
+			}
+			if (e.title !== undefined) x.title = e.title;
+			if (e.body !== undefined) x.body = e.body;
+			x.updated_at = e.now;
+			return { before, after: discussionView(d, x) };
+		},
+		[REPOSITORY_EVENTS.deleteDiscussion]: (d, e: { number: number }) => {
+			const x = findDiscussion(d, e.number);
+			if (!x) return { error: 'Not Found', status: 404 };
+			const view = discussionView(d, x);
+			d.discussions = (d.discussions ?? []).filter((y) => y.number !== e.number);
+			return view;
+		},
+		[REPOSITORY_EVENTS.getDiscussion]: (d, e: { number: number }) => {
+			const x = findDiscussion(d, e.number);
+			return x
+				? { discussion: discussionView(d, x), comments: x.comments.map((c) => discussionCommentView(d, x, c)) }
+				: { error: 'Not Found', status: 404 };
+		},
+		[REPOSITORY_EVENTS.addDiscussionComment]: (d, e: { number: number; id: number; user: GitHubUser; body: string; now: string }) => {
+			const x = findDiscussion(d, e.number);
+			if (!x) return { error: 'Not Found', status: 404 };
+			const c: StoredComment = { id: e.id, body: e.body, user: e.user, created_at: e.now, updated_at: e.now };
+			x.comments.push(c);
+			x.updated_at = e.now;
+			return discussionCommentView(d, x, c);
 		}
 	}
 });
