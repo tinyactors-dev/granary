@@ -30,7 +30,15 @@ describe('ops telemetry', () => {
 			{ timeout: 30_000, message: 'OTLP batches via the token front' }
 		);
 		expect(batches.map((b) => b.signal)).toContain('traces');
-		const stats = await ops().sinkStats(SINK);
+		// fake-infra stores a batch when the POST arrives; the sink counts it only once
+		// its response is back, so the counter can trail the batch by a moment.
+		const stats = await h().waitFor(
+			async () => {
+				const st = await ops().sinkStats(SINK);
+				return st.sentBatches > 0 ? st : null;
+			},
+			{ timeout: 10_000, message: 'the sink to count the batches it sent' }
+		);
 		expect(stats.sentBatches).toBeGreaterThan(0);
 		expect(stats.lastError).toBeNull();
 	}, 45_000);
