@@ -17,11 +17,12 @@ logins.
   `owner/repo`. Precedence is unchanged (blocklist → allowlist →
   association → not allowed). `allowlist.check` carries `owner` and `repo`;
   `allowlist.replace` carries `entries: {login, scope}[]`.
-- UI (Policy → Allowlist), remote functions, admin socket and CLI
-  (`granary allowlist add <login> [--scope <owner>|<owner>/<repo>]`, `remove`
-  likewise) take an optional scope; the list shows it ("everywhere",
-  "acme", "acme/widgets").
+- The Policy page and the allowlist remote functions take an optional scope
+  (empty, `owner` or `owner/repo`); the list shows it ("Everywhere",
+  `acme`, `acme/widgets`) and the entry's note (e.g. the introduction that
+  added it). A (login, scope) pair is one entry: removing one leaves the
+  others.
 
 ## Consequences
-Chart revisions: allowlist v3, issue v3. Approving an introduction never
+Approving an introduction never
 widens access beyond its scope.

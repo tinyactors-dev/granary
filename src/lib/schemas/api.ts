@@ -342,15 +342,26 @@ export interface ActorSnapshot extends ActorSummary {
 
 export interface AllowedUser {
 	login: string;
+	/** ADR 0311: '' = every repository, `<owner>`, or `<owner>/<repo>` (lower-cased). */
+	scope: string;
+	/** Why, e.g. the introduction that let them in; null for entries added by hand. */
+	note: string | null;
 	addedBy: string | null;
 	addedAt: number;
 }
 
-/** `addAllowedUser` form fields. */
-export const AddAllowedUserInput = Type.Object({ login: Login }, closed);
+/** An allowlist scope as typed: empty = everywhere, `owner`, or `owner/repo` (ADR 0311). */
+export const AllowScope = Type.String({
+	pattern: '^([A-Za-z0-9](?:[A-Za-z0-9-]{0,38})(/[A-Za-z0-9._-]{1,100})?)?$',
+	maxLength: 140,
+	description: 'empty = every repository; an owner; or owner/repo'
+});
+
+/** `addAllowedUser` form fields; `scope` empty/absent = everywhere. */
+export const AddAllowedUserInput = Type.Object({ login: Login, scope: Type.Optional(AllowScope) }, closed);
 export type AddAllowedUserInput = Static<typeof AddAllowedUserInput>;
 
-export const RemoveAllowedUserInput = Type.Object({ login: Type.String({ minLength: 1 }) }, closed);
+export const RemoveAllowedUserInput = Type.Object({ login: Type.String({ minLength: 1 }), scope: Type.Optional(Type.String({ maxLength: 140 })) }, closed);
 export type RemoveAllowedUserInput = Static<typeof RemoveAllowedUserInput>;
 
 export interface AddAllowedUserResult {
@@ -361,6 +372,7 @@ export interface AddAllowedUserResult {
 
 export interface RemoveAllowedUserResult {
 	login: string;
+	scope: string;
 	/** false when the login was not on the list. */
 	removed: boolean;
 }

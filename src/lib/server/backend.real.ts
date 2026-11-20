@@ -80,6 +80,7 @@ import {
 	SESSION_TTL_MS,
 	parseOutboxPayload,
 	parseReplyTo,
+	type AllowedUserRow,
 	type BlockedUserRow,
 	type InboxRow,
 	type OutboxRow,
@@ -351,25 +352,27 @@ export class RealBackend implements Backend {
 	// -- allowlist --------------------------------------------------------------------
 
 	async listAllowedUsers(): Promise<AllowedUser[]> {
-		return this.#wal.listAllowedUsers().map((r) => ({ login: r.login, addedBy: r.added_by, addedAt: r.added_at }));
+		return this.#wal.listAllowedUsers().map(allowedUser);
 	}
 
-	async addAllowedUser(login: string, addedBy: string): Promise<AddAllowedUserResult> {
-		const { row, added } = this.#wal.addAllowedUser(login, addedBy);
+	async addAllowedUser(login: string, addedBy: string, scope = ''): Promise<AddAllowedUserResult> {
+		const { row, added } = this.#wal.addAllowedUser(login, addedBy, { scope });
 		if (added) {
 			this.#rt.publishAllowlist();
-			log.info(`allowlist: ${row.login} added by ${addedBy}`, { 'audit.action': 'allowlist.add', 'audit.subject': row.login, 'audit.actor': addedBy });
+			const subject = row.scope ? `${row.login} (${row.scope})` : row.login;
+			log.info(`allowlist: ${subject} added by ${addedBy}`, { 'audit.action': 'allowlist.add', 'audit.subject': subject, 'audit.actor': addedBy });
 		}
-		return { user: { login: row.login, addedBy: row.added_by, addedAt: row.added_at }, added };
+		return { user: allowedUser(row), added };
 	}
 
-	async removeAllowedUser(login: string, removedBy: string): Promise<RemoveAllowedUserResult> {
-		const removed = this.#wal.removeAllowedUser(login);
+	async removeAllowedUser(login: string, removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {
+		const removed = this.#wal.removeAllowedUser(login, scope.toLowerCase());
 		if (removed) {
 			this.#rt.publishAllowlist();
-			log.info(`allowlist: ${login} removed by ${removedBy}`, { 'audit.action': 'allowlist.remove', 'audit.subject': login, 'audit.actor': removedBy });
+			const subject = scope ? `${login} (${scope.toLowerCase()})` : login;
+			log.info(`allowlist: ${subject} removed by ${removedBy}`, { 'audit.action': 'allowlist.remove', 'audit.subject': subject, 'audit.actor': removedBy });
 		}
-		return { login, removed };
+		return { login, scope: scope.toLowerCase(), removed };
 	}
 
 	// -- blocklist (ADR 0260) -------------------------------------------------------------
@@ -753,4 +756,9 @@ export class RealBackend implements Backend {
 	fakeInfraControl(action: FakeInfraAction): Promise<FakeInfraActionResult> {
 		return this.#fakeInfra.control(action);
 	}
+}
+
+/** An allowed_users row as the API shows it (ADR 0311). */
+function allowedUser(r: AllowedUserRow): AllowedUser {
+	return { login: r.login, scope: r.scope, note: r.note, addedBy: r.added_by, addedAt: r.added_at };
 }

@@ -136,9 +136,9 @@ export const IssueOpenedData = Type.Object(
 );
 export type IssueOpenedData = Static<typeof IssueOpenedData>;
 
-/** `allowlist.check` — reply goes to the event's origin. */
+/** `allowlist.check` — reply goes to the event's origin. `owner`/`repo`: where the item is (scoped entries, ADR 0311). */
 export const AllowlistCheckData = Type.Object(
-	{ login: Type.String(), association: AuthorAssociation },
+	{ login: Type.String(), association: AuthorAssociation, owner: Type.String(), repo: Type.String() },
 	{ ...closed, title: 'allowlist.check' }
 );
 export type AllowlistCheckData = Static<typeof AllowlistCheckData>;
@@ -164,9 +164,20 @@ export const AllowlistVerdictData = Type.Object(
 );
 export type AllowlistVerdictData = Static<typeof AllowlistVerdictData>;
 
+/**
+ * One allowlist entry as the policy sees it (ADR 0311), lower-cased: `scope`
+ * `''` = every repository, `<owner>` = the owner's repositories,
+ * `<owner>/<repo>` = one repository.
+ */
+export const AllowEntry = Type.Object(
+	{ login: Type.String(), scope: Type.String() },
+	{ ...closed, title: 'AllowEntry' }
+);
+export type AllowEntry = Static<typeof AllowEntry>;
+
 /** `allowlist.replace` — the full new set (as stored in allowed_users). */
 export const AllowlistReplaceData = Type.Object(
-	{ logins: Type.Array(Type.String()) },
+	{ entries: Type.Array(AllowEntry) },
 	{ ...closed, title: 'allowlist.replace' }
 );
 export type AllowlistReplaceData = Static<typeof AllowlistReplaceData>;
@@ -344,11 +355,11 @@ export const parseIssueDoneData = (value: unknown): IssueDoneData => parse(Issue
 // ---------------------------------------------------------------------------
 
 /**
- * `allowlist/main` data; binding at spawn = logins from allowed_users
- * (lower-cased) and the blocklist from blocked_users (ADR 0260).
+ * `allowlist/main` data; binding at spawn = the entries of allowed_users
+ * (lower-cased, ADR 0311) and the blocklist from blocked_users (ADR 0260).
  */
 export const AllowlistActorData = Type.Object(
-	{ logins: Type.Array(Type.String()), blocked: Type.Array(BlockEntry) },
+	{ entries: Type.Array(AllowEntry), blocked: Type.Array(BlockEntry) },
 	{ ...closed, title: 'AllowlistActorData' }
 );
 export type AllowlistActorData = Static<typeof AllowlistActorData>;

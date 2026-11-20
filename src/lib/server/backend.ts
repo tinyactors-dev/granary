@@ -125,15 +125,16 @@ export interface Backend {
 
 	// -- allowlist (ADR 0004) --------------------------------------------------
 
-	/** Sorted by login (case-insensitive). */
+	/** Sorted by login, then scope (case-insensitive). */
 	listAllowedUsers(): Promise<AllowedUser[]>;
 	/**
-	 * Insert into allowed_users (idempotent, case-insensitive), then post
-	 * `allowlist.replace` with the full set to `allowlist/main`.
+	 * Insert into allowed_users (idempotent per login and scope, case-insensitive;
+	 * scope '' = everywhere, ADR 0311), then post `allowlist.replace` with the
+	 * full set to `allowlist/main`.
 	 */
-	addAllowedUser(login: string, addedBy: string): Promise<AddAllowedUserResult>;
-	/** Delete from allowed_users, then post `allowlist.replace`. */
-	removeAllowedUser(login: string, removedBy: string): Promise<RemoveAllowedUserResult>;
+	addAllowedUser(login: string, addedBy: string, scope?: string): Promise<AddAllowedUserResult>;
+	/** Delete the (login, scope) entry from allowed_users, then post `allowlist.replace`. */
+	removeAllowedUser(login: string, removedBy: string, scope?: string): Promise<RemoveAllowedUserResult>;
 
 	// -- blocklist (ADR 0260) ---------------------------------------------------
 	/** All blocked_users entries, expired ones included (`active: false`). */

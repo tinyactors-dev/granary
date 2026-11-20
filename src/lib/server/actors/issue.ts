@@ -103,7 +103,7 @@ export function issueChart(): Source {
 
 <state id="${S.checking}">
 	<onentry>
-		<send event="${EVENTS.allowlistCheck}" target="${allowlist}"><content expr="({ login: issue.author, association: issue.association })"/></send>
+		<send event="${EVENTS.allowlistCheck}" target="${allowlist}"><content expr="({ login: issue.author, association: issue.association, owner: issue.owner, repo: issue.repo })"/></send>
 		<send id="${CHECK_TIMEOUT_SEND_ID}" event="${EVENTS.checkTimeout}" delay="${`${CHECK_TIMEOUT_MS}ms`}"/>
 	</onentry>
 	<onexit><cancel sendid="${CHECK_TIMEOUT_SEND_ID}"/></onexit>

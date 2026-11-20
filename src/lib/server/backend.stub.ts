@@ -135,7 +135,7 @@ export class StubBackend implements Backend {
 			['bob', 'admin', 2000],
 			['dependabot[bot]', 'admin', 1000]
 		] as const) {
-			this.allowed.set(login, { login, addedBy: by, addedAt: now - ago * MINUTE });
+			this.allowed.set(`${login.toLowerCase()} `, { login, scope: '', note: null, addedBy: by, addedAt: now - ago * MINUTE });
 		}
 		for (const login of ['admin', 'alice', 'bob', 'mallory', 'eve']) this.ensureFakeUser(login);
 		this.fake.repos.push({ id: REPO_ID, owner: 'acme', name: 'widgets', fullName: 'acme/widgets' });
@@ -413,18 +413,18 @@ export class StubBackend implements Backend {
 		return [...this.allowed.values()].sort((a, b) => a.login.toLowerCase().localeCompare(b.login.toLowerCase()));
 	}
 
-	async addAllowedUser(login: string, addedBy: string): Promise<AddAllowedUserResult> {
-		const existing = [...this.allowed.values()].find((u) => u.login.toLowerCase() === login.toLowerCase());
+	async addAllowedUser(login: string, addedBy: string, scope = ''): Promise<AddAllowedUserResult> {
+		const key = `${login.toLowerCase()} ${scope.toLowerCase()}`;
+		const existing = this.allowed.get(key);
 		if (existing) return { user: existing, added: false };
-		const user: AllowedUser = { login, addedBy, addedAt: Date.now() };
-		this.allowed.set(login, user);
+		const user: AllowedUser = { login, scope: scope.toLowerCase(), note: null, addedBy, addedAt: Date.now() };
+		this.allowed.set(key, user);
 		return { user, added: true };
 	}
 
-	async removeAllowedUser(login: string): Promise<RemoveAllowedUserResult> {
-		const existing = [...this.allowed.keys()].find((k) => k.toLowerCase() === login.toLowerCase());
-		if (existing) this.allowed.delete(existing);
-		return { login, removed: existing !== undefined };
+	async removeAllowedUser(login: string, _removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {
+		const removed = this.allowed.delete(`${login.toLowerCase()} ${scope.toLowerCase()}`);
+		return { login, scope: scope.toLowerCase(), removed };
 	}
 
 	// -- blocklist (ADR 0260) ----------------------------------------------------------

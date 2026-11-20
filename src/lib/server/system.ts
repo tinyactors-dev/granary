@@ -201,7 +201,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	};
 
 	// 3. allowlist/main
-	spawn(FAMILY.allowlist, ALLOWLIST_NAME, { params: { logins: wal.allowedLogins(), blocked: wal.blocklistEntries() } });
+	spawn(FAMILY.allowlist, ALLOWLIST_NAME, { params: { entries: wal.allowlistEntries(), blocked: wal.blocklistEntries() } });
 
 	// 4. issue actors are spawned when something is sent to them (no loaders in 0.4, ADR 0300)
 	const issueActor = (key: string, traceparent?: string): Actor => {
@@ -295,7 +295,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		nameOf: (actor) => names.get(String(actor.id)) ?? null,
 		stats,
 		publishAllowlist() {
-			allowlist().send(EVENTS.allowlistReplace, { logins: wal.allowedLogins() });
+			allowlist().send(EVENTS.allowlistReplace, { entries: wal.allowlistEntries() });
 		},
 		publishBlocklist() {
 			allowlist().send(EVENTS.blocklistReplace, { entries: wal.blocklistEntries() } as never);

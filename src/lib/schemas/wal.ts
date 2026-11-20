@@ -125,8 +125,9 @@ export const VerdictRow = Type.Object(
 );
 export type VerdictRow = Static<typeof VerdictRow>;
 
+/** `allowed_users` (ADR 0311): `scope` '' = everywhere, `<owner>`, or `<owner>/<repo>`; `note` e.g. the introduction that let them in. */
 export const AllowedUserRow = Type.Object(
-	{ login: Type.String(), added_by: Nullable(Type.String()), added_at: EpochMs },
+	{ login: Type.String(), scope: Type.String(), note: Nullable(Type.String()), added_by: Nullable(Type.String()), added_at: EpochMs },
 	{ ...closed, title: 'AllowedUserRow' }
 );
 export type AllowedUserRow = Static<typeof AllowedUserRow>;

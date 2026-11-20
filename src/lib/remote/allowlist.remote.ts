@@ -31,16 +31,16 @@ export const listAllowedUsers = query(async (): Promise<AllowedUser[]> => {
 });
 
 /**
- * Form with one field, `login`. Admin only. Idempotent (`added: false` if present).
+ * Form `{login, scope?}` (scope empty = everywhere, ADR 0311). Admin only. Idempotent (`added: false` if present).
  * A backend `invalid` error becomes a field issue on `login`.
  */
 export const addAllowedUser = form(
 	standard(AddAllowedUserInput),
-	async ({ login }, issue): Promise<AddAllowedUserResult> => {
+	async ({ login, scope }, issue): Promise<AddAllowedUserResult> => {
 		const admin = requireAdmin();
 		let result: AddAllowedUserResult;
 		try {
-			result = await getBackend().addAllowedUser(login, admin.login);
+			result = await getBackend().addAllowedUser(login, admin.login, scope ?? '');
 		} catch (e) {
 			if (isBackendError(e) && (e.code === 'invalid' || e.code === 'conflict')) invalid(issue.login(e.message));
 			if (isBackendError(e)) error(backendErrorStatus(e.code), e.message);
@@ -100,12 +100,12 @@ export const unblockUser = command(
 	}
 );
 
-/** Command `{login}`. Admin only. */
+/** Command `{login, scope?}` (scope '' = the everywhere entry). Admin only. */
 export const removeAllowedUser = command(
 	standard(RemoveAllowedUserInput),
-	async ({ login }): Promise<RemoveAllowedUserResult> => {
+	async ({ login, scope }): Promise<RemoveAllowedUserResult> => {
 		const admin = requireAdmin();
-		const result = await withBackend((b) => b.removeAllowedUser(login, admin.login));
+		const result = await withBackend((b) => b.removeAllowedUser(login, admin.login, scope ?? ''));
 		await Promise.all([listAllowedUsers().refresh(), getOverview().refresh()]);
 		return result;
 	}

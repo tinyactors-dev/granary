@@ -26,18 +26,21 @@
 	const activeBlock = (login: string) => (blocked.current ?? []).find((b) => b.active && b.login.toLowerCase() === login.toLowerCase());
 	const admin = $derived(isAdmin());
 
-	/** Login pending removal (drives the confirm dialog). */
-	let removing = $state<string | null>(null);
+	/** Entry pending removal (drives the confirm dialog). */
+	let removing = $state<{ login: string; scope: string } | null>(null);
 	let removeBusy = $state(false);
+
+	/** How a scope reads (ADR 0311). */
+	const scopeLabel = (scope: string) => (scope === '' ? 'everywhere' : scope);
 
 	async function confirmRemove() {
 		if (!removing) return;
-		const login = removing;
+		const { login, scope } = removing;
 		removeBusy = true;
 		try {
-			const r = await removeAllowedUser({ login });
-			if (r.removed) toast.success(`Removed ${login} from the allowlist`);
-			else toast.info(`${login} was not on the allowlist`);
+			const r = await removeAllowedUser({ login, scope });
+			if (r.removed) toast.success(`Removed ${login} (${scopeLabel(scope)}) from the allowlist`);
+			else toast.info(`${login} was not on the allowlist for ${scopeLabel(scope)}`);
 			removing = null;
 		} catch (e) {
 			toast.error(`Could not remove ${login}`, { description: describeError(e).message });
@@ -47,6 +50,7 @@
 	}
 
 	const loginIssues = $derived(addAllowedUser.fields.login.issues());
+	const scopeIssues = $derived(addAllowedUser.fields.scope.issues());
 	const formIssues = $derived(addAllowedUser.fields.issues());
 </script>
 
@@ -63,13 +67,14 @@
 				<Table.Header>
 					<Table.Row class="hover:bg-transparent">
 						<Table.Head>Login</Table.Head>
+						<Table.Head>Where</Table.Head>
 						<Table.Head>Added by</Table.Head>
 						<Table.Head>Added</Table.Head>
 						<Table.Head class="w-0"><span class="sr-only">Actions</span></Table.Head>
 					</Table.Row>
 				</Table.Header>
 				<Table.Body>
-					{#each list as u (u.login)}
+					{#each list as u (`${u.login} ${u.scope}`)}
 						<Table.Row data-testid="allowed-user">
 							<Table.Cell class="font-medium">
 								{u.login}
@@ -78,6 +83,10 @@
 										><Badge variant="destructive" class="ml-2 align-middle" data-testid="allowed-but-blocked">Also blocked — block wins</Badge></a
 									>
 								{/if}
+							</Table.Cell>
+							<Table.Cell data-testid="allowed-scope">
+								{#if u.scope === ''}<span class="text-muted-foreground">Everywhere</span>{:else}<code class="text-sm">{u.scope}</code>{/if}
+								{#if u.note}<div class="text-muted-foreground text-xs">{u.note}</div>{/if}
 							</Table.Cell>
 							<Table.Cell class="text-muted-foreground">{u.addedBy === 'seed' ? 'From environment' : (u.addedBy ?? '—')}</Table.Cell>
 							<Table.Cell class="text-muted-foreground"><RelativeTime ms={u.addedAt} /></Table.Cell>
@@ -88,8 +97,8 @@
 											variant="ghost"
 											size="icon-sm"
 											{disabled}
-											aria-label="Remove {u.login}"
-											onclick={() => (removing = u.login)}
+											aria-label="Remove {u.login} ({scopeLabel(u.scope)})"
+											onclick={() => (removing = { login: u.login, scope: u.scope })}
 										>
 											<TrashIcon />
 										</Button>
@@ -99,7 +108,7 @@
 						</Table.Row>
 					{:else}
 						<Table.Row class="hover:bg-transparent">
-							<Table.Cell colspan={4} class="text-muted-foreground py-10 text-center">
+							<Table.Cell colspan={5} class="text-muted-foreground py-10 text-center">
 								Nobody is on the allowlist yet.
 							</Table.Cell>
 						</Table.Row>
@@ -125,8 +134,8 @@
 					try {
 						if (await submit()) {
 							const r = addAllowedUser.result;
-							if (r?.added) toast.success(`Added ${r.user.login} to the allowlist`);
-							else if (r) toast.info(`${r.user.login} is already on the allowlist`);
+							if (r?.added) toast.success(`Added ${r.user.login} to the allowlist (${scopeLabel(r.user.scope)})`);
+							else if (r) toast.info(`${r.user.login} is already on the allowlist (${scopeLabel(r.user.scope)})`);
 							element.reset();
 						}
 					} catch (e) {
@@ -146,6 +155,21 @@
 						{...addAllowedUser.fields.login.as('text')}
 					/>
 					{#each loginIssues ?? [] as issue, i (i)}
+						<p class="text-destructive text-sm">{issue.message}</p>
+					{/each}
+				</div>
+				<div class="grid gap-1.5">
+					<Label for="allow-scope">Where <span class="text-muted-foreground font-normal">(optional)</span></Label>
+					<Input
+						id="allow-scope"
+						placeholder="everywhere, or owner, or owner/repo"
+						autocomplete="off"
+						spellcheck={false}
+						disabled={!admin}
+						{...addAllowedUser.fields.scope.as('text')}
+					/>
+					<p class="text-muted-foreground text-xs">Empty: every repository. An owner (<code>acme</code>): all of its repositories. <code>acme/widgets</code>: that repository only.</p>
+					{#each scopeIssues ?? [] as issue, i (i)}
 						<p class="text-destructive text-sm">{issue.message}</p>
 					{/each}
 					{#each formIssues ?? [] as issue, i (i)}
@@ -172,9 +196,10 @@
 <AlertDialog.Root open={removing !== null} onOpenChange={(open) => { if (!open && !removeBusy) removing = null; }}>
 	<AlertDialog.Content>
 		<AlertDialog.Header>
-			<AlertDialog.Title>Remove {removing} from the allowlist?</AlertDialog.Title>
+			<AlertDialog.Title>Remove {removing?.login} ({scopeLabel(removing?.scope ?? '')}) from the allowlist?</AlertDialog.Title>
 			<AlertDialog.Description>
-				New issues and pull requests opened by <strong>{removing}</strong> will be closed automatically unless
+				New issues and pull requests opened by <strong>{removing?.login}</strong> {removing?.scope ? `in ${removing.scope}` : ''} will be closed automatically unless
+				another allowlist entry covers them or
 				they are a repository owner, member or collaborator. Existing items are not touched.
 			</AlertDialog.Description>
 		</AlertDialog.Header>

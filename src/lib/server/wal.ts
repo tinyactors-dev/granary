@@ -176,7 +176,19 @@ const MIGRATIONS: string[] = [
 	ALTER TABLE github_app ADD COLUMN permissions TEXT;
 	ALTER TABLE github_app ADD COLUMN events TEXT;`,
 	/* 4: who owns the GitHub App, for its settings URL (ADR 0271) */
-	`ALTER TABLE github_app ADD COLUMN owner_type TEXT;`
+	`ALTER TABLE github_app ADD COLUMN owner_type TEXT;`,
+	/* 5: allowlist scopes (ADR 0311): '' = everywhere, '<owner>', '<owner>/<repo>' */
+	`CREATE TABLE allowed_users_scoped (
+		login TEXT NOT NULL COLLATE NOCASE,
+		scope TEXT NOT NULL DEFAULT '' COLLATE NOCASE,
+		note TEXT,
+		added_by TEXT,
+		added_at INTEGER NOT NULL,
+		PRIMARY KEY (login, scope)
+	);
+	INSERT INTO allowed_users_scoped (login, scope, added_by, added_at) SELECT login, '', added_by, added_at FROM allowed_users;
+	DROP TABLE allowed_users;
+	ALTER TABLE allowed_users_scoped RENAME TO allowed_users;`
 ];
 
 export interface InsertInbox {
@@ -556,31 +568,32 @@ export class Wal {
 	// -------------------------------------------------------------------------
 
 	listAllowedUsers(): AllowedUserRow[] {
-		return this.#q('SELECT * FROM allowed_users ORDER BY login COLLATE NOCASE').all().map(parseAllowedUserRow);
+		return this.#q('SELECT * FROM allowed_users ORDER BY login COLLATE NOCASE, scope COLLATE NOCASE').all().map(parseAllowedUserRow);
 	}
 
-	getAllowedUser(login: string): AllowedUserRow | null {
-		const r = this.#q('SELECT * FROM allowed_users WHERE login = $login').get({ login });
+	getAllowedUser(login: string, scope = ''): AllowedUserRow | null {
+		const r = this.#q('SELECT * FROM allowed_users WHERE login = $login AND scope = $scope').get({ login, scope });
 		return r ? parseAllowedUserRow(r) : null;
 	}
 
-	/** Lower-cased logins (the allowlist actor's binding / `allowlist.replace` data). */
-	allowedLogins(): string[] {
-		return this.listAllowedUsers().map((r) => r.login.toLowerCase());
+	/** Lower-cased entries (the allowlist actor's binding / `allowlist.replace` data, ADR 0311). */
+	allowlistEntries(): { login: string; scope: string }[] {
+		return this.listAllowedUsers().map((r) => ({ login: r.login.toLowerCase(), scope: r.scope.toLowerCase() }));
 	}
 
-	/** Idempotent, case-insensitive. Returns the stored row and whether it was added. */
-	addAllowedUser(login: string, addedBy: string | null, now = Date.now()): { row: AllowedUserRow; added: boolean } {
+	/** Idempotent, case-insensitive per (login, scope). Returns the stored row and whether it was added. */
+	addAllowedUser(login: string, addedBy: string | null, opts: { scope?: string; note?: string | null } = {}, now = Date.now()): { row: AllowedUserRow; added: boolean } {
+		const scope = (opts.scope ?? '').toLowerCase();
 		return this.tx(() => {
 			const r = this.#q(
-				'INSERT OR IGNORE INTO allowed_users (login, added_by, added_at) VALUES ($login, $by, $now)'
-			).run({ login, by: addedBy, now });
-			return { row: this.getAllowedUser(login)!, added: r.changes === 1 };
+				'INSERT OR IGNORE INTO allowed_users (login, scope, note, added_by, added_at) VALUES ($login, $scope, $note, $by, $now)'
+			).run({ login, scope, note: opts.note ?? null, by: addedBy, now });
+			return { row: this.getAllowedUser(login, scope)!, added: r.changes === 1 };
 		});
 	}
 
-	removeAllowedUser(login: string): boolean {
-		return this.#q('DELETE FROM allowed_users WHERE login = $login').run({ login }).changes === 1;
+	removeAllowedUser(login: string, scope = ''): boolean {
+		return this.#q('DELETE FROM allowed_users WHERE login = $login AND scope = $scope').run({ login, scope }).changes === 1;
 	}
 
 	allowedCount(): number {
