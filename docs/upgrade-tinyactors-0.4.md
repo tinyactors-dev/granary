@@ -238,6 +238,172 @@ processor, a `github` processor, four issues and a `SimulatedClock`.
     - Close hosts with `await host[Symbol.asyncDispose]()` at shutdown so
       the last spans flush.
 
+## Simplifications beyond the port
+
+These are found by a review of granary against 0.4.0 (2026-11-20). They
+are things granary can delete or shrink, not just port. Line counts are
+approximate.
+
+Overall, about 1,500 to 1,900 lines go, in the order below. Two things do
+**not** get simpler:
+
+- **The SQLite WAL.** Every table has a reason beyond 0.1.0:
+  - `inbox`: committed before the 2xx, deduplicates by delivery id, and
+    feeds the catch-up GUID check and the activity UI.
+  - `outbox`: at-most-once comments through `comment_id` and the marker
+    search.
+  - `verdicts`: the `settled` phase and the activity view.
+
+  `snapshot()` does not replace any of it. A snapshot is refused across
+  builds (every deploy), and refused while a handler's promise is
+  pending. The snapshots guide says it is not a backup. Snapshots would
+  add a second recovery path and remove none.
+- **The fakes and loadgen** stay separate HTTP processes. That is their
+  purpose (ADR 0060, 0070, 0130): they exercise granary's real GitHub, S3
+  and OTLP clients, HMAC and SigV4 signing, and SIGKILL recovery. The stub
+  layer (`*.stub.ts`, about 1,700 lines) is the UI seam of ADR 0032, not
+  a tinyactors workaround.
+
+### High confidence
+
+1. **Both tracers forward OTLP bytes untouched (about 500 lines).** Core
+   now writes `tinyactors.actor.name`, `tinyactors.chart.name` (a span
+   attribute) and `tinyactors.span.kind`.
+   - **Ops loop breaking.** One core rule replaces the session map,
+     `nameSpan`, `excludeFromTraces`, the definition-id filter and the
+     filter/rewrite half of `ops/telemetry/otlp-wire.ts`
+     (`spanFacts`, `filterSpans`, `traceSampled`, `rewriteSpans`, about
+     260 lines):
+     ```js
+     traceConfigure({detail: 'summary', rules: [{chart: 'telemetry-sink', sample: 'drop'}]})
+     ```
+     Verified on a 0.4.0 build: the rule drops the sink's steps, including
+     a step continuing another actor's trace, the processor's answer and
+     its timers. Only the sink's one `scxml.spawned` record is left. Keep
+     the redaction half of `otlp-wire.ts` (ADR 0093): core does not
+     redact, and granary exports `values: true`.
+   - **Main Tracer enrichment.** Delete `addressOfInspection`, the session
+     map, `noteActor`, `#enrich` (`granary.actor.*`) and the
+     `stepSpanID`-based `causeOf` (about 120 lines). The cause is the
+     span's parent.
+     - Move `granary.done.*` to `onDone`: a log record, or a `<log>` in
+       the final state.
+     - Drop the ADR 0155 renaming to `<family> <kind> …` (the
+       `trace/span-name.ts` pair and `applyFamilySpanName`, about 80
+       lines). Tooling matches on `tinyactors.span.kind`, which was ADR
+       0155's goal; amend ADR 0155.
+     - The export path then neither decodes nor re-encodes. The /admin
+       ring buffer still decodes with `decodeTraces`. `otlp-encode.ts`
+       stays for the HTTP server spans (ADR 0234) and ops metrics.
+   - **Tests.** Delete the `families` map fed by
+     `tinyactors.definition.registered` logs (`tests/otlp.ts`), and
+     `guessFamily`/`nameFor` and the dual-form kind parsing
+     (`tests/traces.ts`), about 70 lines. Keep the protobuf *logs*
+     decoder: `decodeTraces` reads traces only.
+2. **The debugger goes (about 400 lines).** `dap.ts`, `DevDebugger.svelte`,
+   `LaunchConfig.svelte`, the route, `getDapLaunchConfig` in four places,
+   `dapHost`/`dapPort`, and `GRANARY_DEBUGGER` in the config schema and
+   ADR 0230. This is decision 8.
+3. **The fakes' reply machinery becomes `ask` (about 260 lines).**
+   - **Deleted:** `fake-github/io/reply.ts` and its near-identical copy in
+     fake-infra (pending maps, `ask`, `waitForReply`, `rejectAllPending`,
+     `answer()`), and every fake chart's `out` field. The 51 `answer()`
+     sites become `<send targetexpr="_event.origin">`.
+   - **Error answers need care.** Today `answer()` turns a script error
+     into `{error, status: 500}`. In 0.4.0 a failing script raises
+     `error.execution`, so the ask would wait until its signal fires.
+     Each fake chart keeps the pending request's origin in `<data>` and
+     answers it from an `error.execution` transition.
+   - **Delivery chart:** `reqIds` shrinks to a list of waiting origins,
+     answered with `<foreach>`.
+4. **The inspector shrinks (about 220 lines).**
+   - `inspect/snapshot.ts` goes from 135 to about 50 lines: mailbox
+     contents, `definitions()`, position, current and internal events and
+     slot origins have no source in 0.4.0.
+   - `SnapshotView.svelte` loses those sections, and `backend.stub.ts`
+     loses their fakes.
+   - `inspect/json-safe.ts` goes from 92 to about 30 lines, because values
+     are plain: no `Map`, `Date`, functions or cycles. Keep bigint
+     handling and size caps.
+   - Lists use `actorList`/`hostStats`, not one async `state()` per actor.
+5. **Quarantine and dead letters go (about 90 lines).**
+   - **Main and ops systems:** the fault hooks that destroy actors so a
+     loader reloads them, the `deadLetter` hooks and counters, and
+     `stats.deadLetters`.
+   - **Health:** `countQuarantined` and its cache, the
+     `actors-quarantined` condition, and the `granary_quarantined_actors`
+     and `granary_dead_letters` gauges.
+   - **Replacements:** `onError`, `hostStats().charts[].faults` and
+     `errorsCommunication`, and `host.metrics()` for both hosts. The
+     condition becomes "faults since the last sample", because the
+     counters are monotonic.
+
+### Medium confidence (a design change; record an ADR)
+
+6. **The relay's scheduler becomes chart-level retries (about 180 lines).**
+   - **Deleted:** the claim/pump/timer/backoff loop in `relay.ts`, and
+     `claimDue`, `resetInflight`, `nextOutboxDueAt`, `markOutboxRetry` and
+     the `inflight` state in `wal.ts`.
+   - **The `github` processor becomes async.** It inserts or reads the
+     outbox row, makes one attempt (marker search, comment, close),
+     updates the row, and answers `github.closed` or `github.failed
+     {retryAfterMs}`.
+   - **The issue chart's `closing` state** counts attempts in `<data>`,
+     arms a delayed `<send>` for the backoff, and goes to `failed` after
+     the maximum.
+   - **Kept:** the outbox row, `comment_id`, marker adoption and the
+     done/dead fast path.
+   - **Lost or changed:**
+     - The global limit of 4 in flight; a semaphore in the processor
+       restores it.
+     - The retry schedule across a crash: boot respawns pending issues in
+       `closing`, which retry at once.
+     - The admin "retry effect" action becomes an event to the issue.
+   - **This changes ADR 0041.**
+7. **Delete the 30 s inbox sweeper; keep the boot re-post (about 25 lines).**
+   - **Why it can go:** the sweeper exists for queue-full (ADR 0003), and
+     0.4.0 queues grow. A send lands, or throws `StaleError`, which
+     `ensureActor` handles.
+   - **What closes the remaining gaps:** pending rows left by an ignored
+     duplicate or by events dropped at the final state are closed by
+     marking the key's pending inbox rows `done` in `wal.recordDone`.
+   - **Why the boot re-post stays:** in-flight actors are still lost on a
+     restart.
+8. **Chart structure is read from SCXML (about 70 lines, up to 250).**
+   - **Deleted:** the regex parsing of closure source
+     (`chart-structure.ts`) and the `BUILDERS` registry with its revision
+     check (`charts.ts`).
+   - **Replacement:** a small walk over the SCXML granary builds, with
+     real expressions and lines.
+   - **Option:** show the SCXML source itself and drop `toChart` and
+     `ChartTree.svelte`. Loadgen and its stub use `toChart` too.
+9. **Loadgen's persona bookkeeping goes (about 50 lines net).**
+   - **Deleted:** `finished: 'retain'`, the slot/generation matching and
+     `addressOfActor`. `onDone` carries the persona id and final snapshot
+     in donedata.
+   - **Shrinks:** `reply()` and `sourceKey` become `send.answer`.
+   - **Cost:** the live persona snapshots become async, and so do
+     `summary`, `listPersonas` and `getPersona` with their callers.
+
+### Looked at and kept
+
+- **Redaction (ADR 0093).** Core has no redaction.
+- **Multiple sinks and per-sink budgets.**
+- **The telemetry-sink actor and `otlp` processor** (buffer,
+  drop-oldest, backoff, circuit, 4 MiB split). The guide leaves retries
+  to the exporter.
+- **Tail-style sampling that always keeps error and lifecycle spans.**
+  Core rules decide when a trace starts, so `traceConfigure({sample})`
+  can replace only the head ratio.
+- **Watchdog, conditions and remediations other than quarantine.** They
+  are domain checks.
+- **`issueLoaderBinding` and the `restore` router states.** They become
+  spawn `params`.
+- **The test harness's processes, SIGKILL and collector.**
+- **`loadgen/observer.ts`.**
+- **Ops metrics.** `metricsToOTLP` is gone, so ops gauges need a granary
+  encoder next to `otlp-encode.ts`, about 60 lines added.
+
 ## Mapping, call site by call site
 
 ### Systems → hosts (5)
