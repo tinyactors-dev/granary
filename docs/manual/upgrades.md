@@ -18,18 +18,21 @@ versioned like `0.1.0-dev.<unix-epoch>.g<commit>`, and `/healthz` and
 ## Automatic updates
 
 A host can follow a channel by itself: a systemd timer runs `granary update`
-every five minutes. It reads the channel's version from npm, and when it
-differs from what `/healthz` reports, installs it, restarts `granary`, and
-waits for `/healthz` to report the new version; if that does not happen
-within a minute it reinstalls the version that ran before. A version npm
-is still reviewing is picked up by a later run. Every push to `main` that
-passes the tests is published to `dev`, so a host following `dev` runs it
-within minutes.
+every minute. It reads the channel's newest version, and when it differs
+from what `/healthz` reports, installs it, restarts `granary`, and waits for
+`/healthz` to report the new version; if that does not happen within a
+minute it reinstalls the version that ran before.
+
+| Channel | Source | A green push to `main` arrives |
+|---|---|---|
+| `edge` (default) | the GitHub prerelease `edge`, replaced on every green push (tarball checked against its `SHA256SUMS`) | in about 4 minutes |
+| `dev` | npm dist-tag `dev` | after npm's review of the new version (often 10+ minutes) |
+| `latest` | npm dist-tag `latest` | stable releases only |
 
 Turn it on (once; run as root with the system-wide install):
 
 ```sh
-granary systemd-unit --unit update-service --channel dev | sudo tee /etc/systemd/system/granary-update.service
+granary systemd-unit --unit update-service --channel edge | sudo tee /etc/systemd/system/granary-update.service
 granary systemd-unit --unit update-timer | sudo tee /etc/systemd/system/granary-update.timer
 sudo systemctl daemon-reload && sudo systemctl enable --now granary-update.timer
 ```
@@ -37,7 +40,7 @@ sudo systemctl daemon-reload && sudo systemctl enable --now granary-update.timer
 (`--bun-install` defaults to `/opt/bun`, the system-wide install.)
 
 Watch it with `journalctl -u granary-update`, try it with `sudo
-/opt/bun/bin/granary update --channel dev --dry-run`, and stop it with
+/opt/bun/bin/granary update --channel edge --dry-run`, and stop it with
 `sudo systemctl disable --now granary-update.timer` (to pin a version, stop
 the timer and install that version by hand).
 

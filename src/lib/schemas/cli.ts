@@ -96,20 +96,21 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 			{ name: 'unit', type: 'string', description: 'service (granary.service), update-service or update-timer (granary-update.*)', default: 'service' },
 			{ name: 'user', type: 'string', description: 'Service user', default: 'granary' },
 			{ name: 'bin', type: 'string', description: 'Path to the granary binary' },
-			{ name: 'channel', type: 'string', description: 'npm channel the updater follows: dev or latest', default: 'dev' },
+			{ name: 'channel', type: 'string', description: 'Channel the updater follows: edge (GitHub, every green push), dev or latest (npm)', default: 'edge' },
 			{ name: 'bun-install', type: 'string', description: 'BUN_INSTALL of the global install the updater manages', default: '/opt/bun' },
-			{ name: 'interval', type: 'string', description: 'How often the updater runs (systemd time span)', default: '5min' }
+			{ name: 'interval', type: 'string', description: 'How often the updater runs (systemd time span)', default: '1min' }
 		]
 	},
 	{
 		name: 'update',
 		args: [],
 		transport: 'none',
-		description: 'Install the newest version of an npm channel, restart, verify, roll back on failure (ADR 0301)',
+		description: 'Install the newest version of a channel, restart, verify, roll back on failure (ADR 0301, 0302)',
 		options: [
 			DATA,
 			JSON_OUT,
-			{ name: 'channel', type: 'string', description: 'dev or latest', default: 'dev' },
+			{ name: 'channel', type: 'string', description: 'edge (GitHub release of every green push), dev or latest (npm)', default: 'edge' },
+			{ name: 'cache', type: 'string', description: 'Where downloaded tarballs are kept (the last three, for rollbacks)', default: '/var/cache/granary-update' },
 			{ name: 'bun-install', type: 'string', description: 'BUN_INSTALL of the global install', default: '/opt/bun' },
 			{ name: 'service', type: 'string', description: 'systemd service to restart', default: 'granary' },
 			{ name: 'timeout', type: 'string', description: 'Seconds to wait for /healthz to report the new version', default: '60' },

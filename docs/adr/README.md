@@ -14,7 +14,7 @@ superseded by N`) and the newer ADR says what changed.
   ops.sqlite (0230).
 - **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290). On phones tables stack into cards and the nav is a drawer (0295, 0296).
 - **tinyactors:** granary runs on @tinyactors/node 0.4.0: SCXML charts built in TypeScript, no loaders, no debugger (0300).
-- **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233); every green push to main is released to `dev` and pulled by `granary update` (0301).
+- **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233); every green push to main is released (npm `dev`, and the GitHub prerelease `edge`) and pulled by `granary update` (0301, 0302).
 
 | ADR | Title | State |
 |---|---|---|
@@ -195,4 +195,5 @@ superseded by N`) and the newer ADR says what changed.
 | [0295](0295-stacked-tables-on-phones.md) | Tables stack into cards on phones | active |
 | [0296](0296-mobile-navigation-drawer.md) | Mobile navigation is a drawer; scrollers show they scroll | active |
 | [0300](0300-tinyactors-0.4.md) | granary runs on @tinyactors/node 0.4.0 | active |
-| [0301](0301-continuous-deployment-from-main.md) | Every push to main is released to `dev`, and hosts pull it | active |
+| [0301](0301-continuous-deployment-from-main.md) | Every push to main is released to `dev`, and hosts pull it | partly superseded (0302) |
+| [0302](0302-edge-channel-from-github-releases.md) | An `edge` channel: every green push as a GitHub release asset | active |

@@ -10,6 +10,8 @@
 #
 #   pack      → one tarball, uploaded as an artifact
 #   verify    → installs that tarball natively on x86-64 and arm64 runners
+#   edge      → (dev only) the tarball and SHA256SUMS as the rolling GitHub
+#               prerelease `edge`, the fast lane for hosts (ADR 0302)
 #   publish   → npm publish --provenance under the channel's dist-tag
 #               (dry run unless dry_run is false)
 #
@@ -109,6 +111,35 @@ jobs:
         with:
           name: verify-${{ matrix.arch }}
           path: release/verify-${{ matrix.arch }}.json
+
+  edge:
+    # The fast lane (ADR 0302): every dev release also replaces the rolling
+    # GitHub prerelease `edge` with the verified tarball and its SHA256SUMS.
+    # Hosts on `granary update --channel edge` install it within a minute,
+    # without waiting for npm's review of the new version.
+    needs: verify
+    if: github.event_name == 'push' || (inputs.channel == 'dev' && !inputs.dry_run)
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # the edge release and its tag
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: package
+          path: release
+      - name: replace the edge release
+        run: |
+          cd release
+          tgz=$(ls tinyactors-granary-*.tgz)
+          version=${tgz#tinyactors-granary-}; version=${version%.tgz}
+          sha256sum "$tgz" > SHA256SUMS
+          gh release delete edge --cleanup-tag --yes || true
+          gh release create edge "$tgz" SHA256SUMS --prerelease --target "$GITHUB_SHA" \
+            --title "edge: $version" \
+            --notes "The newest build of main ($GITHUB_SHA), replaced on every push. Hosts follow it with \`granary update --channel edge\` (ADR 0302)."
 
   publish:
     needs: verify
