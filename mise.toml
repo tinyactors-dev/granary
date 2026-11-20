@@ -126,7 +126,7 @@ description = "Run the built app with production secrets from fnox"
 run = "fnox exec -P prod -- bun build/index.js"
 
 [tools]
-pitchfork = "latest"
+"github:jdx/pitchfork" = "latest"  # the default registry backend fails installing its skill file (404)
 "npm:agent-browser" = "latest"  # interactive browser verification (ADR 0024)
 
 [tasks.deploy]
