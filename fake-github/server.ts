@@ -47,7 +47,8 @@ import {
 	type IssueComment
 } from '../src/lib/schemas/github';
 import { issuesOf } from '../src/lib/schemas/standard';
-import { ask, isFailure, waitForReply } from './io/reply';
+import { askActor } from '../src/lib/charts/runtime';
+import { isFailure } from './failure';
 import { createFakeSystem } from './system';
 import { nextId } from './ids';
 import { REGISTRY_ADDRESS, REGISTRY_EVENTS, type EnsureRepoResult } from './actors/registry';
@@ -75,7 +76,7 @@ const fake = createFakeSystem({
 	otlpEndpoint: nonEmpty(env.FAKE_GITHUB_OTLP_ENDPOINT) ?? null,
 	outage: () => webhookOutage
 });
-const { system } = fake;
+const { host } = fake;
 /** ADR 0075: what happened, for subscribers such as loadgen. */
 const events = new EventLog();
 
@@ -131,47 +132,40 @@ const now = () => new Date().toISOString();
 // ---------------------------------------------------------------------------
 
 async function ensureUser(login: string, type?: FakeUser['type']): Promise<FakeUser> {
-	return ask<FakeUser>(system, REGISTRY_ADDRESS, REGISTRY_EVENTS.ensureUser, { login, type, newId: nextId() });
+	return askActor<FakeUser>(host, REGISTRY_ADDRESS, REGISTRY_EVENTS.ensureUser, { login, type, newId: nextId() });
 }
 
 async function getUser(login: string): Promise<FakeUser | null> {
-	return ask<FakeUser | null>(system, REGISTRY_ADDRESS, REGISTRY_EVENTS.getUser, { login });
+	return askActor<FakeUser | null>(host, REGISTRY_ADDRESS, REGISTRY_EVENTS.getUser, { login });
 }
 
 async function ensureRepo(owner: string, name: string): Promise<EnsureRepoResult> {
-	const result = await ask<EnsureRepoResult>(system, REGISTRY_ADDRESS, REGISTRY_EVENTS.ensureRepo, {
+	const result = await askActor<EnsureRepoResult>(host, REGISTRY_ADDRESS, REGISTRY_EVENTS.ensureRepo, {
 		owner,
 		name,
 		newRepoId: nextId(),
 		newOwnerId: nextId()
 	});
-	const address = repositoryAddress(result.repo.id);
-	if (!system.findActor(address)) {
-		system.spawn(fake.definitions.repository, {
-			address,
-			binding: {
-				id: result.repo.id,
-				owner: result.repo.owner,
-				ownerId: result.owner.id,
-				name: result.repo.name,
-				webBase: bases.web,
-				apiBase: bases.api,
-				nextNumber: 1,
-				issues: [],
-				out: null
-			}
-		});
-	}
+	fake.ensureRepository({
+		id: result.repo.id,
+		owner: result.repo.owner,
+		ownerId: result.owner.id,
+		name: result.repo.name,
+		webBase: bases.web,
+		apiBase: bases.api,
+		nextNumber: 1,
+		issues: []
+	});
 	return result;
 }
 
 /** The repo and its owner, or null when unknown. */
 async function findRepo(owner: string, name: string) {
-	const repo = await ask<EnsureRepoResult['repo'] | null>(system, REGISTRY_ADDRESS, REGISTRY_EVENTS.findRepo, {
+	const repo = await askActor<EnsureRepoResult['repo'] | null>(host, REGISTRY_ADDRESS, REGISTRY_EVENTS.findRepo, {
 		owner,
 		name
 	});
-	if (!repo || !system.findActor(repositoryAddress(repo.id))) return null;
+	if (!repo || !fake.repositoryExists(repo.id)) return null;
 	const ownerUser = (await getUser(repo.owner)) ?? (await ensureUser(repo.owner));
 	return { repo, owner: ownerUser };
 }
@@ -210,33 +204,26 @@ async function deliver(
 	id: string,
 	target: DeliveryTarget
 ): Promise<DeliveryReply> {
-	const reqId = crypto.randomUUID();
 	const started = Date.now();
-	const waiting = waitForReply<DeliveryReply>(reqId, 30_000);
-	system.spawn(fake.definitions.delivery, {
-		address: deliveryAddress(id),
-		binding: {
-			id,
-			event,
-			action,
-			body,
-			repoId,
-			issueNumber,
-			status: 'pending',
-			responseCode: null,
-			attempts: 0,
-			lastAttemptAt: null,
-			lastError: null,
-			createdAt: nextId(),
-			url: target.url,
-			secret: target.secret,
-			appId: target.appId,
-			installationId: target.installationId,
-			reqIds: [reqId],
-			out: null
-		}
+	const delivery = fake.spawnDelivery({
+		id,
+		event,
+		action,
+		body,
+		repoId,
+		issueNumber,
+		status: 'pending',
+		responseCode: null,
+		attempts: 0,
+		lastAttemptAt: null,
+		lastError: null,
+		createdAt: nextId(),
+		url: target.url,
+		secret: target.secret,
+		appId: target.appId,
+		installationId: target.installationId
 	});
-	const reply = await waiting;
+	const reply = await askActor<DeliveryReply>(host, delivery, DELIVERY_EVENTS.wait, undefined, 30_000);
 	emitDelivery(reply, event, action, repoId, issueNumber);
 	const meta = deliveryMeta.get(reply.deliveryId);
 	if (meta) Object.assign(meta, { appId: target.appId, installationId: target.installationId });
@@ -256,7 +243,7 @@ async function recordAppDelivery(
 	reply: DeliveryReply,
 	started: number
 ) {
-	await ask(system, APPS_ADDRESS, APPS_EVENTS.recordDelivery, {
+	await askActor(host, APPS_ADDRESS, APPS_EVENTS.recordDelivery, {
 		delivery: {
 			id: nextId(),
 			appId,
@@ -287,7 +274,7 @@ async function deliverRepoEvent(
 	issueNumber: number | null
 ): Promise<DeliveryReply | null> {
 	await appRoutes.ensureAutoInstalled(repo.owner);
-	const covering = await ask<Covering[]>(system, APPS_ADDRESS, APPS_EVENTS.covering, {
+	const covering = await askActor<Covering[]>(host, APPS_ADDRESS, APPS_EVENTS.covering, {
 		fullName: `${repo.owner}/${repo.name}`,
 		owner: repo.owner,
 		event
@@ -308,9 +295,9 @@ async function deliverRepoEvent(
 
 /** Redeliver by guid (same body, same guid) and log it for its app. */
 async function redeliverGuid(guid: string): Promise<DeliveryReply | null> {
-	if (!system.findActor(deliveryAddress(guid))) return null;
+	if (!fake.deliveryExists(guid)) return null;
 	const started = Date.now();
-	const result = await ask<DeliveryReply>(system, deliveryAddress(guid), DELIVERY_EVENTS.redeliver, {}, 30_000);
+	const result = await askActor<DeliveryReply>(host, deliveryAddress(guid), DELIVERY_EVENTS.redeliver, {}, 30_000);
 	const known = deliveryMeta.get(guid);
 	emitDelivery(result, known?.event ?? 'issues', known?.action ?? '', known?.repoId ?? null, known?.number ?? null);
 	if (known?.appId) {
@@ -327,11 +314,11 @@ const issueRef = (repo: { id: number; owner: string; name: string }, number: num
 });
 
 const appRoutes = createAppRoutes({
-	system,
+	host,
 	bases,
 	ensureUser,
 	ensureRepoId: async (owner, name) => (await ensureRepo(owner, name)).repo.id,
-	repos: () => fake.snapshot().repos.map((r) => ({ fullName: r.fullName, id: r.id, owner: r.owner, name: r.name })),
+	repos: async () => (await fake.registry()).repos.map((r) => ({ fullName: r.fullName, id: r.id, owner: r.owner, name: r.name })),
 	deliverTo: (target, event, action, body, repoId) => deliver(action, body, repoId, null, event, crypto.randomUUID(), target),
 	redeliver: redeliverGuid,
 	validate: <T,>(schema: unknown, value: unknown, what: string) => validate(schema as TSchema, value, what) as T,
@@ -348,7 +335,7 @@ const appRoutes = createAppRoutes({
 async function control(req: Request, path: string): Promise<Response> {
 	const method = req.method;
 	if (method === 'GET' && path === CONTROL_PATHS.state) {
-		const state = fake.snapshot();
+		const state = await fake.snapshot();
 		state.apps = state.apps?.map((a) => ({ ...a, autoInstall: appRoutes.isAutoInstall(a.id) }));
 		return json(state);
 	}
@@ -376,7 +363,7 @@ async function control(req: Request, path: string): Promise<Response> {
 		const body = raw === undefined ? {} : validate(ResetRequest, raw, 'reset');
 		webhookOutage = false;
 		if (!body.keepApps) appRoutes.resetAutoInstall();
-		fake.reset({ keepApps: body.keepApps === true });
+		await fake.reset({ keepApps: body.keepApps === true });
 		return json({ ok: true });
 	}
 
@@ -396,7 +383,7 @@ async function control(req: Request, path: string): Promise<Response> {
 		const { repo, owner } = await ensureRepo(body.owner, body.repo);
 		const author = await ensureUser(body.author);
 		const issue = unwrap<Issue>(
-			await ask(system, repositoryAddress(repo.id), REPOSITORY_EVENTS.createIssue, {
+			await askActor(host, repositoryAddress(repo.id), REPOSITORY_EVENTS.createIssue, {
 				id: nextId(),
 				author: userView(author, bases),
 				title: body.title,
@@ -424,7 +411,7 @@ async function control(req: Request, path: string): Promise<Response> {
 		const author = await ensureUser(body.author);
 		const draft = body.draft ?? false;
 		const created = unwrap<{ issue: Issue; pull: Record<string, unknown> }>(
-			await ask(system, repositoryAddress(repo.id), REPOSITORY_EVENTS.createIssue, {
+			await askActor(host, repositoryAddress(repo.id), REPOSITORY_EVENTS.createIssue, {
 				id: nextId(),
 				author: userView(author, bases),
 				title: body.title,
@@ -460,11 +447,11 @@ async function control(req: Request, path: string): Promise<Response> {
 		const found = await findRepo(body.owner, body.repo);
 		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
 		const actor = await ensureUser(body.actor);
-		const before = await ask<Issue | { error: string }>(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.getIssue, {
+		const before = await askActor<Issue | { error: string }>(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.getIssue, {
 			number: body.number
 		});
 		const issue = unwrap<Issue>(
-			await ask(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.reopenIssue, {
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.reopenIssue, {
 				number: body.number,
 				now: now()
 			}),
@@ -498,7 +485,7 @@ async function control(req: Request, path: string): Promise<Response> {
 		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
 		const author = await ensureUser(body.author);
 		const comment = unwrap<IssueComment>(
-			await ask(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.createComment, {
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.createComment, {
 				number: body.number,
 				id: nextId(),
 				user: userView(author, bases),
@@ -515,7 +502,7 @@ async function control(req: Request, path: string): Promise<Response> {
 			body: body.body
 		});
 		const issue = unwrap<Issue>(
-			await ask(system, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.getIssue, { number: body.number }),
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.getIssue, { number: body.number }),
 			controlError
 		);
 		const payload = {
@@ -532,8 +519,8 @@ async function control(req: Request, path: string): Promise<Response> {
 	if (path === CONTROL_PATHS.rawDelivery) {
 		const body = validate(RawDeliveryRequest, await readJson(req), 'raw delivery');
 		// Signed with, and sent to, the most recently created GitHub App (ADR 0230).
-		const app = (fake.snapshot().apps ?? []).at(-1);
-		const record = app ? await appRoutes.findApp({ id: app.id }) : null;
+		const appId = await fake.newestAppId();
+		const record = appId !== null ? await appRoutes.findApp({ id: appId }) : null;
 		if (!record) return controlError(409, 'No GitHub App exists on the fake; raw deliveries go to an app');
 		const id = body.deliveryId ?? crypto.randomUUID();
 		const result = await deliver(body.action ?? '(raw)', body.body, null, null, body.event, id, {
@@ -553,7 +540,7 @@ async function control(req: Request, path: string): Promise<Response> {
 			return controlError(400, `Invalid fault`, [{ message: (e as Error).message, path: ['pathPattern'] }]);
 		}
 		const id = `fault-${nextId()}`;
-		const result = await ask<InjectFaultResponse>(system, FAULTS_ADDRESS, FAULT_EVENTS.inject, { ...body, id });
+		const result = await askActor<InjectFaultResponse>(host, FAULTS_ADDRESS, FAULT_EVENTS.inject, { ...body, id });
 		return json(result);
 	}
 
@@ -577,12 +564,12 @@ async function authorize(url: URL): Promise<Response> {
 	if (!appClient) return new Response(`Unknown client_id ${q.client_id}`, { status: 400 });
 	if (!q.redirect_uri) return new Response('redirect_uri is required by the fake', { status: 400 });
 	if (!q.login) {
-		const users = fake.snapshot().users;
+		const users = (await fake.registry()).users;
 		return new Response(authorizePage(url, users), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 	}
 	const user = await ensureUser(q.login);
 	const code = crypto.randomUUID().replaceAll('-', '');
-	await ask(system, OAUTH_ADDRESS, OAUTH_EVENTS.authorize, {
+	await askActor(host, OAUTH_ADDRESS, OAUTH_EVENTS.authorize, {
 		code,
 		login: user.login,
 		clientId: q.client_id,
@@ -630,7 +617,7 @@ async function accessToken(req: Request, url: URL): Promise<Response> {
 			error_description: 'The client_id and/or client_secret passed are incorrect.'
 		});
 	}
-	const result = await ask<Record<string, string>>(system, OAUTH_ADDRESS, OAUTH_EVENTS.exchange, {
+	const result = await askActor<Record<string, string>>(host, OAUTH_ADDRESS, OAUTH_EVENTS.exchange, {
 		code: b.code,
 		clientId: b.client_id,
 		token: `ghu_fake${crypto.randomUUID().replaceAll('-', '')}`,
@@ -648,7 +635,7 @@ function bearer(req: Request): string | null {
 /** ADR 0164: the installation behind a `ghs_` token (null when unknown or expired). */
 async function installationOf(token: string): Promise<{ installation: InstallationRecord; app: AppRecord } | null> {
 	if (!token.startsWith('ghs_')) return null;
-	return ask(system, APPS_ADDRESS, APPS_EVENTS.resolveToken, { token, now: Date.now() });
+	return askActor(host, APPS_ADDRESS, APPS_EVENTS.resolveToken, { token, now: Date.now() });
 }
 
 /**
@@ -656,7 +643,7 @@ async function installationOf(token: string): Promise<{ installation: Installati
  * token's `<slug>[bot]`, else null (unknown token).
  */
 async function tokenUser(token: string): Promise<FakeUser | null> {
-	const login = await ask<string | null>(system, OAUTH_ADDRESS, OAUTH_EVENTS.whoami, { token });
+	const login = await askActor<string | null>(host, OAUTH_ADDRESS, OAUTH_EVENTS.whoami, { token });
 	if (login) return (await getUser(login)) ?? (await ensureUser(login));
 	const inst = await installationOf(token);
 	if (inst) return ensureUser(`${inst.app.slug}[bot]`, 'Bot');
@@ -698,7 +685,7 @@ async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Re
 	}
 	const actor = await tokenUser(token);
 	if (!actor) return githubError(401, 'Bad credentials');
-	const fault = await ask<FaultHit | null>(system, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
+	const fault = await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
 	if (fault) {
 		const headers: Record<string, string> = {};
 		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
@@ -712,7 +699,7 @@ async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Re
 	const level = installation?.permissions?.pull_requests;
 	if (installation && !level) return githubError(403, 'Resource not accessible by integration');
 	const address = repositoryAddress(found.repo.id);
-	if (req.method === 'GET') return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
+	if (req.method === 'GET') return json(unwrap(await askActor(host, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
 	if (req.method === 'PATCH') {
 		if (installation && level !== 'write') return githubError(403, 'Resource not accessible by integration');
 		let body: unknown;
@@ -723,16 +710,16 @@ async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Re
 		}
 		const problems = issuesOf(UpdatePullRequestRequest, body);
 		if (problems.length) return json({ message: 'Validation Failed', errors: problems }, 422);
-		const before = await ask<Record<string, unknown> | { error: string }>(system, address, REPOSITORY_EVENTS.getPull, { number });
+		const before = await askActor<Record<string, unknown> | { error: string }>(host, address, REPOSITORY_EVENTS.getPull, { number });
 		if (isFailure(before)) return githubError(404, 'Not Found');
 		const after = unwrap<Issue>(
-			await ask(system, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
+			await askActor(host, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
 			(st, msg) => githubError(st, msg)
 		);
 		if ((before as { state: string }).state !== after.state && after.state === 'closed') {
 			events.emit({ type: 'pull_request.closed', ...issueRef(found.repo, number), by: actor.login });
 		}
-		return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
+		return json(unwrap(await askActor(host, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
 	}
 	return githubError(404, 'Not Found');
 }
@@ -752,7 +739,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 	const actor = await tokenUser(token);
 	if (!actor) return githubError(401, 'Bad credentials');
 
-	const fault = await ask<FaultHit | null>(system, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
+	const fault = await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
 	if (fault) {
 		const headers: Record<string, string> = {};
 		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
@@ -768,7 +755,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 	const notFound = (status: number, msg: string) => githubError(status, msg);
 
 	if (!comments && req.method === 'GET') {
-		return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.getIssue, { number }), notFound));
+		return json(unwrap(await askActor(host, address, REPOSITORY_EVENTS.getIssue, { number }), notFound));
 	}
 	if (!comments && req.method === 'PATCH') {
 		let body: unknown;
@@ -779,9 +766,9 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		}
 		const issues = issuesOf(UpdateIssueRequest, body);
 		if (issues.length) return json({ message: 'Validation Failed', errors: issues }, 422);
-		const before = await ask<Issue | { error: string }>(system, address, REPOSITORY_EVENTS.getIssue, { number });
+		const before = await askActor<Issue | { error: string }>(host, address, REPOSITORY_EVENTS.getIssue, { number });
 		const after = unwrap<Issue>(
-			await ask(system, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
+			await askActor(host, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
 			notFound
 		);
 		if (!isFailure(before)) {
@@ -803,7 +790,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		return json(after);
 	}
 	if (comments && req.method === 'GET') {
-		return json(unwrap(await ask(system, address, REPOSITORY_EVENTS.listComments, { number }), notFound));
+		return json(unwrap(await askActor(host, address, REPOSITORY_EVENTS.listComments, { number }), notFound));
 	}
 	if (comments && req.method === 'POST') {
 		let body: unknown;
@@ -816,7 +803,7 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 		if (issues.length) return json({ message: 'Validation Failed', errors: issues }, 422);
 		const user: GitHubUser = userView(actor, bases);
 		const comment = unwrap<IssueComment>(
-			await ask(system, address, REPOSITORY_EVENTS.createComment, {
+			await askActor(host, address, REPOSITORY_EVENTS.createComment, {
 				number,
 				id: nextId(),
 				user,
@@ -885,7 +872,7 @@ console.log(`[fake-github] listening on ${server.url} (public ${base}); webhooks
 
 const shutdown = () => {
 	server.stop(true);
-	system.close();
+	fake.close();
 	process.exit(0);
 };
 process.on('SIGINT', shutdown);

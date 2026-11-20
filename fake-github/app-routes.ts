@@ -13,7 +13,8 @@
  * All data lives in the `apps/main` actor; this module does HTTP, crypto
  * and webhook fan-out.
  */
-import type { System } from '@tinyactors/node-legacy';
+import type { Host } from '@tinyactors/node';
+import { askActor } from '../src/lib/charts/runtime';
 import {
 	AppAutoInstallRequest,
 	InstallAppRequest,
@@ -22,7 +23,7 @@ import {
 	type FakeUser,
 	type InstallAppResponse
 } from './schemas';
-import { ask, isFailure } from './io/reply';
+import { isFailure } from './failure';
 import { nextId } from './ids';
 import { APPS_ADDRESS, APPS_EVENTS, repoCovered, type AppDeliveryRecord, type AppRecord, type InstallResult, type InstallationRecord } from './actors/apps';
 import { generateAppKeyPair, looksLikeJwt, peekJwt, randomToken, verifyAppJwt } from './app-crypto';
@@ -38,13 +39,13 @@ export interface DeliveryTarget {
 }
 
 export interface AppRouteDeps {
-	system: System;
+	host: Host;
 	bases: Bases;
 	ensureUser(login: string, type?: FakeUser['type']): Promise<FakeUser>;
 	/** Ensure `owner/name` exists; returns the repo id. */
 	ensureRepoId(owner: string, name: string): Promise<number>;
 	/** All repos (`owner/name`, id) the fake knows. */
-	repos(): { fullName: string; id: number; owner: string; name: string }[];
+	repos(): Promise<{ fullName: string; id: number; owner: string; name: string }[]>;
 	deliverTo(target: DeliveryTarget, event: string, action: string, body: string, repoId: number | null): Promise<DeliveryReply>;
 	/** Redeliver a delivery by guid (same body, same guid); null when unknown. */
 	redeliver(guid: string): Promise<DeliveryReply | null>;
@@ -83,12 +84,12 @@ async function formOrJson(req: Request): Promise<Record<string, string>> {
 }
 
 export function createAppRoutes(deps: AppRouteDeps) {
-	const { system, bases, json, githubError } = deps;
+	const { host, bases, json, githubError } = deps;
 
 	const findApp = (q: { id?: number; clientId?: string; slug?: string }) =>
-		ask<AppRecord | null>(system, APPS_ADDRESS, APPS_EVENTS.find, q);
+		askActor<AppRecord | null>(host, APPS_ADDRESS, APPS_EVENTS.find, q);
 	const installationsOf = (q: { appId?: number; id?: number }) =>
-		ask<InstallationRecord[]>(system, APPS_ADDRESS, APPS_EVENTS.installations, q);
+		askActor<InstallationRecord[]>(host, APPS_ADDRESS, APPS_EVENTS.installations, q);
 
 	// ---- views ---------------------------------------------------------------
 
@@ -140,8 +141,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		html_url: `${bases.web}/${r.fullName}`
 	});
 
-	const reposOf = (i: InstallationRecord) =>
-		deps.repos().filter((r) => repoCovered(i, r.fullName, r.owner));
+	const reposOf = async (i: InstallationRecord) => (await deps.repos()).filter((r) => repoCovered(i, r.fullName, r.owner));
 
 	const deliveryView = (d: AppDeliveryRecord) => ({
 		id: d.id,
@@ -186,9 +186,10 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		const target: DeliveryTarget = { url: app.webhookUrl, secret: app.webhookSecret, appId: app.id, installationId: r.installation.id };
 		const inst = installationView(r.installation, app);
 		const senderView = userView(sender, bases);
-		const repoBy = (full: string) => deps.repos().find((x) => x.fullName.toLowerCase() === full)!;
+		const known = await deps.repos();
+		const repoBy = (full: string) => known.find((x) => x.fullName.toLowerCase() === full)!;
 		if (r.created) {
-			const repositories = reposOf(r.installation).map(repoView);
+			const repositories = (await reposOf(r.installation)).map(repoView);
 			return deps.deliverTo(target, 'installation', 'created', JSON.stringify({ action: 'created', installation: inst, repositories, sender: senderView }), null);
 		}
 		const body = {
@@ -209,7 +210,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 			const [owner, name] = full.split('/') as [string, string];
 			await deps.ensureRepoId(owner, name);
 		}
-		const result = await ask<InstallResult>(system, APPS_ADDRESS, APPS_EVENTS.install, {
+		const result = await askActor<InstallResult>(host, APPS_ADDRESS, APPS_EVENTS.install, {
 			appId: app.id,
 			newId: nextId(),
 			account: accountUser.login,
@@ -300,7 +301,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 			events: m.default_events ?? [],
 			createdAt: Date.now()
 		};
-		await ask(system, APPS_ADDRESS, APPS_EVENTS.create, { app, code, pem: keys.privateKeyPem, now: Date.now() });
+		await askActor(host, APPS_ADDRESS, APPS_EVENTS.create, { app, code, pem: keys.privateKeyPem, now: Date.now() });
 		const target = new URL(m.redirect_url);
 		target.searchParams.set('code', code);
 		if (state) target.searchParams.set('state', state);
@@ -308,7 +309,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 	}
 
 	async function conversion(code: string): Promise<Response> {
-		const r = await ask<{ app: AppRecord; pem: string } | { error: string; status: number }>(system, APPS_ADDRESS, APPS_EVENTS.convert, {
+		const r = await askActor<{ app: AppRecord; pem: string } | { error: string; status: number }>(host, APPS_ADDRESS, APPS_EVENTS.convert, {
 			code,
 			now: Date.now()
 		});
@@ -336,7 +337,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 			const reposParam = url.searchParams.get('repos');
 			return installAndRedirect(app, account, reposParam ? reposParam.split(',').filter(Boolean) : undefined, state);
 		}
-		const knownRepos = deps.repos().filter((r) => r.owner.toLowerCase() === account.toLowerCase()).map((r) => r.fullName);
+		const knownRepos = (await deps.repos()).filter((r) => r.owner.toLowerCase() === account.toLowerCase()).map((r) => r.fullName);
 		return html(installPage({ slug: app.slug, name: app.name, account, state, knownRepos }));
 	}
 
@@ -385,8 +386,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		if (tok && req.method === 'POST') {
 			const now = Date.now();
 			const expiresAt = now + TOKEN_TTL_MS;
-			const r = await ask<{ token: string; expiresAt: number; installation: InstallationRecord } | { error: string; status: number }>(
-				system,
+			const r = await askActor<{ token: string; expiresAt: number; installation: InstallationRecord } | { error: string; status: number }>(host,
 				APPS_ADDRESS,
 				APPS_EVENTS.createToken,
 				{ appId: app.id, installationId: Number(tok[1]), token: randomToken('ghs_'), expiresAt, now }
@@ -406,7 +406,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		if (path === '/app/hook/deliveries' && req.method === 'GET') {
 			const perPage = Math.min(Math.max(Number(url.searchParams.get('per_page') ?? 30) || 30, 1), 100);
 			const cursor = Number(url.searchParams.get('cursor') ?? 0) || Infinity;
-			const all = (await ask<AppDeliveryRecord[]>(system, APPS_ADDRESS, APPS_EVENTS.deliveries, { appId: app.id }))
+			const all = (await askActor<AppDeliveryRecord[]>(host, APPS_ADDRESS, APPS_EVENTS.deliveries, { appId: app.id }))
 				.filter((d) => d.id < cursor)
 				.sort((a, b) => b.id - a.id);
 			const page = all.slice(0, perPage);
@@ -421,7 +421,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 		}
 		const del = /^\/app\/hook\/deliveries\/(\d+)(\/attempts)?$/.exec(path);
 		if (del) {
-			const entry = (await ask<AppDeliveryRecord[]>(system, APPS_ADDRESS, APPS_EVENTS.deliveries, { appId: app.id })).find(
+			const entry = (await askActor<AppDeliveryRecord[]>(host, APPS_ADDRESS, APPS_EVENTS.deliveries, { appId: app.id })).find(
 				(d) => d.id === Number(del[1])
 			);
 			if (!entry) return githubError(404, 'Not Found');
@@ -436,7 +436,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 	}
 
 	async function installationRepos(installation: InstallationRecord): Promise<Response> {
-		const repos = reposOf(installation).map(repoView);
+		const repos = (await reposOf(installation)).map(repoView);
 		return json({ total_count: repos.length, repository_selection: installation.repositorySelection, repositories: repos });
 	}
 
@@ -490,7 +490,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 	/** POST /__control/apps/{id}/permissions (ADR 0282): what the app asks for; installations keep theirs. */
 	async function controlSetPermissions(req: Request, appId: number): Promise<Response> {
 		const body = deps.validate<{ permissions: Record<string, string>; events: string[] }>(SetAppPermissionsRequest, await deps.readJson(req), 'permissions');
-		const r = await ask<AppRecord | { error: string; status: number }>(system, APPS_ADDRESS, APPS_EVENTS.setPermissions, { appId, ...body });
+		const r = await askActor<AppRecord | { error: string; status: number }>(host, APPS_ADDRESS, APPS_EVENTS.setPermissions, { appId, ...body });
 		if (isFailure(r)) return deps.controlError((r as { status: number }).status, (r as { error: string }).error);
 		const app = r as AppRecord;
 		return json({ id: app.id, permissions: app.permissions, events: app.events });
@@ -498,7 +498,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 
 	/** POST /__control/installations/{id}/accept-permissions (ADR 0282): the account accepts; `installation.new_permissions_accepted`. */
 	async function controlAcceptPermissions(installationId: number): Promise<Response> {
-		const r = await ask<{ installation: InstallationRecord; app: AppRecord } | { error: string; status: number }>(system, APPS_ADDRESS, APPS_EVENTS.acceptPermissions, {
+		const r = await askActor<{ installation: InstallationRecord; app: AppRecord } | { error: string; status: number }>(host, APPS_ADDRESS, APPS_EVENTS.acceptPermissions, {
 			installationId
 		});
 		if (isFailure(r)) return deps.controlError((r as { status: number }).status, (r as { error: string }).error);

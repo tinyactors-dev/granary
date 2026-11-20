@@ -4,7 +4,7 @@
  * Produces GitHub-shaped `Issue` / `IssueComment` objects
  * (`src/lib/schemas/github.ts`).
  */
-import { statechart } from '@tinyactors/node-legacy';
+import { handlerChart } from '../../src/lib/charts';
 import type {
 	AuthorAssociation,
 	GitHubUser,
@@ -13,10 +13,9 @@ import type {
 	IssueStateReason,
 	UpdateIssueRequest
 } from '../../src/lib/schemas/github';
-import { answer, type ActorFailure } from '../io/reply';
 
 export const REPOSITORY_FAMILY = 'repository';
-export const repositoryAddress = (repoId: number) => ({ family: REPOSITORY_FAMILY, name: String(repoId) });
+export const repositoryAddress = (repoId: number) => `${REPOSITORY_FAMILY}/${repoId}`;
 
 export interface StoredComment {
 	id: number;
@@ -54,7 +53,6 @@ export interface RepositoryData {
 	apiBase: string;
 	nextNumber: number;
 	issues: StoredIssue[];
-	out: unknown;
 }
 
 export const REPOSITORY_EVENTS = {
@@ -64,8 +62,7 @@ export const REPOSITORY_EVENTS = {
 	updateIssue: 'issue.update',
 	reopenIssue: 'issue.reopen',
 	createComment: 'comment.create',
-	listComments: 'comment.list',
-	snapshot: 'repo.snapshot'
+	listComments: 'comment.list'
 } as const;
 
 export interface CreateIssueEvent {
@@ -90,8 +87,6 @@ export interface CreateCommentEvent {
 	body: string;
 	now: string;
 }
-
-const notFound: ActorFailure = { error: 'Not Found', status: 404 };
 
 function issueUrls(d: RepositoryData, n: number, pull = false) {
 	return {
@@ -165,109 +160,85 @@ export function commentView(d: RepositoryData, i: StoredIssue, c: StoredComment)
 	};
 }
 
-const find = (d: RepositoryData, n: number) => d.issues.find((i) => i.number === n);
+/** Chart helpers below are embedded with `Function.prototype.toString`: self-contained. */
+function find(d: RepositoryData, n: number) {
+	return d.issues.find((i) => i.number === n);
+}
 
-export const repositoryChart = statechart<RepositoryData>({ family: REPOSITORY_FAMILY, revision: 'v1' })
-	.data('id', 0)
-	.data('owner', '')
-	.data('ownerId', 0)
-	.data('name', '')
-	.data('webBase', '')
-	.data('apiBase', '')
-	.data('nextNumber', 1)
-	.dataExpression('issues', () => [])
-	.data('out', null)
-	.state('ready', (s) =>
-		s
-			.on(
-				REPOSITORY_EVENTS.createIssue,
-				answer<RepositoryData, CreateIssueEvent>((d, e) => {
-					const issue: StoredIssue = {
-						id: e.id,
-						number: d.nextNumber++,
-						title: e.title,
-						body: e.body,
-						state: 'open',
-						state_reason: null,
-						user: e.author,
-						author_association: e.association,
-						created_at: e.now,
-						updated_at: e.now,
-						closed_at: null,
-						comments: [],
-						...(e.pullRequest ? { pullRequest: { draft: e.pullRequest.draft } } : {})
-					};
-					d.issues.push(issue);
-					return e.pullRequest ? { issue: issueView(d, issue), pull: pullView(d, issue) } : issueView(d, issue);
-				})
-			)
-			.on(
-				REPOSITORY_EVENTS.getPull,
-				answer<RepositoryData, { number: number }>((d, e) => {
-					const i = find(d, e.number);
-					return i?.pullRequest ? pullView(d, i) : notFound;
-				})
-			)
-			.on(
-				REPOSITORY_EVENTS.getIssue,
-				answer<RepositoryData, { number: number }>((d, e) => {
-					const i = find(d, e.number);
-					return i ? issueView(d, i) : notFound;
-				})
-			)
-			.on(
-				REPOSITORY_EVENTS.updateIssue,
-				answer<RepositoryData, UpdateIssueEvent>((d, e) => {
-					const i = find(d, e.number);
-					if (!i) return notFound;
-					const p = e.patch;
-					if (p.title !== undefined) i.title = p.title;
-					if (p.body !== undefined) i.body = p.body;
-					if (p.state === 'closed') {
-						if (i.state !== 'closed') i.closed_at = e.now;
-						i.state = 'closed';
-						// Pull requests have no state_reason on GitHub.
-						i.state_reason = i.pullRequest ? null : (p.state_reason ?? 'completed');
-					} else if (p.state === 'open') {
-						if (i.state !== 'open') i.state_reason = p.state_reason ?? 'reopened';
-						else if (p.state_reason !== undefined) i.state_reason = p.state_reason;
-						i.state = 'open';
-						i.closed_at = null;
-					} else if (p.state_reason !== undefined) {
-						i.state_reason = p.state_reason;
-					}
-					i.updated_at = e.now;
-					return issueView(d, i);
-				})
-			)
-			.on(
-				REPOSITORY_EVENTS.reopenIssue,
-				answer<RepositoryData, { number: number; now: string }>((d, e) => {
-					const i = find(d, e.number);
-					if (!i) return notFound;
-					i.state = 'open';
-					i.state_reason = 'reopened';
-					i.closed_at = null;
-					i.updated_at = e.now;
-					return issueView(d, i);
-				})
-			)
-			.on(
-				REPOSITORY_EVENTS.createComment,
-				answer<RepositoryData, CreateCommentEvent>((d, e) => {
-					const i = find(d, e.number);
-					if (!i) return notFound;
-					const c: StoredComment = { id: e.id, body: e.body, user: e.user, created_at: e.now, updated_at: e.now };
-					i.comments.push(c);
-					i.updated_at = e.now;
-					return commentView(d, i, c);
-				})
-			)
-			.on(
-				REPOSITORY_EVENTS.listComments,
-				answer<RepositoryData, { number: number }>((d, e) => {
-					const i = find(d, e.number);
-					return i ? i.comments.map((c) => commentView(d, i, c)) : notFound;
-				})
-			)
-	);
+export const repositoryChart = handlerChart<RepositoryData>({
+	name: REPOSITORY_FAMILY,
+	initial: { id: 0, owner: '', ownerId: 0, name: '', webBase: '', apiBase: '', nextNumber: 1, issues: [] },
+	helpers: { issueUrls, pullView, issueView, commentView, find },
+	handlers: {
+		[REPOSITORY_EVENTS.createIssue]: (d, e: CreateIssueEvent) => {
+			const issue: StoredIssue = {
+				id: e.id,
+				number: d.nextNumber++,
+				title: e.title,
+				body: e.body,
+				state: 'open',
+				state_reason: null,
+				user: e.author,
+				author_association: e.association,
+				created_at: e.now,
+				updated_at: e.now,
+				closed_at: null,
+				comments: [],
+				...(e.pullRequest ? { pullRequest: { draft: e.pullRequest.draft } } : {})
+			};
+			d.issues.push(issue);
+			return e.pullRequest ? { issue: issueView(d, issue), pull: pullView(d, issue) } : issueView(d, issue);
+		},
+		[REPOSITORY_EVENTS.getPull]: (d, e: { number: number }) => {
+			const i = find(d, e.number);
+			return i?.pullRequest ? pullView(d, i) : { error: 'Not Found', status: 404 };
+		},
+		[REPOSITORY_EVENTS.getIssue]: (d, e: { number: number }) => {
+			const i = find(d, e.number);
+			return i ? issueView(d, i) : { error: 'Not Found', status: 404 };
+		},
+		[REPOSITORY_EVENTS.updateIssue]: (d, e: UpdateIssueEvent) => {
+			const i = find(d, e.number);
+			if (!i) return { error: 'Not Found', status: 404 };
+			const p = e.patch;
+			if (p.title !== undefined) i.title = p.title;
+			if (p.body !== undefined) i.body = p.body;
+			if (p.state === 'closed') {
+				if (i.state !== 'closed') i.closed_at = e.now;
+				i.state = 'closed';
+				// Pull requests have no state_reason on GitHub.
+				i.state_reason = i.pullRequest ? null : (p.state_reason ?? 'completed');
+			} else if (p.state === 'open') {
+				if (i.state !== 'open') i.state_reason = p.state_reason ?? 'reopened';
+				else if (p.state_reason !== undefined) i.state_reason = p.state_reason;
+				i.state = 'open';
+				i.closed_at = null;
+			} else if (p.state_reason !== undefined) {
+				i.state_reason = p.state_reason;
+			}
+			i.updated_at = e.now;
+			return issueView(d, i);
+		},
+		[REPOSITORY_EVENTS.reopenIssue]: (d, e: { number: number; now: string }) => {
+			const i = find(d, e.number);
+			if (!i) return { error: 'Not Found', status: 404 };
+			i.state = 'open';
+			i.state_reason = 'reopened';
+			i.closed_at = null;
+			i.updated_at = e.now;
+			return issueView(d, i);
+		},
+		[REPOSITORY_EVENTS.createComment]: (d, e: CreateCommentEvent) => {
+			const i = find(d, e.number);
+			if (!i) return { error: 'Not Found', status: 404 };
+			const c: StoredComment = { id: e.id, body: e.body, user: e.user, created_at: e.now, updated_at: e.now };
+			i.comments.push(c);
+			i.updated_at = e.now;
+			return commentView(d, i, c);
+		},
+		[REPOSITORY_EVENTS.listComments]: (d, e: { number: number }) => {
+			const i = find(d, e.number);
+			return i ? i.comments.map((c) => commentView(d, i, c)) : { error: 'Not Found', status: 404 };
+		}
+	}
+});

@@ -18,9 +18,9 @@ mise run fake-github          # http://localhost:4010 (config/dev.env)
 open http://localhost:4010/   # open/reopen issues, faults, redeliver, state
 ```
 
-Layout: `server.ts` (HTTP), `system.ts` (tinyactors System, reset,
+Layout: `server.ts` (HTTP), `system.ts` (tinyactors host, reset,
 snapshot), `actors/` (one actor per file: registry, repository, delivery,
-faults, oauth, apps), `io/` (`reply`, `webhook` I/O processors), `app-*.ts` (GitHub App routes, crypto, pages), `views.ts`,
+faults, oauth, apps; the host asks them with `askActor`), `io/` (the `webhook` I/O processor), `app-*.ts` (GitHub App routes, crypto, pages), `views.ts`,
 `page.ts`, `ids.ts`, `schemas.ts` (control API).
 
 ## Event stream, user comments, raw deliveries (ADR 0075)
