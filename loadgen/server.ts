@@ -63,7 +63,7 @@ async function route(req: Request): Promise<Response> {
 	const sc = /^\/api\/scenarios\/([^/]+)(?:\/([a-z]+))?$/.exec(path);
 	if (sc) {
 		const id = decodeURIComponent(sc[1]!);
-		if (!sc[2] && m === 'GET') return json(engine.getScenario(id));
+		if (!sc[2] && m === 'GET') return json(await engine.getScenario(id));
 		if (sc[2] && m === 'POST' && ACTIONS.has(sc[2] as ScenarioAction)) {
 			return json(await engine.control(id, sc[2] as ScenarioAction));
 		}
@@ -72,16 +72,16 @@ async function route(req: Request): Promise<Response> {
 		const q = Object.fromEntries(url.searchParams);
 		const issues = issuesOf(ListPersonasQuery, q);
 		if (issues.length) return fail(400, 'Invalid query', issues);
-		return json(engine.listPersonas(q as { scenarioId?: string; kind?: PersonaKind }));
+		return json(await engine.listPersonas(q as { scenarioId?: string; kind?: PersonaKind }));
 	}
 	const pe = /^\/api\/personas\/([^/]+)\/([^/]+)$/.exec(path);
 	if (pe && m === 'GET') {
 		const kind = decodeURIComponent(pe[1]!);
 		if (!(PERSONA_KINDS as readonly string[]).includes(kind)) return fail(404, `Unknown persona kind ${kind}`);
-		return json(engine.getPersona(kind, decodeURIComponent(pe[2]!)));
+		return json(await engine.getPersona(kind, decodeURIComponent(pe[2]!)));
 	}
 	if (m === 'POST' && path === '/api/reset') {
-		engine.reset();
+		await engine.reset();
 		return json({ ok: true });
 	}
 	return fail(404, `No route for ${m} ${path}`);
@@ -107,8 +107,7 @@ console.log(
 
 const shutdown = () => {
 	server.stop(true);
-	engine.close();
-	process.exit(0);
+	void engine.close().finally(() => process.exit(0));
 };
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);

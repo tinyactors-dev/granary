@@ -10,12 +10,17 @@
  * reports `personas.done` (every persona reached a final state and the plan
  * is exhausted) and `observer.settled` (every issue expected closed is
  * closed or overdue).
+ *
+ * The control events (`start`, `pause`, `resume`, `stop`) are asked: the
+ * chart answers `control.ok` when it takes one and `control.ignored` when
+ * its state has no use for it.
  */
-import { statechart, type ActionBuilder } from '@tinyactors/node-legacy';
+import { chart, lit, reply, scxml, type Raw } from '../../src/lib/charts';
 import { HOST_IO } from '../personas/common';
 
 export const SCENARIO_FAMILY = 'scenario';
-export const scenarioAddress = (id: string) => ({ family: SCENARIO_FAMILY, name: id });
+/** The scenario actor's name. */
+export const scenarioName = (id: string) => `${SCENARIO_FAMILY}/${id}`;
 
 export const SCENARIO_EVENTS = {
 	start: 'start',
@@ -29,6 +34,9 @@ export const SCENARIO_EVENTS = {
 	personasDone: 'personas.done',
 	observerSettled: 'observer.settled'
 } as const;
+
+/** The answers to the control events. */
+export const SCENARIO_REPLIES = { ok: 'control.ok', ignored: 'control.ignored' } as const;
 
 /** Host requests (via the `host` I/O processor). */
 export const SCENARIO_HOST = {
@@ -57,147 +65,99 @@ export interface ScenarioData {
 	note: string;
 }
 
-const elapsed = (d: ScenarioData) => d.activeMs + (Date.now() - d.segmentStart);
+const DEFAULTS: ScenarioData = {
+	id: '',
+	plan: [],
+	next: 0,
+	durationMs: 60_000,
+	drainTimeoutMs: 60_000,
+	settleTimeoutMs: 60_000,
+	activeMs: 0,
+	segmentStart: 0,
+	wait: 0,
+	note: ''
+};
 
-function reportState(a: ActionBuilder<ScenarioData>, state: string, note: (d: ScenarioData) => string) {
-	a.send(SCENARIO_HOST.state, (b) =>
-		b.via(HOST_IO).data(function (this: ScenarioData) {
-			return { state, note: note(this), activeMs: this.activeMs };
-		})
-	);
-}
+/** Tell the host the scenario's state; `note` is a JavaScript expression. */
+const reportState = (state: string, note: string): Raw =>
+	scxml`<send type="${HOST_IO}" event="${SCENARIO_HOST.state}"><content expr="${`({state: ${lit(state)}, note: ${note}, activeMs: activeMs})`}"/></send>`;
 
-function scheduleArrival(a: ActionBuilder<ScenarioData>) {
-	a.choose(
-		function (this: ScenarioData) {
-			return this.next < this.plan.length;
-		},
-		(then) =>
-			then
-				.script(function (this: ScenarioData) {
-					this.wait = Math.max(0, this.plan[this.next]!.atMs - elapsed(this));
-				})
-				.send(SCENARIO_EVENTS.arrival, (b) =>
-					b
-						.after(function (this: ScenarioData) {
-							return this.wait;
-						})
-						.id('arrival')
-				)
-	);
-}
+const stopPersonas = (reason: string): Raw =>
+	scxml`<send type="${HOST_IO}" event="${SCENARIO_HOST.stopPersonas}"><content expr="${`({reason: ${lit(reason)}})`}"/></send>`;
 
-export const scenarioChart = () =>
-	statechart<ScenarioData>({ family: SCENARIO_FAMILY, revision: 'v1', name: 'scenario coordinator' })
-		.data('id', '')
-		.dataExpression('plan', () => [])
-		.data('next', 0)
-		.data('durationMs', 60_000)
-		.data('drainTimeoutMs', 60_000)
-		.data('settleTimeoutMs', 60_000)
-		.data('activeMs', 0)
-		.data('segmentStart', 0)
-		.data('wait', 0)
-		.data('note', '')
-		.initial('created')
-		.state('created', (s) =>
-			s
-				.entry((a) => reportState(a, 'created', (d) => `${d.plan.length} personas planned.`))
-				.on(SCENARIO_EVENTS.start, (t) => t.target('running'))
-				.on(SCENARIO_EVENTS.stop, (t) => t.target('stopped'))
-		)
-		.state('running', (s) =>
-			s
-				.entry((a) => {
-					a.script(function (this: ScenarioData) {
-						this.segmentStart = Date.now();
-						this.wait = Math.max(0, this.durationMs - this.activeMs);
-					});
-					a.send(SCENARIO_EVENTS.durationElapsed, (b) =>
-						b
-							.after(function (this: ScenarioData) {
-								return this.wait;
-							})
-							.id('duration')
-					);
-					reportState(a, 'running', (d) => `Running; ${d.plan.length - d.next} arrivals to go.`);
-					scheduleArrival(a);
-				})
-				.exit((a) =>
-					a
-						.cancel('arrival')
-						.cancel('duration')
-						.script(function (this: ScenarioData) {
-							this.activeMs += Date.now() - this.segmentStart;
-						})
-				)
-				.on(SCENARIO_EVENTS.arrival, (t) => {
-					t.send(SCENARIO_HOST.spawn, (b) =>
-						b.via(HOST_IO).data(function (this: ScenarioData) {
-							return { index: this.next };
-						})
-					).script(function (this: ScenarioData) {
-						this.next += 1;
-					});
-					scheduleArrival(t as unknown as ActionBuilder<ScenarioData>);
-				})
-				.on(SCENARIO_EVENTS.personasDone, (t) =>
-					t.when(function (this: ScenarioData) {
-						return this.next >= this.plan.length;
-					}).target('draining')
-				)
-				.on(SCENARIO_EVENTS.durationElapsed, (t) => t.target('draining'))
-				.on(SCENARIO_EVENTS.pause, (t) => t.target('paused'))
-				.on(SCENARIO_EVENTS.stop, (t) => t.target('stopped'))
-		)
-		.state('paused', (s) =>
-			s
-				.entry((a) => reportState(a, 'paused', (d) => `Paused after ${Math.round(d.activeMs / 1000)} s of activity.`))
-				.on(SCENARIO_EVENTS.resume, (t) => t.target('running'))
-				.on(SCENARIO_EVENTS.stop, (t) => t.target('stopped'))
-		)
-		.state('draining', (s) =>
-			s
-				.entry((a) => {
-					reportState(a, 'draining', (d) => `No more arrivals (${d.next}/${d.plan.length} arrived); waiting for personas to finish.`);
-					a.send(SCENARIO_EVENTS.drainTimeout, (b) =>
-						b
-							.after(function (this: ScenarioData) {
-								return this.drainTimeoutMs;
-							})
-							.id('drain')
-					);
-				})
-				.exit((a) => a.cancel('drain'))
-				.on(SCENARIO_EVENTS.personasDone, (t) => t.target('settling'))
-				.on(SCENARIO_EVENTS.drainTimeout, (t) =>
-					t
-						.send(SCENARIO_HOST.stopPersonas, (b) => b.via(HOST_IO).data({ reason: 'drain timeout' }))
-						.target('settling')
-				)
-				.on(SCENARIO_EVENTS.stop, (t) => t.target('stopped'))
-		)
-		.state('settling', (s) =>
-			s
-				.entry((a) => {
-					reportState(a, 'settling', () => 'All personas done; waiting for granary to close what it should.');
-					a.send(SCENARIO_EVENTS.settleTimeout, (b) =>
-						b
-							.after(function (this: ScenarioData) {
-								return this.settleTimeoutMs;
-							})
-							.id('settle')
-					);
-				})
-				.exit((a) => a.cancel('settle'))
-				.on(SCENARIO_EVENTS.observerSettled, (t) => t.target('finished'))
-				.on(SCENARIO_EVENTS.settleTimeout, (t) => t.target('finished'))
-				.on(SCENARIO_EVENTS.stop, (t) => t.target('stopped'))
-		)
-		.final('finished', (s) => s.entry((a) => reportState(a, 'finished', () => 'Finished.')))
-		.final('stopped', (s) =>
-			s.entry((a) => {
-				a.send(SCENARIO_HOST.stopPersonas, (b) => b.via(HOST_IO).data({ reason: 'stopped' }));
-				reportState(a, 'stopped', () => 'Stopped by operator.');
-			})
-		);
+/** Schedule the next planned arrival, if any, relative to the active time. */
+const scheduleArrival = scxml`<if cond="${'next < plan.length'}">
+	<script>wait = Math.max(0, plan[next].atMs - (activeMs + (Date.now() - segmentStart)));</script>
+	<send event="${SCENARIO_EVENTS.arrival}" id="arrival" delayexpr="${"wait + 'ms'"}"/>
+</if>`;
+
+const ok = reply("'ok'", SCENARIO_REPLIES.ok);
+
+export const scenarioChart = chart({
+	name: SCENARIO_FAMILY,
+	initial: 'live',
+	data: DEFAULTS as unknown as Record<string, unknown>,
+	body: scxml`
+<state id="live" initial="created">
+	<transition event="${`${SCENARIO_EVENTS.start} ${SCENARIO_EVENTS.pause} ${SCENARIO_EVENTS.resume} ${SCENARIO_EVENTS.stop}`}">${reply("'ignored'", SCENARIO_REPLIES.ignored)}</transition>
+	<state id="created">
+		<onentry>${reportState('created', '`${plan.length} personas planned.`')}</onentry>
+		<transition event="${SCENARIO_EVENTS.start}" target="running">${ok}</transition>
+		<transition event="${SCENARIO_EVENTS.stop}" target="stopped">${ok}</transition>
+	</state>
+	<state id="running">
+		<onentry>
+			<script>segmentStart = Date.now(); wait = Math.max(0, durationMs - activeMs);</script>
+			<send event="${SCENARIO_EVENTS.durationElapsed}" id="duration" delayexpr="${"wait + 'ms'"}"/>
+			${reportState('running', '`Running; ${plan.length - next} arrivals to go.`')}
+			${scheduleArrival}
+		</onentry>
+		<onexit>
+			<cancel sendid="arrival"/>
+			<cancel sendid="duration"/>
+			<script>activeMs += Date.now() - segmentStart;</script>
+		</onexit>
+		<transition event="${SCENARIO_EVENTS.arrival}">
+			<send type="${HOST_IO}" event="${SCENARIO_HOST.spawn}"><content expr="({index: next})"/></send>
+			<script>next += 1;</script>
+			${scheduleArrival}
+		</transition>
+		<transition event="${SCENARIO_EVENTS.personasDone}" cond="${'next >= plan.length'}" target="draining"/>
+		<transition event="${SCENARIO_EVENTS.durationElapsed}" target="draining"/>
+		<transition event="${SCENARIO_EVENTS.pause}" target="paused">${ok}</transition>
+		<transition event="${SCENARIO_EVENTS.stop}" target="stopped">${ok}</transition>
+	</state>
+	<state id="paused">
+		<onentry>${reportState('paused', '`Paused after ${Math.round(activeMs / 1000)} s of activity.`')}</onentry>
+		<transition event="${SCENARIO_EVENTS.resume}" target="running">${ok}</transition>
+		<transition event="${SCENARIO_EVENTS.stop}" target="stopped">${ok}</transition>
+	</state>
+	<state id="draining">
+		<onentry>
+			${reportState('draining', '`No more arrivals (${next}/${plan.length} arrived); waiting for personas to finish.`')}
+			<send event="${SCENARIO_EVENTS.drainTimeout}" id="drain" delayexpr="${"drainTimeoutMs + 'ms'"}"/>
+		</onentry>
+		<onexit><cancel sendid="drain"/></onexit>
+		<transition event="${SCENARIO_EVENTS.personasDone}" target="settling"/>
+		<transition event="${SCENARIO_EVENTS.drainTimeout}" target="settling">${stopPersonas('drain timeout')}</transition>
+		<transition event="${SCENARIO_EVENTS.stop}" target="stopped">${ok}</transition>
+	</state>
+	<state id="settling">
+		<onentry>
+			${reportState('settling', "'All personas done; waiting for granary to close what it should.'")}
+			<send event="${SCENARIO_EVENTS.settleTimeout}" id="settle" delayexpr="${"settleTimeoutMs + 'ms'"}"/>
+		</onentry>
+		<onexit><cancel sendid="settle"/></onexit>
+		<transition event="${SCENARIO_EVENTS.observerSettled}" target="finished"/>
+		<transition event="${SCENARIO_EVENTS.settleTimeout}" target="finished"/>
+		<transition event="${SCENARIO_EVENTS.stop}" target="stopped">${ok}</transition>
+	</state>
+</state>
+<final id="finished"><onentry>${reportState('finished', "'Finished.'")}</onentry></final>
+<final id="stopped">
+	<onentry>
+		${stopPersonas('stopped')}
+		${reportState('stopped', "'Stopped by operator.'")}
+	</onentry>
+</final>`
+});

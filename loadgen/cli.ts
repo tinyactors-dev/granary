@@ -85,5 +85,5 @@ try {
 	console.error(e instanceof LoadgenError ? `error ${e.status}: ${e.message}` : e);
 	exitCode = 2;
 }
-engine.close();
+await engine.close();
 process.exit(exitCode);

@@ -53,9 +53,6 @@ export function slopBody(r: RandomSource): string {
 
 // -- persistent contributor ----------------------------------------------------
 
-const TONES = ['polite', 'insistent', 'annoyed', 'furious'] as const;
-export const toneName = (tone: number) => TONES[Math.min(tone, TONES.length - 1)]!;
-
 export function persistentTitle(r: RandomSource, tone: number, attempt: number, previous: string | null): string {
 	const base = previous ?? `Please add ${pick(r, ['dark mode', 'YAML support', 'a --force flag', 'Windows 98 support', 'blockchain integration'])} to the ${pick(r, AREAS)}`;
 	const stripped = base.replace(/^(\[.*?\]\s*|Re: |AGAIN: )+/g, '');

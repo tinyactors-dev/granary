@@ -6,20 +6,18 @@
  * survives their patience window they are content.
  * Expected: every new issue is closed; their reopens stay open (ADR 0004).
  */
-import { statechart } from '@tinyactors/node-legacy';
-import { persistentBody, persistentTitle, rageQuit, toneName } from '../text';
+import { scxml } from '../../src/lib/charts';
 import {
+	COUNT_ERROR,
+	COUNT_NOTIFICATION,
 	GH_ACTIONS,
 	PERSONA_EVENTS as E,
+	RECORD_OPENED,
+	TAKE_RNG,
 	act,
-	between,
-	countError,
-	countNotification,
-	declareBase,
+	draft,
 	narrate,
-	recordOpened,
-	rnd,
-	source,
+	personaChart,
 	timed,
 	type PersonaBase
 } from './common';
@@ -37,128 +35,105 @@ export interface PersistentContributorData extends PersonaBase {
 	plan: 'reopen' | 'duplicate';
 }
 
-const closedAgain = function (this: PersistentContributorData) {
-	this.closures += 1;
-	this.tone += 1;
-};
+/** The tone's name (`toneName` of loadgen/text.ts, inlined: a chart helper is self-contained). */
+function toneName(tone: number): string {
+	const tones = ['polite', 'insistent', 'annoyed', 'furious'];
+	return tones[Math.min(tone, tones.length - 1)]!;
+}
 
-export const persistentContributorChart = () => {
-	const b = statechart<PersistentContributorData>({ family: KIND, revision: 'v1', name: 'persistent annoying contributor' });
-	declareBase(b);
-	return b
-		.data('tone', 0)
-		.data('closures', 0)
-		.data('maxClosures', 3)
-		.data('attempts', 0)
-		.data('plan', 'duplicate')
-		.initial('arriving')
-		.state('arriving', (s) =>
-			timed(s, 500, 5000)
-				.entry((a) => {
-					a.script(function (this: PersistentContributorData) {
-						this.maxClosures = between(this, 2, 4);
-					});
-					narrate(a, 'arriving', (d) => `Has a feature request and will not take no for an answer (gives up after ${d.maxClosures} closures).`);
-				})
-				.on(E.timer, (t) => t.target('drafting'))
-		)
-		.state('drafting', (s) =>
-			timed(s, 1000, 5000)
-				.entry((a) => {
-					a.script(function (this: PersistentContributorData) {
-						const r = source(this);
-						this.attempts += 1;
-						this.title = persistentTitle(r, this.tone, this.attempts, this.title);
-						this.body = persistentBody(r, this.tone);
-					});
-					narrate(a, 'drafting', (d) => `Writing issue #${d.attempts} in a ${toneName(d.tone)} tone: "${d.title}"`);
-				})
-				.on(E.timer, (t) => t.target('opening'))
-		)
-		.state('opening', (s) =>
-			s
-				.entry((a) => act(a, GH_ACTIONS.open, (d) => ({ title: d.title, body: d.body })))
-				.on(E.opened, (t) => t.target('waiting').script(recordOpened))
-				.on(E.error, (t) => t.target('gaveUp').script(countError))
-		)
-		.state('waiting', (s) =>
-			timed(s, 15000, 40000)
-				.entry((a) => narrate(a, 'waiting', (d) => `Waiting for a maintainer to respond on #${d.current}…`))
-				.on(E.notifyComment, (t) => t.script(countNotification))
-				.on(E.notifyClosed, (t) =>
-					t
-						.when(function (this: PersistentContributorData) {
-							return this.closures + 1 >= this.maxClosures;
-						})
-						.target('ragequitting')
-						.script(countNotification)
-						.script(closedAgain)
-				)
-				.on(E.notifyClosed, (t) => t.target('stewing').script(countNotification).script(closedAgain))
-				.on(E.timer, (t) => t.target('content'))
-		)
-		.state('stewing', (s) =>
-			timed(s, 2000, 8000)
-				.entry((a) => {
-					a.script(function (this: PersistentContributorData) {
-						this.plan = rnd(this) < 0.5 ? 'reopen' : 'duplicate';
-					});
-					narrate(
-						a,
-						'stewing',
-						(d) => `Closed again (${d.closures}×). Now ${toneName(d.tone)}; will ${d.plan === 'reopen' ? 'reopen it' : 'open a near-duplicate'}.`
-					);
-				})
-				.on(E.timer, (t) =>
-					t.when(function (this: PersistentContributorData) {
-						return this.plan === 'reopen';
-					}).target('reopening')
-				)
-				.on(E.timer, (t) => t.target('drafting'))
-		)
-		.state('reopening', (s) =>
-			s
-				.entry((a) => act(a, GH_ACTIONS.reopen, (d) => ({ number: d.current })))
-				.on(E.reopened, (t) => t.target('waitingAfterReopen'))
-				.on(E.error, (t) => t.target('drafting').script(countError))
-		)
-		.state('waitingAfterReopen', (s) =>
-			timed(s, 10000, 30000)
-				.entry((a) => narrate(a, 'waitingAfterReopen', (d) => `Reopened #${d.current} themselves. Watching it like a hawk.`))
-				.on(E.notifyComment, (t) => t.script(countNotification))
-				.on(E.notifyClosed, (t) =>
-					t
-						.when(function (this: PersistentContributorData) {
-							return this.closures + 1 >= this.maxClosures;
-						})
-						.target('ragequitting')
-						.script(countNotification)
-						.script(closedAgain)
-				)
-				.on(E.notifyClosed, (t) => t.target('stewing').script(countNotification).script(closedAgain))
-				.on(E.timer, (t) =>
-					t.when(function (this: PersistentContributorData) {
-						return this.tone >= 2 && this.attempts < 6;
-					}).target('drafting')
-				)
-				.on(E.timer, (t) => t.target('content'))
-		)
-		.state('ragequitting', (s) =>
-			s
-				.entry((a) => {
-					a.script(function (this: PersistentContributorData) {
-						this.body = rageQuit(source(this));
-					});
-					narrate(a, 'ragequitting', (d) => `Closed ${d.closures} times. Leaving a parting comment on #${d.current}.`);
-					act(a, GH_ACTIONS.comment, (d) => ({ number: d.current, body: d.body }));
-				})
-				.on(E.commented, (t) => t.target('gaveUp'))
-				.on(E.error, (t) => t.target('gaveUp').script(countError))
-		)
-		.final('content', (s) =>
-			s.entry((a) => narrate(a, 'content', (d) => `Content: #${d.current} is still open. (${d.closures} closure(s) along the way.)`))
-		)
-		.final('gaveUp', (s) =>
-			s.entry((a) => narrate(a, 'gaveUp', (d) => `Gave up after ${d.closures} closure(s) and ${d.attempts} issue(s).`))
-		);
-};
+/** After stewing: reopen or file a near-duplicate, even odds. Returns [plan, rng]. */
+function pickPlan(rng: number): [string, number] {
+	const [v, s] = rnd(rng);
+	return [v < 0.5 ? 'reopen' : 'duplicate', s];
+}
+declare function rnd(state: number): [number, number];
+
+/** A closure while waiting: rage-quit at the last one, else stew. */
+const closedWhileWaiting = scxml`
+	<transition event="${E.notifyComment}">${COUNT_NOTIFICATION}</transition>
+	<transition event="${E.notifyClosed}" cond="${'closures + 1 >= maxClosures'}" target="ragequitting">
+		${COUNT_NOTIFICATION}<script>closures += 1; tone += 1;</script>
+	</transition>
+	<transition event="${E.notifyClosed}" target="stewing">
+		${COUNT_NOTIFICATION}<script>closures += 1; tone += 1;</script>
+	</transition>`;
+
+export const persistentContributorChart = personaChart<PersistentContributorData>({
+	kind: KIND,
+	initial: 'arriving',
+	data: { tone: 0, closures: 0, maxClosures: 3, attempts: 0, plan: 'duplicate' },
+	helpers: { toneName, pickPlan },
+	body: scxml`
+<state id="arriving">
+	${timed(500, 5000)}
+	<onentry>
+		<script>[maxClosures, rng] = between(rng, 2, 4);</script>
+		${narrate('arriving', '`Has a feature request and will not take no for an answer (gives up after ${maxClosures} closures).`')}
+	</onentry>
+	<transition event="${E.timer}" target="drafting"/>
+</state>
+<state id="drafting">
+	${timed(1000, 5000)}
+	<onentry>
+		<script>attempts += 1;</script>
+		${draft('persistent', 'tone: tone, attempts: attempts, previous: title')}
+	</onentry>
+	<transition event="${E.drafted}">
+		${TAKE_RNG}
+		<assign location="title" expr="_event.data.title"/>
+		<assign location="body" expr="_event.data.body"/>
+		${narrate('drafting', '`Writing issue #${attempts} in a ${toneName(tone)} tone: "${title}"`')}
+	</transition>
+	<transition event="${E.timer}" target="opening"/>
+</state>
+<state id="opening">
+	<onentry>${act(GH_ACTIONS.open, '{title: title, body: body}')}</onentry>
+	<transition event="${E.opened}" target="waiting">${RECORD_OPENED}</transition>
+	<transition event="${E.error}" target="gaveUp">${COUNT_ERROR}</transition>
+</state>
+<state id="waiting">
+	${timed(15000, 40000)}
+	<onentry>${narrate('waiting', '`Waiting for a maintainer to respond on #${current}…`')}</onentry>
+	${closedWhileWaiting}
+	<transition event="${E.timer}" target="content"/>
+</state>
+<state id="stewing">
+	${timed(2000, 8000)}
+	<onentry>
+		<script>[plan, rng] = pickPlan(rng);</script>
+		${narrate(
+			'stewing',
+			"`Closed again (${closures}×). Now ${toneName(tone)}; will ${plan === 'reopen' ? 'reopen it' : 'open a near-duplicate'}.`"
+		)}
+	</onentry>
+	<transition event="${E.timer}" cond="${"plan === 'reopen'"}" target="reopening"/>
+	<transition event="${E.timer}" target="drafting"/>
+</state>
+<state id="reopening">
+	<onentry>${act(GH_ACTIONS.reopen, '{number: current}')}</onentry>
+	<transition event="${E.reopened}" target="waitingAfterReopen"/>
+	<transition event="${E.error}" target="drafting">${COUNT_ERROR}</transition>
+</state>
+<state id="waitingAfterReopen">
+	${timed(10000, 30000)}
+	<onentry>${narrate('waitingAfterReopen', '`Reopened #${current} themselves. Watching it like a hawk.`')}</onentry>
+	${closedWhileWaiting}
+	<transition event="${E.timer}" cond="${'tone >= 2 && attempts < 6'}" target="drafting"/>
+	<transition event="${E.timer}" target="content"/>
+</state>
+<state id="ragequitting">
+	<onentry>${draft('rage-quit')}</onentry>
+	<transition event="${E.drafted}">
+		${TAKE_RNG}
+		<assign location="body" expr="_event.data.body"/>
+		${narrate('ragequitting', '`Closed ${closures} times. Leaving a parting comment on #${current}.`')}
+		${act(GH_ACTIONS.comment, '{number: current, body: body}')}
+	</transition>
+	<transition event="${E.commented}" target="gaveUp"/>
+	<transition event="${E.error}" target="gaveUp">${COUNT_ERROR}</transition>
+</state>`,
+	finals: {
+		content: '`Content: #${current} is still open. (${closures} closure(s) along the way.)`',
+		gaveUp: '`Gave up after ${closures} closure(s) and ${attempts} issue(s).`'
+	}
+});

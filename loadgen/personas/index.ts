@@ -1,11 +1,14 @@
 /**
- * Persona catalogue (ADR 0071): chart builders, descriptions, expected
- * outcomes and how each kind is bound when it arrives. Not an actor.
+ * Persona catalogue (ADR 0071): chart sources, descriptions, expected
+ * outcomes, how each kind is bound when it arrives, and the texts the
+ * `host` processor writes for a persona's `draft`. Not an actor.
  */
-import type { DefinitionBuilder } from '@tinyactors/node-legacy';
+import type { Source } from '@tinyactors/node';
 import type { ExpectedOutcome, PersonaKind } from '../schemas';
 import { deriveSeed, Rng } from '../rng';
-import type { PersonaBinding } from './common';
+import * as text from '../text';
+import { fuzzCases } from '../fuzz-cases';
+import type { DraftRequest, PersonaBinding } from './common';
 import { slopFixerChart } from './slop-fixer';
 import { persistentContributorChart } from './persistent-contributor';
 import { regularChart } from './regular';
@@ -21,8 +24,8 @@ export interface PersonaKindSpec {
 	title: string;
 	description: string;
 	expected: ExpectedOutcome;
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	chart: () => DefinitionBuilder<any>;
+	/** The kind's SCXML chart (chart name = the kind). */
+	chart: Source;
 	/** Short login prefix. */
 	prefix: string;
 	/** Association (and login override) for arrival `index`. */
@@ -149,4 +152,49 @@ export function personaBinding(opts: {
 
 function identityFor(spec: PersonaKindSpec, rng: Rng, o: { index: number; allowlisted: string[] }) {
 	return spec.identity({ rng, index: o.index, allowlisted: o.allowlisted });
+}
+
+/**
+ * The `host` processor's answer to a persona's `draft`: the texts of
+ * `loadgen/text.ts` drawn from the persona's RNG state, and the state after.
+ */
+export function draftText(req: DraftRequest): { rng: number; title?: string; body?: string; cases?: unknown[] } {
+	const r = new Rng(req.rng >>> 0);
+	const out = (fields: { title?: string; body?: string; cases?: unknown[] }) => ({ ...fields, rng: r.state });
+	switch (req.what) {
+		case 'slop': {
+			const title = text.slopTitle(r);
+			return out({ title, body: text.slopBody(r) });
+		}
+		case 'persistent': {
+			const tone = req.tone ?? 0;
+			const title = text.persistentTitle(r, tone, req.attempts ?? 1, req.previous ?? null);
+			return out({ title, body: text.persistentBody(r, tone) });
+		}
+		case 'rage-quit':
+			return out({ body: text.rageQuit(r) });
+		case 'regular': {
+			const title = text.regularTitle(r);
+			return out({ title, body: text.regularBody(r) });
+		}
+		case 'maintainer': {
+			const title = text.maintainerTitle(r);
+			return out({ title, body: text.regularBody(r) });
+		}
+		case 'follow-up':
+			return out({ body: text.followUp(r) });
+		case 'first-timer':
+			return out({ title: text.firstTimerTitle(r), body: text.firstTimerBody() });
+		case 'polite-reply':
+			return out({ body: text.politeReply(r) });
+		case 'bot': {
+			const title = text.botTitle(r);
+			return out({ title, body: text.botBody(r) });
+		}
+		case 'fuzz-cases': {
+			const all = fuzzCases({ allowlisted: req.allowlisted ?? [], loginPrefix: req.login ?? 'fz' });
+			const shuffled = new Rng(Math.floor(r.float() * 4294967296)).shuffle(all);
+			return out({ cases: shuffled.slice(0, Math.min(all.length, r.int(8, 12))) });
+		}
+	}
 }

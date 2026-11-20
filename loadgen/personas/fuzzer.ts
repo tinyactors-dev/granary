@@ -1,24 +1,12 @@
 /**
  * `fuzzer/<scenario>-<n>` (ADR 0074): works through 8–12 seeded edge cases —
  * odd issues judged by the oracle, open/reopen races, and signed raw
- * webhook bodies that granary must answer < 500 — then is exhausted.
+ * webhook bodies that granary must answer < 500 — then is exhausted. The
+ * host draws the cases (`loadgen/fuzz-cases.ts`) from the persona's seed.
  */
-import { statechart } from '@tinyactors/node-legacy';
-import { Rng } from '../rng';
-import { fuzzCases, type FuzzCase } from '../fuzz-cases';
-import {
-	GH_ACTIONS,
-	PERSONA_EVENTS as E,
-	act,
-	between,
-	countError,
-	declareBase,
-	ev,
-	narrate,
-	rnd,
-	timed,
-	type PersonaBase
-} from './common';
+import { scxml } from '../../src/lib/charts';
+import type { FuzzCase } from '../fuzz-cases';
+import { COUNT_ERROR, GH_ACTIONS, PERSONA_EVENTS as E, TAKE_RNG, act, draft, narrate, personaChart, timed, type PersonaBase } from './common';
 
 export const KIND = 'fuzzer';
 
@@ -28,63 +16,44 @@ export interface FuzzerData extends PersonaBase {
 	lastOutcome: string;
 }
 
-export const fuzzerChart = () => {
-	const b = statechart<FuzzerData>({ family: KIND, revision: 'v1', name: 'fuzzer' });
-	declareBase(b);
-	return b
-		.dataExpression('cases', () => [])
-		.data('index', 0)
-		.data('lastOutcome', '')
-		.initial('preparing')
-		.state('preparing', (s) =>
-			s
-				.entry((a) => {
-					a.script(function (this: FuzzerData) {
-						const all = fuzzCases({ allowlisted: this.allowlisted, loginPrefix: this.login });
-						const shuffled = new Rng(Math.floor(rnd(this) * 4294967296)).shuffle(all);
-						this.cases = shuffled.slice(0, Math.min(all.length, between(this, 8, 12)));
-					});
-					narrate(a, 'preparing', (d) => `Loaded ${d.cases.length} cases: ${d.cases.map((c) => c.name).join(', ')}.`);
-				})
-				.always((t) => t.target('choosing'))
-		)
-		.state('choosing', (s) =>
-			s
-				.always((t) =>
-					t.when(function (this: FuzzerData) {
-						return this.index < this.cases.length;
-					}).target('executing')
-				)
-				.always((t) => t.target('exhausted'))
-		)
-		.state('executing', (s) =>
-			s
-				.entry((a) => {
-					narrate(a, 'executing', (d) => `Case ${d.index + 1}/${d.cases.length}: ${d.cases[d.index]!.type} ${d.cases[d.index]!.name}`);
-					act(a, GH_ACTIONS.fuzz, (d) => ({ case: d.cases[d.index] }));
-				})
-				.on(E.fuzzDone, (t) =>
-					t
-						.script(function (this: FuzzerData, ctx) {
-							this.lastOutcome = ev<{ outcome: string }>(ctx).outcome;
-							this.index += 1;
-						})
-						.target('cooling')
-				)
-				.on(E.error, (t) =>
-					t
-						.script(countError)
-						.script(function (this: FuzzerData, ctx) {
-							this.lastOutcome = `error: ${ev<{ message: string }>(ctx).message}`;
-							this.index += 1;
-						})
-						.target('cooling')
-				)
-		)
-		.state('cooling', (s) =>
-			timed(s, 200, 1500)
-				.entry((a) => narrate(a, 'cooling', (d) => d.lastOutcome))
-				.on(E.timer, (t) => t.target('choosing'))
-		)
-		.final('exhausted', (s) => s.entry((a) => narrate(a, 'exhausted', (d) => `Exhausted ${d.cases.length} case(s).`)));
-};
+export const fuzzerChart = personaChart<FuzzerData>({
+	kind: KIND,
+	initial: 'preparing',
+	data: { cases: [], index: 0, lastOutcome: '' },
+	body: scxml`
+<state id="preparing">
+	<onentry>${draft('fuzz-cases', 'allowlisted: allowlisted, login: login')}</onentry>
+	<transition event="${E.drafted}" target="choosing">
+		${TAKE_RNG}
+		<assign location="cases" expr="_event.data.cases"/>
+		${narrate('preparing', "`Loaded ${cases.length} cases: ${cases.map((c) => c.name).join(', ')}.`")}
+	</transition>
+</state>
+<state id="choosing">
+	<transition cond="${'index < cases.length'}" target="executing"/>
+	<transition target="exhausted"/>
+</state>
+<state id="executing">
+	<onentry>
+		${narrate('executing', '`Case ${index + 1}/${cases.length}: ${cases[index].type} ${cases[index].name}`')}
+		${act(GH_ACTIONS.fuzz, '{case: cases[index]}')}
+	</onentry>
+	<transition event="${E.fuzzDone}" target="cooling">
+		<assign location="lastOutcome" expr="_event.data.outcome"/>
+		<script>index += 1;</script>
+	</transition>
+	<transition event="${E.error}" target="cooling">
+		${COUNT_ERROR}
+		<assign location="lastOutcome" expr="${'`error: ${_event.data.message}`'}"/>
+		<script>index += 1;</script>
+	</transition>
+</state>
+<state id="cooling">
+	${timed(200, 1500)}
+	<onentry>${narrate('cooling', 'lastOutcome')}</onentry>
+	<transition event="${E.timer}" target="choosing"/>
+</state>`,
+	finals: {
+		exhausted: '`Exhausted ${cases.length} case(s).`'
+	}
+});

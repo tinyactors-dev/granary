@@ -1,23 +1,27 @@
 /**
- * The load generator engine (ADR 0070–0074): one tinyactors System with the
+ * The load generator engine (ADR 0070–0074): one tinyactors host with the
  * scenario coordinator and persona actors, the `github` and `host` I/O
  * processors, the fake-GitHub event subscription and per-scenario observers.
  * Used by `server.ts` (HTTP API for the dev portal) and `cli.ts` (headless).
+ *
+ * A persona reports its end through `onDone`: its donedata carries its id,
+ * the final state's name and every variable (`PersonaDone`), frozen here.
  */
-import { createSystem, type ActorAddress, type ActorID, type IORequest, type System } from '@tinyactors/node-legacy';
+import { compileCharts, Host, StaleError, type Actor, type Send, type StateValue, type Value } from '@tinyactors/node';
+import { askActor, postOTLP, telemetryConfig } from '../src/lib/charts/runtime';
 import type { ChartStructure } from '../src/lib/schemas/api';
-import { toChart } from '../src/lib/server/inspect/chart-structure';
 import { toJsonSafe } from '../src/lib/server/inspect/json-safe';
 import type { FakeEvent } from '../fake-github/schemas';
 import { FakeClient } from './fake-client';
 import { subscribeEvents } from './stream';
 import { Observer, type Notification } from './observer';
 import { buildPlan, ConfigProblem, presetInfos, resolveConfig, type Arrival } from './plan';
-import { PERSONAS, personaBinding } from './personas/index';
-import { GH_ACTIONS, GITHUB_IO, HOST_IO, PERSONA_EVENTS } from './personas/common';
+import { draftText, PERSONAS, personaBinding } from './personas/index';
+import { GH_ACTIONS, GITHUB_IO, HOST_IO, HOST_REQUESTS, PERSONA_EVENTS, type DraftRequest, type PersonaDone } from './personas/common';
 import type { ChaosRequest } from './personas/chaos-monkey';
 import type { FuzzCase } from './fuzz-cases';
-import { SCENARIO_EVENTS, SCENARIO_HOST, scenarioAddress, scenarioChart, type ScenarioData } from './actors/scenario';
+import { chartView } from './chart-view';
+import { SCENARIO_EVENTS, SCENARIO_FAMILY, SCENARIO_HOST, scenarioChart, scenarioName, type ScenarioData } from './actors/scenario';
 import {
 	PERSONA_KINDS,
 	type CreateScenarioRequest,
@@ -61,7 +65,8 @@ const TERMINAL: ScenarioState[] = ['finished', 'stopped'];
 interface PersonaRecord {
 	ref: PersonaRef;
 	scenarioId: string;
-	address: ActorAddress;
+	/** The persona's actor; null once it ended or failed to spawn. */
+	actor: Actor | null;
 	arrivedAt: number;
 	timeline: TimelineEntry[];
 	lastNote: string;
@@ -70,7 +75,7 @@ interface PersonaRecord {
 	errors: number;
 	finished: boolean;
 	finalState: string | null;
-	/** Snapshot kept when the actor is no longer resident. */
+	/** Snapshot kept once the actor ended (its donedata) or was stopped. */
 	frozen: { activeStates: string[]; data: unknown } | null;
 }
 
@@ -89,6 +94,8 @@ interface ScenarioRuntime {
 	activeMs: number;
 	segmentStart: number | null;
 	observer: Observer;
+	/** The scenario actor. */
+	actor: Actor | null;
 	personas: Set<string>;
 	log: { at: number; text: string }[];
 	/** Resolved while not paused. */
@@ -99,7 +106,18 @@ interface ScenarioRuntime {
 	finalizing: boolean;
 }
 
-const addressKey = (a: ActorAddress) => `${a.family}/${a.name}`;
+interface Snapshot {
+	activeStates: string[];
+	data: unknown;
+	finalState: string | null;
+	live: boolean;
+}
+
+/** The state ids of a state value, outermost first (`{a: 'b'}` → `['a', 'b']`). */
+function statePath(value: StateValue): string[] {
+	if (typeof value === 'string') return [value];
+	return Object.entries(value).flatMap(([id, child]) => [id, ...statePath(child)]);
+}
 
 export function createLoadgen(opts: LoadgenOptions) {
 	const log = opts.log ?? ((m: string) => console.log(`[loadgen] ${m}`));
@@ -110,57 +128,52 @@ export function createLoadgen(opts: LoadgenOptions) {
 	let activeScenarioId: string | null = null;
 
 	// -------------------------------------------------------------------------
-	// System
+	// Host
 	// -------------------------------------------------------------------------
 
-	const system: System = createSystem({
-		finished: 'retain',
-		done: (record) => onPersonaDone(record.actor, record.finalState),
-		fault: (record) => {
-			const key = addressOfActor(record.actor);
-			log(`actor ${key ?? '?'} faulted in ${record.operation}: ${record.code} ${record.message}`);
-		}
+	/** Who each live actor is, by `String(actor.id)`. */
+	const actorOwners = new Map<string, { persona: string } | { scenario: string }>();
+
+	const compiled = compileCharts([scenarioChart, ...PERSONA_KINDS.map((k) => PERSONAS[k].chart)], { warningsAsErrors: true });
+	const host = new Host(compiled, {
+		system: 'loadgen',
+		config: opts.otlpEndpoint ? telemetryConfig('loadgen', { values: true }) : { system: { ticksPerSecond: 1000 } },
+		...(opts.otlpEndpoint ? { telemetry: postOTLP(opts.otlpEndpoint) } : {}),
+		ioProcessors: {
+			[GITHUB_IO]: { receive: (send: Send) => githubAction(send) },
+			[HOST_IO]: { receive: (send: Send) => hostRequest(send) }
+		},
+		onDone: (actor, donedata) => onActorDone(actor, donedata as PersonaDone | undefined),
+		onError: (actor, error) => {
+			const owner = actorOwners.get(String(actor.id));
+			actorOwners.delete(String(actor.id));
+			log(`actor ${owner ? Object.values(owner)[0] : actor.toString()} failed: ${error.message}`);
+			if (owner && 'persona' in owner) {
+				const p = personas.get(owner.persona);
+				if (p && !p.finished) finish(p, `(failed: ${error.message})`, { activeStates: [], data: null });
+			}
+		},
+		onHandlerError: (error) => log(`handler failed: ${(error as Error)?.message ?? String(error)}`)
 	});
+	compiled.close();
+	if (opts.otlpEndpoint) void host.traceConfigure({ detail: 'summary', values: true });
 
-	if (opts.otlpEndpoint) {
-		const base = opts.otlpEndpoint.replace(/\/+$/, '');
-		const post = (path: string, bytes: Uint8Array) =>
-			fetch(`${base}${path}`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/x-protobuf' },
-				body: bytes as Uint8Array<ArrayBuffer>
-			}).catch(() => undefined);
-		system.setTraceSink(
-			(traces, logs) => {
-				if (traces.byteLength) void post('/v1/traces', traces);
-				if (logs?.byteLength) void post('/v1/logs', logs);
-			},
-			{ detail: 'summary', values: true, resource: { 'service.name': 'loadgen' } }
-		);
+	/** The persona that sent `send`, if it is one of ours. */
+	function personaOf(send: Send): PersonaRecord | undefined {
+		const owner = actorOwners.get(String(send.session));
+		return owner && 'persona' in owner ? personas.get(owner.persona) : undefined;
 	}
 
-	system.registerIO(GITHUB_IO, { send: (req) => githubAction(req) });
-	system.registerIO(HOST_IO, { send: (req) => hostRequest(req) });
-
-	const definitions = Object.fromEntries(PERSONA_KINDS.map((k) => [k, system.define(PERSONAS[k].chart())])) as Record<
-		PersonaKind,
-		ReturnType<System['define']>
-	>;
-	const scenarioDefinition = system.define(scenarioChart());
-
-	function addressOfActor(actor: ActorID): string | null {
+	/** Send to an actor that may have ended meanwhile; false when it has. */
+	function sendTo(actor: Actor | null, event: string, data?: unknown): boolean {
+		if (!actor) return false;
 		try {
-			const i = system.inspect(actor);
-			for (const [key, p] of personas) if (p.address.family === i.definition.family && key === `${i.definition.family}/${p.address.name}` && system.findActor(p.address)?.slot === actor.slot) return key;
-		} catch {
-			/* gone */
+			actor.send(event, data as Value);
+			return true;
+		} catch (e) {
+			if (e instanceof StaleError) return false;
+			throw e;
 		}
-		return null;
-	}
-
-	function sourceKey(source: IORequest['source']): string | null {
-		if ('family' in source) return addressKey(source as ActorAddress);
-		return null;
 	}
 
 	// -------------------------------------------------------------------------
@@ -207,22 +220,21 @@ export function createLoadgen(opts: LoadgenOptions) {
 		const p = personas.get(n.personaId);
 		if (!p) return;
 		note(p, 'notification', n.text, { issueNumber: n.number });
-		if (p.finished || !system.findActor(p.address)) return;
-		system.post(p.address, n.event, n.data);
+		if (p.finished) return;
+		sendTo(p.actor, n.event, n.data);
 	}
 
 	// -------------------------------------------------------------------------
 	// `github` I/O processor: persona actions on the fake GitHub
 	// -------------------------------------------------------------------------
 
-	function reply(p: PersonaRecord, event: string, data: unknown) {
-		if (system.closed || !system.findActor(p.address)) return;
-		system.post(p.address, event, data);
+	/** Answer the persona's action (nothing happens when it ended meanwhile). */
+	function reply(send: Send, event: string, data: unknown) {
+		send.answer(event, data as Value);
 	}
 
-	async function githubAction(req: IORequest): Promise<void> {
-		const key = sourceKey(req.source);
-		const p = key ? personas.get(key) : undefined;
+	async function githubAction(req: Send): Promise<void> {
+		const p = personaOf(req);
 		if (!p) return;
 		const s = scenarios.get(p.scenarioId);
 		if (!s) return;
@@ -236,7 +248,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 				case GH_ACTIONS.user: {
 					const u = await fake.ensureUser(String(data.login ?? p.ref.login), data.type === 'Bot' ? 'Bot' : 'User');
 					note(p, 'result', `Registered ${u.login} (${u.type}).`);
-					reply(p, PERSONA_EVENTS.userOk, { login: u.login });
+					reply(req, PERSONA_EVENTS.userOk, { login: u.login });
 					return;
 				}
 				case GH_ACTIONS.open: {
@@ -246,7 +258,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 						login: typeof data.login === 'string' ? data.login : p.ref.login,
 						association: typeof data.association === 'string' ? data.association : undefined
 					});
-					reply(p, PERSONA_EVENTS.opened, opened.reply);
+					reply(req, PERSONA_EVENTS.opened, opened.reply);
 					for (const n of opened.queued) deliverNotification(n);
 					return;
 				}
@@ -255,7 +267,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 					note(p, 'action', `Reopening #${number}.`, { issueNumber: number });
 					const r = await fake.reopen({ owner: s.owner, repo: s.repo, number, actor: p.ref.login });
 					note(p, 'result', `Reopened #${number} (delivery ${r.deliveryId?.slice(0, 8) ?? 'none'}).`, { issueNumber: number });
-					reply(p, PERSONA_EVENTS.reopened, { number });
+					reply(req, PERSONA_EVENTS.reopened, { number });
 					return;
 				}
 				case GH_ACTIONS.comment: {
@@ -263,19 +275,19 @@ export function createLoadgen(opts: LoadgenOptions) {
 					const body = String(data.body ?? '…');
 					note(p, 'action', `Commenting on #${number}: “${body.slice(0, 100)}”`, { issueNumber: number });
 					const r = await fake.comment({ owner: s.owner, repo: s.repo, number, author: p.ref.login, body });
-					reply(p, PERSONA_EVENTS.commented, { number, commentId: r.commentId });
+					reply(req, PERSONA_EVENTS.commented, { number, commentId: r.commentId });
 					return;
 				}
 				case GH_ACTIONS.chaos: {
 					const outcome = await chaos(s, p, data as unknown as ChaosRequest);
 					note(p, 'result', outcome);
-					reply(p, PERSONA_EVENTS.chaosDone, { outcome });
+					reply(req, PERSONA_EVENTS.chaosDone, { outcome });
 					return;
 				}
 				case GH_ACTIONS.fuzz: {
 					const outcome = await fuzz(s, p, data.case as FuzzCase);
 					note(p, 'result', outcome);
-					reply(p, PERSONA_EVENTS.fuzzDone, { outcome });
+					reply(req, PERSONA_EVENTS.fuzzDone, { outcome });
 					return;
 				}
 				default:
@@ -286,7 +298,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 			p.errors += 1;
 			s.observer.personaErrors += 1;
 			note(p, 'error', `${req.event} failed: ${message}`);
-			reply(p, PERSONA_EVENTS.error, { action: req.event, message });
+			reply(req, PERSONA_EVENTS.error, { action: req.event, message });
 		}
 	}
 
@@ -370,18 +382,21 @@ export function createLoadgen(opts: LoadgenOptions) {
 	// `host` I/O processor: narration and scenario coordination
 	// -------------------------------------------------------------------------
 
-	function hostRequest(req: IORequest): void {
-		const key = sourceKey(req.source);
-		if (!key) return;
+	function hostRequest(req: Send): void {
+		const owner = actorOwners.get(String(req.session));
+		if (!owner) return;
 		const data = (req.data ?? {}) as Record<string, unknown>;
-		const persona = personas.get(key);
-		if (persona && req.event === 'narrate') {
-			note(persona, 'narration', String(data.note ?? ''), { state: typeof data.state === 'string' ? data.state : null });
+		if ('persona' in owner) {
+			const persona = personas.get(owner.persona);
+			if (!persona) return;
+			if (req.event === HOST_REQUESTS.narrate) {
+				note(persona, 'narration', String(data.note ?? ''), { state: typeof data.state === 'string' ? data.state : null });
+			} else if (req.event === HOST_REQUESTS.draft) {
+				req.answer(PERSONA_EVENTS.drafted, draftText(data as unknown as DraftRequest) as Value);
+			}
 			return;
 		}
-		const address = req.source as ActorAddress;
-		if (address.family !== 'scenario') return;
-		const s = scenarios.get(address.name);
+		const s = scenarios.get(owner.scenario);
 		if (!s) return;
 		switch (req.event) {
 			case SCENARIO_HOST.state:
@@ -436,12 +451,11 @@ export function createLoadgen(opts: LoadgenOptions) {
 			timeScale: s.config.timeScale,
 			allowlisted: opts.allowlisted
 		});
-		const address = { family: arrival.kind, name: b.name };
 		const { name, ...binding } = b;
 		const record: PersonaRecord = {
 			ref: { id: b.id, kind: arrival.kind, name, login: b.login },
 			scenarioId: s.id,
-			address,
+			actor: null,
 			arrivedAt: Date.now(),
 			timeline: [],
 			lastNote: '',
@@ -457,7 +471,8 @@ export function createLoadgen(opts: LoadgenOptions) {
 		s.spawned[index] = b.id;
 		note(record, 'narration', `Arrived as ${b.login} (${b.association}).`, { state: null });
 		try {
-			system.spawn(definitions[arrival.kind], { address, binding: binding as never });
+			record.actor = host.spawn(arrival.kind, { name: b.id, params: binding as unknown as Value });
+			actorOwners.set(String(record.actor.id), { persona: b.id });
 		} catch (e) {
 			record.finished = true;
 			record.finalState = '(failed to spawn)';
@@ -465,19 +480,19 @@ export function createLoadgen(opts: LoadgenOptions) {
 		}
 	}
 
-	function snapshotOf(p: PersonaRecord): { activeStates: string[]; data: unknown; finalState: string | null; live: boolean } {
-		const actor = system.findActor(p.address);
-		if (actor) {
+	/** The persona's live state and variables, or what was frozen when it ended. */
+	async function snapshotOf(p: PersonaRecord): Promise<Snapshot> {
+		if (p.actor && !p.frozen) {
 			try {
-				const i = system.inspect(actor);
+				const [state, context] = await Promise.all([p.actor.state(), p.actor.context()]);
 				return {
-					activeStates: [...i.activeStates],
-					data: toJsonSafe(i.data, { maxString: 2000 }),
-					finalState: i.finalState,
+					activeStates: statePath(state.value),
+					data: toJsonSafe(context.variables, { maxString: 2000 }),
+					finalState: null,
 					live: true
 				};
 			} catch {
-				/* fall through */
+				/* ended meanwhile: fall through */
 			}
 		}
 		return {
@@ -488,19 +503,23 @@ export function createLoadgen(opts: LoadgenOptions) {
 		};
 	}
 
-	function onPersonaDone(actor: ActorID, finalState: string) {
-		for (const p of personas.values()) {
-			if (p.finished) continue;
-			const found = system.findActor(p.address);
-			if (!found || found.slot !== actor.slot || found.generation !== actor.generation) continue;
-			p.finished = true;
-			p.finalState = finalState;
-			const snap = snapshotOf(p);
-			p.frozen = { activeStates: snap.activeStates, data: snap.data };
-			const s = scenarios.get(p.scenarioId);
-			if (s) checkPersonasDone(s);
-			return;
-		}
+	/** The persona ended: keep its final state and snapshot (unless stopping it already froze one). */
+	function finish(p: PersonaRecord, finalState: string, frozen: PersonaRecord['frozen']) {
+		p.finished = true;
+		p.finalState ??= finalState;
+		p.frozen ??= frozen;
+		p.actor = null;
+		const s = scenarios.get(p.scenarioId);
+		if (s) checkPersonasDone(s);
+	}
+
+	function onActorDone(actor: Actor, done: PersonaDone | undefined) {
+		const owner = actorOwners.get(String(actor.id));
+		actorOwners.delete(String(actor.id));
+		if (!owner || !('persona' in owner) || !done) return;
+		const p = personas.get(done.persona);
+		if (!p) return;
+		finish(p, done.final, { activeStates: [done.final], data: toJsonSafe(done.data, { maxString: 2000 }) });
 	}
 
 	function checkPersonasDone(s: ScenarioRuntime) {
@@ -510,27 +529,35 @@ export function createLoadgen(opts: LoadgenOptions) {
 		for (const id of s.personas) if (!personas.get(id)?.finished) return;
 		if (s.state === 'running' && !s.spawned.every(Boolean)) return;
 		s.personasDoneSent = true;
-		system.post(scenarioAddress(s.id), SCENARIO_EVENTS.personasDone);
+		sendTo(s.actor, SCENARIO_EVENTS.personasDone);
 	}
 
-	function stopPersonas(s: ScenarioRuntime, reason: string) {
+	/** Stop every persona of `s` still running: mark it finished now, freeze its snapshot, then end its actor. */
+	function stopPersonas(s: ScenarioRuntime, reason: string): Promise<void> {
+		const stopping: Promise<void>[] = [];
 		for (const id of s.personas) {
 			const p = personas.get(id);
 			if (!p || p.finished) continue;
-			const snap = snapshotOf(p);
-			p.frozen = { activeStates: snap.activeStates, data: snap.data };
 			p.finished = true;
 			p.finalState = `(stopped: ${reason})`;
-			note(p, 'narration', `Stopped by the scenario (${reason}) while ${snap.activeStates.join(', ') || '?'}.`);
-			const actor = system.findActor(p.address);
-			if (actor) {
-				try {
-					system.destroy(actor);
-				} catch {
-					/* already gone */
-				}
-			}
+			stopping.push(
+				(async () => {
+					const snap = await snapshotOf(p);
+					p.frozen ??= { activeStates: snap.activeStates, data: snap.data };
+					note(p, 'narration', `Stopped by the scenario (${reason}) while ${snap.activeStates.join(', ') || '?'}.`);
+					const actor = p.actor;
+					p.actor = null;
+					if (!actor) return;
+					actorOwners.delete(String(actor.id));
+					try {
+						actor.terminate();
+					} catch {
+						/* already gone */
+					}
+				})()
+			);
 		}
+		return Promise.all(stopping).then(() => undefined);
 	}
 
 	async function finalize(s: ScenarioRuntime) {
@@ -542,7 +569,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 			s.gate = null;
 			s.openGate = null;
 		}
-		stopPersonas(s, s.state);
+		await stopPersonas(s, s.state);
 		// Let the last events arrive, then reconcile against the authoritative state.
 		await Bun.sleep(300);
 		let state = null;
@@ -570,7 +597,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 			if (s.state === 'draining') checkPersonasDone(s);
 			if (s.state === 'settling' && !s.settledSent && s.observer.pending() === 0) {
 				s.settledSent = true;
-				system.post(scenarioAddress(s.id), SCENARIO_EVENTS.observerSettled);
+				sendTo(s.actor, SCENARIO_EVENTS.observerSettled);
 			}
 		}
 	}, 1000);
@@ -612,9 +639,9 @@ export function createLoadgen(opts: LoadgenOptions) {
 		};
 	}
 
-	function personaSummary(p: PersonaRecord): PersonaSummary {
+	async function personaSummary(p: PersonaRecord, snap?: Snapshot): Promise<PersonaSummary> {
 		const s = scenarios.get(p.scenarioId);
-		const snap = snapshotOf(p);
+		snap ??= await snapshotOf(p);
 		const [opened, closed] = s ? s.observer.issueCounts(p.ref.id) : [0, 0];
 		return {
 			id: p.ref.id,
@@ -641,7 +668,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 		let c = charts.get(kind);
 		if (!c) {
 			const file = kind === 'regular' || kind === 'maintainer' || kind === 'member' ? `loadgen/personas/${kind}.ts (shape: trusted.ts)` : `loadgen/personas/${kind}.ts`;
-			c = toChart(PERSONAS[kind].chart().build(), kind, 'v1', file);
+			c = chartView(PERSONAS[kind].chart, { family: kind, revision: 'v1', sourceFile: file });
 			charts.set(kind, c);
 		}
 		return c;
@@ -654,7 +681,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 	}
 
 	return {
-		system,
+		host,
 		fake,
 		ready: streamReady,
 
@@ -711,6 +738,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 				endedAt: null,
 				activeMs: 0,
 				segmentStart: null,
+				actor: null,
 				observer: new Observer({
 					owner: 'loadgen',
 					repo: `load-${id}`,
@@ -736,7 +764,8 @@ export function createLoadgen(opts: LoadgenOptions) {
 				drainTimeoutMs: Math.max(30_000, config.closeDeadlineMs * 2),
 				settleTimeoutMs: config.closeDeadlineMs + config.faultGraceMs + 10_000
 			};
-			system.spawn(scenarioDefinition, { address: scenarioAddress(id), binding });
+			s.actor = host.spawn(SCENARIO_FAMILY, { name: scenarioName(id), params: binding as unknown as Value });
+			actorOwners.set(String(s.actor.id), { scenario: id });
 			if (req.start) await this.control(id, 'start');
 			return summary(s);
 		},
@@ -759,7 +788,8 @@ export function createLoadgen(opts: LoadgenOptions) {
 				activeScenarioId = id;
 			}
 			const event = { start: SCENARIO_EVENTS.start, pause: SCENARIO_EVENTS.pause, resume: SCENARIO_EVENTS.resume, stop: SCENARIO_EVENTS.stop }[action];
-			await system.send(scenarioAddress(id), event, undefined, { timeout: 5000 }).catch((e: Error) => {
+			if (!s.actor) throw new LoadgenError(409, `Scenario ${id} cannot ${action}: it has ended.`);
+			await askActor(host, s.actor, event, undefined, 5000).catch((e: Error) => {
 				throw new LoadgenError(409, `Scenario ${id} cannot ${action}: ${e.message}`);
 			});
 			return summary(s);
@@ -769,7 +799,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 			return [...scenarios.values()].sort((a, b) => b.createdAt - a.createdAt).map(summary);
 		},
 
-		getScenario(id: string): ScenarioDetail {
+		async getScenario(id: string): Promise<ScenarioDetail> {
 			const s = scenarioOr404(id);
 			const counts = new Map<PersonaKind, PersonaKindCount>();
 			for (const pid of s.personas) {
@@ -778,7 +808,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 				const c = counts.get(p.ref.kind) ?? { kind: p.ref.kind, arrived: 0, active: 0, states: {} };
 				c.arrived++;
 				if (!p.finished) c.active++;
-				const snap = snapshotOf(p);
+				const snap = await snapshotOf(p);
 				const leaf = p.finalState && !snap.live ? p.finalState : snap.activeStates[snap.activeStates.length - 1] ?? p.finalState ?? '?';
 				c.states[leaf] = (c.states[leaf] ?? 0) + 1;
 				counts.set(p.ref.kind, c);
@@ -796,24 +826,20 @@ export function createLoadgen(opts: LoadgenOptions) {
 			};
 		},
 
-		listPersonas(q: { scenarioId?: string; kind?: PersonaKind } = {}): PersonaSummary[] {
-			const out: PersonaSummary[] = [];
-			for (const p of personas.values()) {
-				if (q.scenarioId && p.scenarioId !== q.scenarioId) continue;
-				if (q.kind && p.ref.kind !== q.kind) continue;
-				out.push(personaSummary(p));
-			}
+		async listPersonas(q: { scenarioId?: string; kind?: PersonaKind } = {}): Promise<PersonaSummary[]> {
+			const selected = [...personas.values()].filter((p) => (!q.scenarioId || p.scenarioId === q.scenarioId) && (!q.kind || p.ref.kind === q.kind));
+			const out = await Promise.all(selected.map((p) => personaSummary(p)));
 			return out.sort((a, b) => a.arrivedAt - b.arrivedAt);
 		},
 
-		getPersona(kind: string, name: string): PersonaDetail {
+		async getPersona(kind: string, name: string): Promise<PersonaDetail> {
 			const p = personas.get(`${kind}/${name}`);
 			if (!p) throw new LoadgenError(404, `Unknown persona ${kind}/${name}`);
 			const s = scenarios.get(p.scenarioId);
-			const snap = snapshotOf(p);
+			const snap = await snapshotOf(p);
 			const spec = PERSONAS[p.ref.kind];
 			return {
-				summary: personaSummary(p),
+				summary: await personaSummary(p, snap),
 				data: snap.data,
 				chart: chartOf(p.ref.kind),
 				timeline: [...p.timeline].reverse(),
@@ -823,15 +849,16 @@ export function createLoadgen(opts: LoadgenOptions) {
 		},
 
 		/** Stop the active scenario, forget everything. */
-		reset() {
-			for (const s of scenarios.values()) if (!TERMINAL.includes(s.state)) stopPersonas(s, 'reset');
-			for (const a of [...system.actors()]) {
+		async reset() {
+			for (const s of scenarios.values()) if (!TERMINAL.includes(s.state)) await stopPersonas(s, 'reset');
+			for (const a of await host.actors()) {
 				try {
-					if (system.exists(a.actor)) system.destroy(a.actor);
+					a.terminate();
 				} catch {
 					/* gone */
 				}
 			}
+			actorOwners.clear();
 			scenarios.clear();
 			personas.clear();
 			activeScenarioId = null;
@@ -842,15 +869,16 @@ export function createLoadgen(opts: LoadgenOptions) {
 			for (;;) {
 				const s = scenarioOr404(id);
 				onTick?.(summary(s));
-				if (TERMINAL.includes(s.state) && !s.finalizing && s.endedAt !== null) return this.getScenario(id);
+				if (TERMINAL.includes(s.state) && !s.finalizing && s.endedAt !== null) return await this.getScenario(id);
 				await Bun.sleep(intervalMs);
 			}
 		},
 
-		close() {
+		/** Stop, and close the host once its last spans are exported. */
+		async close(): Promise<void> {
 			clearInterval(ticker);
 			stream?.close();
-			system.close();
+			await host[Symbol.asyncDispose]();
 		}
 	};
 }

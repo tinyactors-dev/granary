@@ -3,18 +3,17 @@
  * floods 5–15 dependabot-style issues in quick succession.
  * Expected: every issue closed (bots are not special, ADR 0004).
  */
-import { statechart } from '@tinyactors/node-legacy';
-import { botBody, botTitle } from '../text';
+import { scxml } from '../../src/lib/charts';
 import {
+	COUNT_ERROR,
 	GH_ACTIONS,
 	PERSONA_EVENTS as E,
+	RECORD_OPENED,
+	TAKE_RNG,
 	act,
-	between,
-	countError,
-	declareBase,
+	draft,
 	narrate,
-	recordOpened,
-	source,
+	personaChart,
 	timed,
 	type PersonaBase
 } from './common';
@@ -25,45 +24,37 @@ export interface BotData extends PersonaBase {
 	floodSize: number;
 }
 
-export const botChart = () => {
-	const b = statechart<BotData>({ family: KIND, revision: 'v1', name: 'flooding bot' });
-	declareBase(b);
-	return b
-		.data('floodSize', 5)
-		.initial('booting')
-		.state('booting', (s) =>
-			s
-				.entry((a) => {
-					a.script(function (this: BotData) {
-						this.floodSize = between(this, 5, 15);
-					});
-					narrate(a, 'booting', (d) => `Bot ${d.login} registering; will open ${d.floodSize} issues.`);
-					act(a, GH_ACTIONS.user, (d) => ({ login: d.login, type: 'Bot' }));
-				})
-				.on(E.userOk, (t) => t.target('flooding'))
-				.on(E.error, (t) => t.target('sleeping').script(countError))
-		)
-		.state('flooding', (s) => timed(s, 200, 1500).on(E.timer, (t) => t.target('posting')))
-		.state('posting', (s) =>
-			s
-				.entry((a) => {
-					a.script(function (this: BotData) {
-						const r = source(this);
-						this.title = botTitle(r);
-						this.body = botBody(r);
-					});
-					act(a, GH_ACTIONS.open, (d) => ({ title: d.title, body: d.body }));
-				})
-				.on(E.opened, (t) =>
-					t
-						.when(function (this: BotData) {
-							return this.opened + 1 < this.floodSize;
-						})
-						.target('flooding')
-						.script(recordOpened)
-				)
-				.on(E.opened, (t) => t.target('sleeping').script(recordOpened))
-				.on(E.error, (t) => t.target('sleeping').script(countError))
-		)
-		.final('sleeping', (s) => s.entry((a) => narrate(a, 'sleeping', (d) => `Flood done: ${d.opened} issue(s).`)));
-};
+export const botChart = personaChart<BotData>({
+	kind: KIND,
+	initial: 'booting',
+	data: { floodSize: 5 },
+	body: scxml`
+<state id="booting">
+	<onentry>
+		<script>[floodSize, rng] = between(rng, 5, 15);</script>
+		${narrate('booting', '`Bot ${login} registering; will open ${floodSize} issues.`')}
+		${act(GH_ACTIONS.user, "{login: login, type: 'Bot'}")}
+	</onentry>
+	<transition event="${E.userOk}" target="flooding"/>
+	<transition event="${E.error}" target="sleeping">${COUNT_ERROR}</transition>
+</state>
+<state id="flooding">
+	${timed(200, 1500)}
+	<transition event="${E.timer}" target="posting"/>
+</state>
+<state id="posting">
+	<onentry>${draft('bot')}</onentry>
+	<transition event="${E.drafted}">
+		${TAKE_RNG}
+		<assign location="title" expr="_event.data.title"/>
+		<assign location="body" expr="_event.data.body"/>
+		${act(GH_ACTIONS.open, '{title: title, body: body}')}
+	</transition>
+	<transition event="${E.opened}" cond="${'opened + 1 < floodSize'}" target="flooding">${RECORD_OPENED}</transition>
+	<transition event="${E.opened}" target="sleeping">${RECORD_OPENED}</transition>
+	<transition event="${E.error}" target="sleeping">${COUNT_ERROR}</transition>
+</state>`,
+	finals: {
+		sleeping: '`Flood done: ${opened} issue(s).`'
+	}
+});

@@ -1,30 +1,24 @@
 /**
  * The chart shape shared by trusted personas — `regular`, `maintainer`,
  * `member` (ADR 0071). Not an actor itself: each persona file calls
- * `trustedChart` with its own family, texts and narration.
+ * `trustedChart` with its own kind, texts and narration.
  *
  * arriving → drafting → opening → watching → (commenting) → drafting … → done;
  * a closure while watching → wronglyClosed (granary broke its promise).
  */
-import { statechart } from '@tinyactors/node-legacy';
-import type { RandomSource } from '../rng';
-import { followUp } from '../text';
+import { lit, scxml } from '../../src/lib/charts';
 import {
+	COUNT_ERROR,
+	COUNT_NOTIFICATION,
 	GH_ACTIONS,
 	PERSONA_EVENTS as E,
+	RECORD_OPENED,
+	TAKE_RNG,
 	act,
-	between,
-	chance,
-	countError,
-	countNotification,
-	declareBase,
-	ev,
+	draft,
 	narrate,
-	recordOpened,
-	source,
+	personaChart,
 	timed,
-	type NotifyClosedData,
-	type NotifyCommentData,
 	type PersonaBase
 } from './common';
 
@@ -38,111 +32,86 @@ export interface TrustedData extends PersonaBase {
 
 export interface TrustedOptions {
 	kind: 'regular' | 'maintainer' | 'member';
-	name: string;
-	title: (r: RandomSource) => string;
-	body: (r: RandomSource) => string;
+	/** Which texts the host writes (`loadgen/text.ts`). */
+	texts: 'regular' | 'maintainer';
 	who: string;
 }
 
-export const trustedChart = (o: TrustedOptions) => {
-	const b = statechart<TrustedData>({ family: o.kind, revision: 'v1', name: o.name });
-	declareBase(b);
-	return b
-		.data('planned', 1)
-		.data('next', 'done')
-		.data('commented', 0)
-		.data('closedBy', null)
-		.data('unexpectedComments', 0)
-		.initial('arriving')
-		.state('arriving', (s) =>
-			timed(s, 1000, 5000)
-				.entry((a) => {
-					a.script(function (this: TrustedData) {
-						this.planned = between(this, 1, 3);
-					});
-					narrate(a, 'arriving', (d) => `${o.who} (${d.login}, ${d.association}) plans ${d.planned} issue(s).`);
-				})
-				.on(E.timer, (t) => t.target('drafting'))
-		)
-		.state('drafting', (s) =>
-			timed(s, 2000, 6000)
-				.entry((a) => {
-					a.script(function (this: TrustedData) {
-						const r = source(this);
-						this.title = o.title(r);
-						this.body = o.body(r);
-					});
-					narrate(a, 'drafting', (d) => `Writing: "${d.title}"`);
-				})
-				.on(E.timer, (t) => t.target('opening'))
-		)
-		.state('opening', (s) =>
-			s
-				.entry((a) => act(a, GH_ACTIONS.open, (d) => ({ title: d.title, body: d.body, association: d.association })))
-				.on(E.opened, (t) => t.target('watching').script(recordOpened))
-				.on(E.error, (t) => t.target('done').script(countError))
-		)
-		.state('watching', (s) =>
-			timed(s, 5000, 15000)
-				.entry((a) => narrate(a, 'watching', (d) => `Opened #${d.current}; expects it to stay open.`))
-				.on(E.notifyClosed, (t) =>
-					t
-						.target('wronglyClosed')
-						.script(countNotification)
-						.script(function (this: TrustedData, ctx) {
-							this.closedBy = ev<NotifyClosedData>(ctx).by;
-						})
-				)
-				.on(E.notifyComment, (t) =>
-					t.script(countNotification).script(function (this: TrustedData, ctx) {
-						if (ev<NotifyCommentData>(ctx).byGranary) this.unexpectedComments += 1;
-					})
-				)
-				.on(E.timer, (t) =>
-					t
-						.script(function (this: TrustedData) {
-							if (this.commented < this.opened && chance(this, 0.5)) this.next = 'comment';
-							else this.next = this.opened < this.planned ? 'draft' : 'done';
-						})
-						.target('deciding')
-				)
-		)
-		.state('deciding', (s) =>
-			s
-				.always((t) =>
-					t.when(function (this: TrustedData) {
-						return this.next === 'comment';
-					}).target('commenting')
-				)
-				.always((t) =>
-					t.when(function (this: TrustedData) {
-						return this.next === 'draft';
-					}).target('drafting')
-				)
-				.always((t) => t.target('done'))
-		)
-		.state('commenting', (s) =>
-			s
-				.entry((a) => {
-					a.script(function (this: TrustedData) {
-						this.body = followUp(source(this));
-					});
-					narrate(a, 'commenting', (d) => `Adding a follow-up on #${d.current}.`);
-					act(a, GH_ACTIONS.comment, (d) => ({ number: d.current, body: d.body }));
-				})
-				.on(E.commented, (t) =>
-					t
-						.script(function (this: TrustedData) {
-							this.commented += 1;
-						})
-						.target('watching')
-				)
-				.on(E.error, (t) => t.target('watching').script(countError))
-		)
-		.final('wronglyClosed', (s) =>
-			s.entry((a) => narrate(a, 'wronglyClosed', (d) => `WRONGLY CLOSED: #${d.current} was closed by ${d.closedBy}.`))
-		)
-		.final('done', (s) =>
-			s.entry((a) => narrate(a, 'done', (d) => `Done: ${d.opened} issue(s), all still open.`))
-		);
-};
+/** After watching: comment (half the time, while some issue has no follow-up), draft another, or be done. Returns [next, rng]. */
+function decideNext(rng: number, commented: number, opened: number, planned: number): [string, number] {
+	if (commented < opened) {
+		const [yes, s] = chance(rng, 0.5);
+		if (yes) return ['comment', s];
+		rng = s;
+	}
+	return [opened < planned ? 'draft' : 'done', rng];
+}
+declare function chance(state: number, p: number): [boolean, number];
+
+export const trustedChart = (o: TrustedOptions) =>
+	personaChart<TrustedData>({
+		kind: o.kind,
+		initial: 'arriving',
+		data: { planned: 1, next: 'done', commented: 0, closedBy: null, unexpectedComments: 0 },
+		helpers: { decideNext },
+		body: scxml`
+<state id="arriving">
+	${timed(1000, 5000)}
+	<onentry>
+		<script>[planned, rng] = between(rng, 1, 3);</script>
+		${narrate('arriving', `${lit(o.who)} + \` (\${login}, \${association}) plans \${planned} issue(s).\``)}
+	</onentry>
+	<transition event="${E.timer}" target="drafting"/>
+</state>
+<state id="drafting">
+	${timed(2000, 6000)}
+	<onentry>${draft(o.texts)}</onentry>
+	<transition event="${E.drafted}">
+		${TAKE_RNG}
+		<assign location="title" expr="_event.data.title"/>
+		<assign location="body" expr="_event.data.body"/>
+		${narrate('drafting', '`Writing: "${title}"`')}
+	</transition>
+	<transition event="${E.timer}" target="opening"/>
+</state>
+<state id="opening">
+	<onentry>${act(GH_ACTIONS.open, '{title: title, body: body, association: association}')}</onentry>
+	<transition event="${E.opened}" target="watching">${RECORD_OPENED}</transition>
+	<transition event="${E.error}" target="done">${COUNT_ERROR}</transition>
+</state>
+<state id="watching">
+	${timed(5000, 15000)}
+	<onentry>${narrate('watching', '`Opened #${current}; expects it to stay open.`')}</onentry>
+	<transition event="${E.notifyClosed}" target="wronglyClosed">
+		${COUNT_NOTIFICATION}
+		<assign location="closedBy" expr="_event.data.by"/>
+	</transition>
+	<transition event="${E.notifyComment}">
+		${COUNT_NOTIFICATION}
+		<if cond="_event.data.byGranary"><script>unexpectedComments += 1;</script></if>
+	</transition>
+	<transition event="${E.timer}" target="deciding">
+		<script>[next, rng] = decideNext(rng, commented, opened, planned);</script>
+	</transition>
+</state>
+<state id="deciding">
+	<transition cond="${"next === 'comment'"}" target="commenting"/>
+	<transition cond="${"next === 'draft'"}" target="drafting"/>
+	<transition target="done"/>
+</state>
+<state id="commenting">
+	<onentry>${draft('follow-up')}</onentry>
+	<transition event="${E.drafted}">
+		${TAKE_RNG}
+		<assign location="body" expr="_event.data.body"/>
+		${narrate('commenting', '`Adding a follow-up on #${current}.`')}
+		${act(GH_ACTIONS.comment, '{number: current, body: body}')}
+	</transition>
+	<transition event="${E.commented}" target="watching"><script>commented += 1;</script></transition>
+	<transition event="${E.error}" target="watching">${COUNT_ERROR}</transition>
+</state>`,
+		finals: {
+			wronglyClosed: '`WRONGLY CLOSED: #${current} was closed by ${closedBy}.`',
+			done: '`Done: ${opened} issue(s), all still open.`'
+		}
+	});

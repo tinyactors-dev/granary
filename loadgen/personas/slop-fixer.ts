@@ -4,22 +4,19 @@
  * emoji), never reads or answers anything, then vanishes.
  * Expected: granary closes every issue.
  */
-import { statechart } from '@tinyactors/node-legacy';
-import { slopBody, slopTitle } from '../text';
+import { scxml } from '../../src/lib/charts';
 import {
+	COUNT_ERROR,
+	COUNT_NOTIFICATION,
 	GH_ACTIONS,
 	PERSONA_EVENTS as E,
+	RECORD_OPENED,
+	TAKE_RNG,
 	act,
-	between,
-	countError,
-	countNotification,
-	declareBase,
-	ev,
+	draft,
 	narrate,
-	recordOpened,
-	source,
+	personaChart,
 	timed,
-	type NotifyClosedData,
 	type PersonaBase
 } from './common';
 
@@ -31,65 +28,44 @@ export interface SlopFixerData extends PersonaBase {
 	ignored: number;
 }
 
-export const slopFixerChart = () => {
-	const b = statechart<SlopFixerData>({ family: KIND, revision: 'v1', name: 'drive-by slop fixer' });
-	declareBase(b);
-	return b
-		.data('burst', 1)
-		.data('ignored', 0)
-		.initial('arriving')
-		.state('arriving', (s) =>
-			timed(s, 500, 4000)
-				.entry((a) => {
-					a.script(function (this: SlopFixerData) {
-						this.burst = between(this, 1, 3);
-					});
-					narrate(a, 'arriving', (d) => `Found the repo. Plans to "fix" it with ${d.burst} issue(s).`);
-				})
-				.on(E.timer, (t) => t.target('drafting'))
-		)
-		.state('drafting', (s) =>
-			timed(s, 2000, 8000)
-				.entry((a) => {
-					a.script(function (this: SlopFixerData) {
-						const r = source(this);
-						this.title = slopTitle(r);
-						this.body = slopBody(r);
-					});
-					narrate(a, 'drafting', (d) => `Pasting ${Math.round((d.body?.length ?? 0) / 1024)} KB of generated text and logs.`);
-				})
-				.on(E.timer, (t) => t.target('opening'))
-		)
-		.state('opening', (s) =>
-			s
-				.entry((a) => act(a, GH_ACTIONS.open, (d) => ({ title: d.title, body: d.body })))
-				.on(E.opened, (t) => t.target('lurking').script(recordOpened))
-				.on(E.error, (t) => t.target('vanished').script(countError))
-		)
-		.state('lurking', (s) =>
-			timed(s, 5000, 20000)
-				.entry((a) => narrate(a, 'lurking', (d) => `Opened #${d.current}. Will not read any replies.`))
-				.on(E.notifyClosed, (t) =>
-					t.script(countNotification).script(function (this: SlopFixerData, ctx) {
-						this.ignored += 1;
-						void ev<NotifyClosedData>(ctx);
-					})
-				)
-				.on(E.notifyComment, (t) =>
-					t.script(countNotification).script(function (this: SlopFixerData) {
-						this.ignored += 1;
-					})
-				)
-				.on(E.timer, (t) =>
-					t.when(function (this: SlopFixerData) {
-						return this.opened < this.burst;
-					}).target('drafting')
-				)
-				.on(E.timer, (t) => t.target('vanished'))
-		)
-		.final('vanished', (s) =>
-			s.entry((a) =>
-				narrate(a, 'vanished', (d) => `Vanished. Opened ${d.opened} issue(s), ignored ${d.ignored} notification(s).`)
-			)
-		);
-};
+export const slopFixerChart = personaChart<SlopFixerData>({
+	kind: KIND,
+	initial: 'arriving',
+	data: { burst: 1, ignored: 0 },
+	body: scxml`
+<state id="arriving">
+	${timed(500, 4000)}
+	<onentry>
+		<script>[burst, rng] = between(rng, 1, 3);</script>
+		${narrate('arriving', '`Found the repo. Plans to "fix" it with ${burst} issue(s).`')}
+	</onentry>
+	<transition event="${E.timer}" target="drafting"/>
+</state>
+<state id="drafting">
+	${timed(2000, 8000)}
+	<onentry>${draft('slop')}</onentry>
+	<transition event="${E.drafted}">
+		${TAKE_RNG}
+		<assign location="title" expr="_event.data.title"/>
+		<assign location="body" expr="_event.data.body"/>
+		${narrate('drafting', '`Pasting ${Math.round((body ? body.length : 0) / 1024)} KB of generated text and logs.`')}
+	</transition>
+	<transition event="${E.timer}" target="opening"/>
+</state>
+<state id="opening">
+	<onentry>${act(GH_ACTIONS.open, '{title: title, body: body}')}</onentry>
+	<transition event="${E.opened}" target="lurking">${RECORD_OPENED}</transition>
+	<transition event="${E.error}" target="vanished">${COUNT_ERROR}</transition>
+</state>
+<state id="lurking">
+	${timed(5000, 20000)}
+	<onentry>${narrate('lurking', '`Opened #${current}. Will not read any replies.`')}</onentry>
+	<transition event="${E.notifyClosed}">${COUNT_NOTIFICATION}<script>ignored += 1;</script></transition>
+	<transition event="${E.notifyComment}">${COUNT_NOTIFICATION}<script>ignored += 1;</script></transition>
+	<transition event="${E.timer}" cond="${'opened < burst'}" target="drafting"/>
+	<transition event="${E.timer}" target="vanished"/>
+</state>`,
+	finals: {
+		vanished: '`Vanished. Opened ${opened} issue(s), ignored ${ignored} notification(s).`'
+	}
+});
