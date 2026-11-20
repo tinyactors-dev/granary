@@ -26,7 +26,8 @@ import {
 	type IssuedCredential
 } from './schemas';
 import { issuesOf } from '../src/lib/schemas/standard';
-import { ask, isFailure } from './io/reply';
+import { askActor } from '../src/lib/charts/runtime';
+import { isFailure } from './failure';
 import { createInfraSystem } from './system';
 import { InfraLog } from './events';
 import { SETTINGS_ADDRESS, SETTINGS_EVENTS, type Settings } from './actors/settings';
@@ -49,9 +50,9 @@ const exePorts = {
 };
 
 const infra = createInfraSystem({ otlpEndpoint: nonEmpty(env.FAKE_INFRA_OTLP_ENDPOINT) ?? null });
-const { system } = infra;
+const { host } = infra;
 const log = new InfraLog();
-const exeProxy = new ExeProxy({ system, log }, exePorts);
+const exeProxy = new ExeProxy({ host, log }, exePorts);
 exeProxy.configure({ tokenMode: true, peerMode: true });
 
 // ---------------------------------------------------------------------------
@@ -94,7 +95,7 @@ const newId = (prefix: string) => `${prefix}_${hex(6)}`;
 async function createBucket(r: CreateBucketRequest): Promise<Response> {
 	if (infra.bucketExists(r.name)) return controlError(409, `Bucket ${r.name} already exists`);
 	infra.createBucket(r.name, (r.jurisdiction ?? 'default') as Jurisdiction, r.quotaBytes ?? null);
-	const bucket = infra.snapshot(log, exeProxy.state).buckets.find((b) => b.name === r.name);
+	const bucket = (await infra.snapshot(log, exeProxy.state)).buckets.find((b) => b.name === r.name);
 	return json(bucket, 201);
 }
 
@@ -106,12 +107,12 @@ async function issueCredential(r: IssueCredentialRequest, fixed?: { accessKeyId?
 		secretAccessKey: fixed?.secretAccessKey ?? hex(32),
 		token: fixed?.token ?? `${r.kind === 'exe-vm-token' ? 'exe' : 'otlp'}_${hex(24)}`
 	};
-	const c = await ask<Credential>(system, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.issue, { id, request: r, material });
+	const c = await askActor<Credential>(host, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.issue, { id, request: r, material });
 	return c.kind === 's3' ? { id: c.id, kind: 's3', accessKeyId: c.accessKeyId!, secretAccessKey: c.secretAccessKey! } : { id: c.id, kind: c.kind, token: c.token! };
 }
 
 async function applyExeProxy(r: { tokenMode: boolean; peerMode: boolean; peerSourceVm?: string }) {
-	await ask<Settings>(system, SETTINGS_ADDRESS, SETTINGS_EVENTS.exeProxy, r);
+	await askActor<Settings>(host, SETTINGS_ADDRESS, SETTINGS_EVENTS.exeProxy, r);
 	exeProxy.configure(r);
 	return exeProxy.state;
 }
@@ -135,7 +136,7 @@ async function seedObjects(r: SeedObjectsRequest): Promise<Response> {
 		const blobId = bytes ? blobs.putBytes(bytes) : blobs.putSynthetic(o.bytes);
 		return { key: o.key, size: bytes?.byteLength ?? o.bytes, etag: bytes ? blobs.md5(bytes) : `synthetic${hex(8)}`, lastModified: o.lastModified, blobId };
 	});
-	const res = await ask<{ seeded: number; dropBlobIds: string[] }>(system, bucketAddress(r.bucket), BUCKET_EVENTS.seed, { objects });
+	const res = await askActor<{ seeded: number; dropBlobIds: string[] }>(host, bucketAddress(r.bucket), BUCKET_EVENTS.seed, { objects });
 	for (const id of res.dropBlobIds) blobs.drop(id);
 	return json({ ok: true, seeded: res.seeded });
 }
@@ -146,7 +147,7 @@ async function control(req: Request, url: URL): Promise<Response | null> {
 	const P = CONTROL_PATHS;
 
 	if (path === P.reset && method === 'POST') {
-		infra.reset();
+		await infra.reset();
 		log.reset();
 		exeProxy.configure({ tokenMode: true, peerMode: true, peerSourceVm: 'granary' });
 		await applySeeds();
@@ -155,12 +156,12 @@ async function control(req: Request, url: URL): Promise<Response | null> {
 	if (path === P.buckets && method === 'POST') return createBucket(validate(CreateBucketRequest, await readJson(req), 'bucket'));
 	if (path.startsWith(`${P.buckets}/`) && method === 'DELETE') {
 		const name = decodeURIComponent(path.slice(P.buckets.length + 1));
-		return infra.deleteBucket(name) ? ok() : controlError(404, `No bucket ${name}`);
+		return (await infra.deleteBucket(name)) ? ok() : controlError(404, `No bucket ${name}`);
 	}
 	if (path === P.credentials && method === 'POST') return json(await issueCredential(validate(IssueCredentialRequest, await readJson(req), 'credential')), 201);
 	if (path.startsWith(`${P.credentials}/`) && method === 'DELETE') {
 		const id = decodeURIComponent(path.slice(P.credentials.length + 1));
-		const res = await ask(system, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.revoke, { id });
+		const res = await askActor(host, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.revoke, { id });
 		return isFailure(res) ? controlError(404, res.error) : ok();
 	}
 	if (path === P.faults && method === 'POST') {
@@ -170,26 +171,26 @@ async function control(req: Request, url: URL): Promise<Response | null> {
 		} catch (e) {
 			return controlError(400, `Invalid pathPattern: ${(e as Error).message}`);
 		}
-		return json(await ask(system, FAULTS_ADDRESS, FAULT_EVENTS.inject, { ...r, id: newId('fault') }), 201);
+		return json(await askActor(host, FAULTS_ADDRESS, FAULT_EVENTS.inject, { ...r, id: newId('fault') }), 201);
 	}
 	if (path === P.faults && method === 'DELETE') {
-		await ask(system, FAULTS_ADDRESS, FAULT_EVENTS.clear);
+		await askActor(host, FAULTS_ADDRESS, FAULT_EVENTS.clear);
 		return ok();
 	}
 	if (path === P.fidelity && method === 'PUT') {
 		// Full FidelityRequest, or any subset of its toggles (additive leniency, ADR 0132).
 		const r = validate(Type.Partial(FidelityRequest), await readJson(req), 'fidelity');
-		await ask(system, SETTINGS_ADDRESS, SETTINGS_EVENTS.fidelity, r);
+		await askActor(host, SETTINGS_ADDRESS, SETTINGS_EVENTS.fidelity, r);
 		return ok();
 	}
 	if (path === P.clock && method === 'PUT') {
 		const r = validate(ClockRequest, await readJson(req), 'clock');
-		await ask(system, SETTINGS_ADDRESS, SETTINGS_EVENTS.clock, r);
+		await askActor(host, SETTINGS_ADDRESS, SETTINGS_EVENTS.clock, r);
 		return ok();
 	}
 	if (path === P.exeProxy && method === 'PUT') return json(await applyExeProxy(validate(ExeProxyRequest, await readJson(req), 'exe proxy config')));
 	if (path === P.objects && method === 'POST') return seedObjects(validate(SeedObjectsRequest, await readJson(req), 'objects'));
-	if (path === P.state && method === 'GET') return json(infra.snapshot(log, exeProxy.state));
+	if (path === P.state && method === 'GET') return json(await infra.snapshot(log, exeProxy.state));
 	if (path === P.events && method === 'GET') return log.stream(req.signal);
 	if (path.startsWith('/__control')) return controlError(404, `No control route ${method} ${path}`);
 	return null;
@@ -197,9 +198,9 @@ async function control(req: Request, url: URL): Promise<Response | null> {
 
 async function route(req: Request): Promise<Response> {
 	const url = new URL(req.url);
-	if (isS3Request(req, url)) return handleS3(req, url, { infra, system, log });
+	if (isS3Request(req, url)) return handleS3(req, url, { infra, host, log });
 	if (url.pathname === OTLP_PREFIX || url.pathname.startsWith(`${OTLP_PREFIX}/`))
-		return handleOtlp(req, url.pathname.slice(OTLP_PREFIX.length), 'direct', { system, log });
+		return handleOtlp(req, url.pathname.slice(OTLP_PREFIX.length), 'direct', { host, log });
 	const c = await control(req, url);
 	if (c) return c;
 	if (url.pathname === '/' && req.method === 'GET')
@@ -232,7 +233,7 @@ console.log(
 const shutdown = () => {
 	exeProxy.stop();
 	server.stop(true);
-	system.close();
+	host.close();
 	process.exit(0);
 };
 process.on('SIGTERM', shutdown);

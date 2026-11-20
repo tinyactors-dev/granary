@@ -9,8 +9,8 @@
  * Each front is its own listener; `PUT /__control/exe-proxy` turns them on/off.
  */
 import type { Server } from 'bun';
-import type { System } from '@tinyactors/node-legacy';
-import { ask } from './io/reply';
+import type { Host } from '@tinyactors/node';
+import { askActor } from '../src/lib/charts/runtime';
 import { CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS, type Credential } from './actors/credentials';
 import { FAULTS_ADDRESS, FAULT_EVENTS, type Fault } from './actors/faults';
 import { handleOtlp } from './otlp/handler';
@@ -24,7 +24,7 @@ const LOGIN_HTML = (url: string) => `<!doctype html><html><head><title>Sign in Â
 </body></html>`;
 
 interface Ctx {
-	system: System;
+	host: Host;
 	log: InfraLog;
 }
 
@@ -39,7 +39,7 @@ async function front(mode: 'token' | 'peer', req: Request, ctx: Ctx, peerSourceV
 		ctx.log.request({ at: started, surface: 'exe-proxy', method: req.method, path: url.pathname, status: res.status, bytesIn: Number(req.headers.get('content-length') ?? 0), credentialId, faultId });
 		return res;
 	};
-	const fault = await ask<Fault | null>(ctx.system, FAULTS_ADDRESS, FAULT_EVENTS.check, { target: 'exe-proxy', method: req.method, path: url.pathname });
+	const fault = await askActor<Fault | null>(ctx.host, FAULTS_ADDRESS, FAULT_EVENTS.check, { target: 'exe-proxy', method: req.method, path: url.pathname });
 	if (fault) {
 		faultId = fault.id;
 		ctx.log.emit({ type: 'fault.fired', faultId: fault.id, remaining: fault.remaining });
@@ -53,7 +53,7 @@ async function front(mode: 'token' | 'peer', req: Request, ctx: Ctx, peerSourceV
 	const headers = new Headers(req.headers);
 	if (mode === 'token') {
 		const token = /^Bearer\s+(.+)$/i.exec(req.headers.get(EXE_AUTH_HEADER) ?? '')?.[1]?.trim();
-		const cred = token ? await ask<Credential | null>(ctx.system, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.byToken, { token, kind: 'exe-vm-token' }) : null;
+		const cred = token ? await askActor<Credential | null>(ctx.host, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.byToken, { token, kind: 'exe-vm-token' }) : null;
 		if (!cred || cred.revoked) return finish(new Response(LOGIN_HTML(req.url), { status: 401, headers: { 'Content-Type': 'text/html; charset=utf-8' } }));
 		credentialId = cred.id;
 		headers.delete(EXE_AUTH_HEADER);

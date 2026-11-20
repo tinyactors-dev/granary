@@ -3,11 +3,10 @@
  * skew, and which exe.dev proxy fronts are on. The server asks
  * `settings.get` on every request.
  */
-import { statechart } from '@tinyactors/node-legacy';
+import { handlerChart } from '../../src/lib/charts';
 import type { FidelityRequest } from '../schemas';
-import { answer } from '../io/reply';
 
-export const SETTINGS_ADDRESS = { family: 'settings', name: 'main' } as const;
+export const SETTINGS_ADDRESS = 'settings/main';
 
 export const DEFAULT_FIDELITY: FidelityRequest = {
 	sigV4: true,
@@ -31,9 +30,7 @@ export interface Settings {
 	exeProxy: ExeProxySettings;
 }
 
-export interface SettingsData extends Settings {
-	out: unknown;
-}
+export type SettingsData = Settings;
 
 export const SETTINGS_EVENTS = {
 	get: 'settings.get',
@@ -42,44 +39,27 @@ export const SETTINGS_EVENTS = {
 	exeProxy: 'settings.exe-proxy'
 } as const;
 
-const view = (d: SettingsData): Settings => ({
-	fidelity: { ...d.fidelity },
-	clockSkewMs: d.clockSkewMs,
-	exeProxy: { ...d.exeProxy }
-});
+function view(d: SettingsData): Settings {
+	return { fidelity: { ...d.fidelity }, clockSkewMs: d.clockSkewMs, exeProxy: { ...d.exeProxy } };
+}
 
-export const settingsChart = statechart<SettingsData>({ family: 'settings', revision: 'v1' })
-	.dataExpression('fidelity', () => ({ ...DEFAULT_FIDELITY }))
-	.data('clockSkewMs', 0)
-	.dataExpression('exeProxy', () => ({ tokenMode: true, peerMode: true, peerSourceVm: 'granary' }))
-	.data('out', null)
-	.state('ready', (s) =>
-		s
-			.on(SETTINGS_EVENTS.get, answer<SettingsData>((d) => view(d)))
-			.on(
-				SETTINGS_EVENTS.fidelity,
-				answer<SettingsData, Partial<FidelityRequest>>((d, e) => {
-					const { reqId: _r, ...patch } = e as Partial<FidelityRequest> & { reqId?: string };
-					d.fidelity = { ...d.fidelity, ...patch };
-					return view(d);
-				})
-			)
-			.on(
-				SETTINGS_EVENTS.clock,
-				answer<SettingsData, { skewMs: number }>((d, e) => {
-					d.clockSkewMs = e.skewMs;
-					return view(d);
-				})
-			)
-			.on(
-				SETTINGS_EVENTS.exeProxy,
-				answer<SettingsData, { tokenMode: boolean; peerMode: boolean; peerSourceVm?: string }>((d, e) => {
-					d.exeProxy = {
-						tokenMode: e.tokenMode,
-						peerMode: e.peerMode,
-						peerSourceVm: e.peerSourceVm ?? d.exeProxy.peerSourceVm
-					};
-					return view(d);
-				})
-			)
-	);
+export const settingsChart = handlerChart<SettingsData>({
+	name: 'settings',
+	initial: { fidelity: { ...DEFAULT_FIDELITY }, clockSkewMs: 0, exeProxy: { tokenMode: true, peerMode: true, peerSourceVm: 'granary' } },
+	helpers: { view },
+	handlers: {
+		[SETTINGS_EVENTS.get]: (d) => view(d),
+		[SETTINGS_EVENTS.fidelity]: (d, e: Partial<FidelityRequest>) => {
+			d.fidelity = { ...d.fidelity, ...e };
+			return view(d);
+		},
+		[SETTINGS_EVENTS.clock]: (d, e: { skewMs: number }) => {
+			d.clockSkewMs = e.skewMs;
+			return view(d);
+		},
+		[SETTINGS_EVENTS.exeProxy]: (d, e: { tokenMode: boolean; peerMode: boolean; peerSourceVm?: string }) => {
+			d.exeProxy = { tokenMode: e.tokenMode, peerMode: e.peerMode, peerSourceVm: e.peerSourceVm ?? d.exeProxy.peerSourceVm };
+			return view(d);
+		}
+	}
+});

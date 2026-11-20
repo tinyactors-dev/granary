@@ -8,13 +8,14 @@
  * jurisdiction's endpoint (else `NoSuchBucket`). Bucket names are ≥ 3 chars,
  * so `eu` can never be a bucket.
  */
-import type { System } from '@tinyactors/node-legacy';
-import { ask, isFailure } from '../io/reply';
+import type { Host } from '@tinyactors/node';
+import { askActor } from '../../src/lib/charts/runtime';
+import { isFailure } from '../failure';
 import * as blobs from '../blobs';
 import { SETTINGS_ADDRESS, SETTINGS_EVENTS, type Settings } from '../actors/settings';
 import { CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS, type Credential } from '../actors/credentials';
 import { FAULTS_ADDRESS, FAULT_EVENTS, type Fault } from '../actors/faults';
-import { BUCKET_EVENTS, bucketAddress, type Jurisdiction, type ListResult, type S3Failure, type StoredObject } from '../actors/bucket';
+import { BUCKET_EVENTS, bucketAddress, type CompleteChosen, type Jurisdiction, type ListResult, type S3Failure, type StoredObject } from '../actors/bucket';
 import { amzDateToMs, parseAuth, payloadMatches, signatureMatches } from './sigv4';
 import { completeXml, decodeContinuation, errorXml, esc, initiateXml, listUploadsXml, listV2Xml, parseCompleteBody, xmlResponse } from './xml';
 import type { InfraSystem } from '../system';
@@ -29,7 +30,7 @@ const R2_NOT_IMPLEMENTED = ['versioning', 'object-lock', 'retention', 'legal-hol
 
 export interface S3Context {
 	infra: InfraSystem;
-	system: System;
+	host: Host;
 	log: InfraLog;
 }
 
@@ -109,13 +110,13 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		return res;
 	};
 
-	const settings = await ask<Settings>(ctx.system, SETTINGS_ADDRESS, SETTINGS_EVENTS.get);
+	const settings = await askActor<Settings>(ctx.host, SETTINGS_ADDRESS, SETTINGS_EVENTS.get);
 	const f = settings.fidelity;
 	const now = Date.now() + settings.clockSkewMs;
 	const resource = `/${r.bucket ?? ''}${r.key ? `/${r.key}` : ''}`;
 
 	// --- fault injection ------------------------------------------------------
-	const fault = await ask<Fault | null>(ctx.system, FAULTS_ADDRESS, FAULT_EVENTS.check, {
+	const fault = await askActor<Fault | null>(ctx.host, FAULTS_ADDRESS, FAULT_EVENTS.check, {
 		target: 's3',
 		method,
 		path: url.pathname + url.search
@@ -141,7 +142,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		if (parsed.ok === 'anonymous') return finish(errorXml(403, 'AccessDenied', 'Anonymous access is not allowed', resource));
 		if (parsed.ok === false) return finish(errorXml(400, parsed.code, parsed.message, resource));
 		const auth = parsed.auth;
-		const found = await ask<Credential | null>(ctx.system, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.byKey, { accessKeyId: auth.accessKeyId });
+		const found = await askActor<Credential | null>(ctx.host, CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS.byKey, { accessKeyId: auth.accessKeyId });
 		if (!found || found.revoked || !found.secretAccessKey)
 			return finish(errorXml(403, 'InvalidAccessKeyId', 'The AWS Access Key Id you provided does not exist in our records.', resource));
 		credentialId = found.id;
@@ -171,7 +172,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 	if (!r.bucket) {
 		if (method !== 'GET') return finish(errorXml(405, 'MethodNotAllowed', 'The specified method is not allowed against this resource.', '/'));
 		if (cred.scope !== 'admin') return finish(errorXml(403, 'AccessDenied', 'Access Denied', '/'));
-		const names = ctx.infra.snapshotBucketNames(r.jurisdiction);
+		const names = await ctx.infra.snapshotBucketNames(r.jurisdiction);
 		return finish(
 			xmlResponse(
 				`<ListAllMyBucketsResult><Buckets>${names.map((n) => `<Bucket><Name>${esc(n)}</Name></Bucket>`).join('')}</Buckets></ListAllMyBucketsResult>`
@@ -179,7 +180,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		);
 	}
 	const bucket = r.bucket;
-	const info = ctx.infra.bucketInfo(bucket);
+	const info = await ctx.infra.bucketInfo(bucket);
 	if (!info || info.jurisdiction !== r.jurisdiction) return finish(errorXml(404, 'NoSuchBucket', 'The specified bucket does not exist.', `/${bucket}`));
 
 	const q = url.searchParams;
@@ -206,7 +207,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		if (method === 'GET') {
 			if (!allowed(cred, bucket, 'read')) return finish(errorXml(403, 'AccessDenied', 'Access Denied', `/${bucket}`));
 			if (sub('uploads')) {
-				const ups = await ask<{ uploadId: string; key: string; initiatedAt: number }[]>(ctx.system, address, BUCKET_EVENTS.mpuList);
+				const ups = await askActor<{ uploadId: string; key: string; initiatedAt: number }[]>(ctx.host, address, BUCKET_EVENTS.mpuList);
 				return finish(listUploadsXml(bucket, ups));
 			}
 			const prefix = q.get('prefix') ?? '';
@@ -215,14 +216,14 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 			const token = q.get('continuation-token');
 			const startAfter = q.get('start-after');
 			const after = token ? decodeContinuation(token) : startAfter;
-			const result = await ask<ListResult>(ctx.system, address, BUCKET_EVENTS.list, { prefix, delimiter, maxKeys, after });
+			const result = await askActor<ListResult>(ctx.host, address, BUCKET_EVENTS.list, { prefix, delimiter, maxKeys, after });
 			return finish(listV2Xml(bucket, result, { prefix, delimiter, maxKeys, continuationToken: token, startAfter, urlEncode: q.get('encoding-type') === 'url' }));
 		}
 		if (method === 'POST' && sub('delete')) {
 			if (!allowed(cred, bucket, 'write')) return finish(errorXml(403, 'AccessDenied', 'Access Denied', `/${bucket}`));
 			const keys = [...new TextDecoder().decode(body).matchAll(/<Key>([\s\S]*?)<\/Key>/g)].map((m) => m[1]!.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>'));
 			for (const key of keys) {
-				const res = await ask<{ deletedBlobId: string | null }>(ctx.system, address, BUCKET_EVENTS.delete, { key });
+				const res = await askActor<{ deletedBlobId: string | null }>(ctx.host, address, BUCKET_EVENTS.delete, { key });
 				blobs.drop(res.deletedBlobId);
 			}
 			kind = { delete: true };
@@ -239,7 +240,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 
 	if (method === 'POST' && sub('uploads')) {
 		const uploadId = crypto.randomUUID().replace(/-/g, '');
-		await ask(ctx.system, address, BUCKET_EVENTS.mpuCreate, { key, uploadId, now });
+		await askActor(ctx.host, address, BUCKET_EVENTS.mpuCreate, { key, uploadId, now });
 		return finish(initiateXml(bucket, key, uploadId));
 	}
 	if (method === 'PUT' && q.has('partNumber') && q.has('uploadId')) {
@@ -247,7 +248,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		const bytes = corrupt ? blobs.corruptCopy(body) : body;
 		const blobId = blobs.putBytes(bytes);
 		const etag = blobs.md5(body);
-		const res = await ask<{ etag: string; replacedBlobId: string | null } | S3Failure>(ctx.system, address, BUCKET_EVENTS.mpuPart, {
+		const res = await askActor<{ etag: string; replacedBlobId: string | null } | S3Failure>(ctx.host, address, BUCKET_EVENTS.mpuPart, {
 			uploadId: q.get('uploadId'),
 			key,
 			partNumber: Number(q.get('partNumber')),
@@ -265,20 +266,37 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 	if (method === 'POST' && q.has('uploadId')) {
 		const parts = parseCompleteBody(new TextDecoder().decode(body));
 		if (!parts) return finish(errorXml(400, 'MalformedXML', 'The XML you provided was not well-formed', resource));
-		const res = await ask<{ key: string; etag: string; replacedBlobId: string | null; dropBlobIds: string[] } | S3Failure>(
-			ctx.system,
+		const uploadId = q.get('uploadId');
+		const rules = writeRules(true);
+		const chosen = await askActor<CompleteChosen | S3Failure>(ctx.host, address, BUCKET_EVENTS.mpuComplete, {
+			uploadId,
+			parts,
+			equalPartSizes: f.equalPartSizes,
+			...rules
+		});
+		if (isFailure(chosen)) return finish(fromFailure(chosen as S3Failure, resource));
+		// The bodies live outside the chart: join them here, then commit (S3's multipart ETag: md5 of the parts' md5s).
+		const md5s = new Uint8Array(chosen.parts.length * 16);
+		chosen.parts.forEach((c, i) => md5s.set(Buffer.from(c.etag, 'hex'), i * 16));
+		const etag = `${blobs.md5(md5s)}-${chosen.parts.length}`;
+		const blobId = blobs.concat(chosen.parts.map((c) => c.blobId));
+		const res = await askActor<{ key: string; etag: string; replacedBlobId: string | null; dropBlobIds: string[] } | S3Failure>(
+			ctx.host,
 			address,
-			BUCKET_EVENTS.mpuComplete,
-			{ uploadId: q.get('uploadId'), parts, equalPartSizes: f.equalPartSizes, ...writeRules(true) }
+			BUCKET_EVENTS.mpuCommit,
+			{ uploadId, key: chosen.key, size: chosen.size, etag, blobId, ...rules }
 		);
-		if (isFailure(res)) return finish(fromFailure(res as S3Failure, resource));
+		if (isFailure(res)) {
+			blobs.drop(blobId);
+			return finish(fromFailure(res as S3Failure, resource));
+		}
 		blobs.drop(res.replacedBlobId);
 		for (const id of res.dropBlobIds) blobs.drop(id);
 		kind = { put: true };
 		return finish(completeXml(`${url.origin}${url.pathname}`, bucket, key, res.etag));
 	}
 	if (method === 'DELETE' && q.has('uploadId')) {
-		const res = await ask<{ dropBlobIds: string[] } | S3Failure>(ctx.system, address, BUCKET_EVENTS.mpuAbort, { uploadId: q.get('uploadId') });
+		const res = await askActor<{ dropBlobIds: string[] } | S3Failure>(ctx.host, address, BUCKET_EVENTS.mpuAbort, { uploadId: q.get('uploadId') });
 		if (isFailure(res)) return finish(fromFailure(res as S3Failure, resource));
 		for (const id of res.dropBlobIds) blobs.drop(id);
 		return finish(new Response(null, { status: 204 }));
@@ -287,7 +305,7 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		if (req.headers.has('x-amz-copy-source')) return finish(errorXml(501, 'NotImplemented', 'CopyObject is not implemented by fake-infra', resource));
 		const blobId = blobs.putBytes(corrupt ? blobs.corruptCopy(body) : body);
 		const etag = blobs.md5(body);
-		const res = await ask<{ etag: string; replacedBlobId: string | null } | S3Failure>(ctx.system, address, BUCKET_EVENTS.put, {
+		const res = await askActor<{ etag: string; replacedBlobId: string | null } | S3Failure>(ctx.host, address, BUCKET_EVENTS.put, {
 			key,
 			blobId,
 			size: body.byteLength,
@@ -303,13 +321,13 @@ export async function handleS3(req: Request, url: URL, ctx: S3Context): Promise<
 		return finish(new Response(null, { status: 200, headers: { ETag: `"${etag}"` } }));
 	}
 	if (method === 'DELETE') {
-		const res = await ask<{ deletedBlobId: string | null }>(ctx.system, address, BUCKET_EVENTS.delete, { key });
+		const res = await askActor<{ deletedBlobId: string | null }>(ctx.host, address, BUCKET_EVENTS.delete, { key });
 		blobs.drop(res.deletedBlobId);
 		kind = { delete: true };
 		return finish(new Response(null, { status: 204 }));
 	}
 	if (method === 'GET' || method === 'HEAD') {
-		const obj = await ask<StoredObject | null>(ctx.system, address, BUCKET_EVENTS.get, { key });
+		const obj = await askActor<StoredObject | null>(ctx.host, address, BUCKET_EVENTS.get, { key });
 		if (!obj) {
 			if (method === 'HEAD') return finish(new Response(null, { status: 404 }));
 			return finish(errorXml(404, 'NoSuchKey', 'The specified key does not exist.', resource));

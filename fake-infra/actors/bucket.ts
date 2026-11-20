@@ -8,12 +8,10 @@
  * server renders as XML (`PreconditionFailed`, `SlowDown`, `NoSuchUpload`,
  * `InvalidPart`, `EntityTooSmall`, `QuotaExceeded`, …).
  */
-import { statechart } from '@tinyactors/node-legacy';
-import * as blobs from '../blobs';
-import { answer } from '../io/reply';
+import { handlerChart } from '../../src/lib/charts';
 
 export const BUCKET_FAMILY = 'bucket';
-export const bucketAddress = (name: string) => ({ family: BUCKET_FAMILY, name });
+export const bucketAddress = (name: string) => `bucket/${name}`;
 
 export type Jurisdiction = 'default' | 'eu' | 'fedramp';
 
@@ -40,7 +38,6 @@ export interface BucketData {
 	uploads: Record<string, Upload>;
 	/** Last successful write per key (R2's 1 write/s/key limit). */
 	lastWrite: Record<string, number>;
-	out: unknown;
 }
 
 export const BUCKET_EVENTS = {
@@ -51,6 +48,7 @@ export const BUCKET_EVENTS = {
 	mpuCreate: 'multipart.create',
 	mpuPart: 'multipart.part',
 	mpuComplete: 'multipart.complete',
+	mpuCommit: 'multipart.commit',
 	mpuAbort: 'multipart.abort',
 	mpuList: 'multipart.list',
 	seed: 'objects.seed'
@@ -61,12 +59,16 @@ export interface S3Failure {
 	status: number;
 	code: string;
 }
-const fail = (status: number, code: string, error: string): S3Failure => ({ status, code, error });
+function fail(status: number, code: string, error: string): S3Failure {
+	return { status, code, error };
+}
 
 /** Minimum size of every part but the last (S3 and R2). */
 export const MIN_PART_SIZE = 5 * 1024 * 1024;
 
-const usedBytes = (d: BucketData) => Object.values(d.objects).reduce((n, o) => n + o.size, 0);
+function usedBytes(d: BucketData) {
+	return Object.values(d.objects).reduce((n, o) => n + o.size, 0);
+}
 
 interface WriteRules {
 	now: number;
@@ -120,46 +122,49 @@ export interface CompleteEvent extends WriteRules {
 	equalPartSizes: boolean;
 }
 
-export const bucketChart = statechart<BucketData>({ family: BUCKET_FAMILY, revision: 'v1' })
-	.data('name', '')
-	.data('jurisdiction', 'default')
-	.data('quotaBytes', null)
-	.dataExpression('objects', () => ({}))
-	.dataExpression('uploads', () => ({}))
-	.dataExpression('lastWrite', () => ({}))
-	.data('out', null)
-	.state('ready', (s) =>
-		s
-			.on(
-				BUCKET_EVENTS.put,
-				answer<BucketData, PutEvent>((d, e) => {
+/**
+ * `multipart.complete` checks the parts and answers the chosen ones (or a
+ * failure); the server joins their bodies, which live outside the chart,
+ * and `multipart.commit` stores the object.
+ */
+export interface CompleteChosen {
+	key: string;
+	size: number;
+	parts: { size: number; etag: string; blobId: string }[];
+}
+
+export interface CommitEvent extends WriteRules {
+	uploadId: string;
+	key: string;
+	size: number;
+	etag: string;
+	blobId: string;
+}
+
+export const bucketChart = handlerChart<BucketData>({
+	name: BUCKET_FAMILY,
+	initial: { name: '', jurisdiction: 'default', quotaBytes: null, objects: {}, uploads: {}, lastWrite: {} },
+	helpers: { fail, usedBytes, checkWrite },
+	handlers: {
+		[BUCKET_EVENTS.put]: (d, e: PutEvent) => {
 					const bad = checkWrite(d, e.key, e.size, e);
 					if (bad) return bad;
 					const replaced = d.objects[e.key]?.blobId ?? null;
 					d.objects[e.key] = { key: e.key, size: e.size, etag: e.etag, lastModified: e.now, blobId: e.blobId };
 					d.lastWrite[e.key] = e.now;
 					return { etag: e.etag, replacedBlobId: replaced };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.get,
-				answer<BucketData, { key: string }>((d, e) => {
+		},
+		[BUCKET_EVENTS.get]: (d, e: { key: string }) => {
 					const o = d.objects[e.key];
 					return o ? { ...o } : null;
-				})
-			)
-			.on(
-				BUCKET_EVENTS.delete,
-				answer<BucketData, { key: string }>((d, e) => {
+		},
+		[BUCKET_EVENTS.delete]: (d, e: { key: string }) => {
 					const o = d.objects[e.key];
 					if (!o) return { deletedBlobId: null };
 					delete d.objects[e.key];
 					return { deletedBlobId: o.blobId };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.list,
-				answer<BucketData, ListEvent>((d, e): ListResult => {
+		},
+		[BUCKET_EVENTS.list]: (d, e: ListEvent): ListResult => {
 					const keys = Object.keys(d.objects)
 						.filter((k) => k.startsWith(e.prefix) && (e.after === null || k > e.after))
 						.sort();
@@ -184,29 +189,20 @@ export const bucketChart = statechart<BucketData>({ family: BUCKET_FAMILY, revis
 						contents.push(meta);
 					}
 					return { contents, commonPrefixes: [...prefixes].sort(), truncated, nextAfter: truncated ? last : null };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.mpuCreate,
-				answer<BucketData, { key: string; uploadId: string; now: number }>((d, e) => {
+		},
+		[BUCKET_EVENTS.mpuCreate]: (d, e: { key: string; uploadId: string; now: number }) => {
 					d.uploads[e.uploadId] = { uploadId: e.uploadId, key: e.key, initiatedAt: e.now, parts: {} };
 					return { uploadId: e.uploadId };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.mpuPart,
-				answer<BucketData, { uploadId: string; key: string; partNumber: number; blobId: string; size: number; etag: string }>((d, e) => {
+		},
+		[BUCKET_EVENTS.mpuPart]: (d, e: { uploadId: string; key: string; partNumber: number; blobId: string; size: number; etag: string }) => {
 					const u = d.uploads[e.uploadId];
 					if (!u || u.key !== e.key) return fail(404, 'NoSuchUpload', 'The specified multipart upload does not exist.');
 					if (e.partNumber < 1 || e.partNumber > 10_000) return fail(400, 'InvalidArgument', 'Part number must be between 1 and 10000');
 					const replaced = u.parts[String(e.partNumber)]?.blobId ?? null;
 					u.parts[String(e.partNumber)] = { size: e.size, etag: e.etag, blobId: e.blobId };
 					return { etag: e.etag, replacedBlobId: replaced };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.mpuComplete,
-				answer<BucketData, CompleteEvent>((d, e) => {
+		},
+		[BUCKET_EVENTS.mpuComplete]: (d, e: CompleteEvent) => {
 					const u = d.uploads[e.uploadId];
 					if (!u) return fail(404, 'NoSuchUpload', 'The specified multipart upload does not exist.');
 					if (!e.parts.length) return fail(400, 'MalformedXML', 'You must specify at least one part');
@@ -221,7 +217,7 @@ export const bucketChart = statechart<BucketData>({ family: BUCKET_FAMILY, revis
 						chosen.push(stored);
 					}
 					for (let i = 0; i < chosen.length - 1; i++) {
-						if (chosen[i]!.size < MIN_PART_SIZE) return fail(400, 'EntityTooSmall', 'Your proposed upload is smaller than the minimum allowed object size.');
+						if (chosen[i]!.size < 5 * 1024 * 1024 /* MIN_PART_SIZE */) return fail(400, 'EntityTooSmall', 'Your proposed upload is smaller than the minimum allowed object size.');
 					}
 					if (e.equalPartSizes && chosen.length > 2) {
 						const first = chosen[0]!.size;
@@ -233,36 +229,30 @@ export const bucketChart = statechart<BucketData>({ family: BUCKET_FAMILY, revis
 					const size = chosen.reduce((n, c) => n + c.size, 0);
 					const bad = checkWrite(d, u.key, size, e);
 					if (bad) return bad;
-					const md5s = new Uint8Array(chosen.length * 16);
-					chosen.forEach((c, i) => md5s.set(Buffer.from(c.etag, 'hex'), i * 16));
-					const etag = `${blobs.md5(md5s)}-${chosen.length}`;
-					const blobId = blobs.concat(chosen.map((c) => c.blobId));
-					const replaced = d.objects[u.key]?.blobId ?? null;
+					const chosenResult: CompleteChosen = { key: u.key, size, parts: chosen.map((c) => ({ ...c })) };
+					return chosenResult;
+		},
+		[BUCKET_EVENTS.mpuCommit]: (d, e: CommitEvent) => {
+					const u = d.uploads[e.uploadId];
+					if (!u) return fail(404, 'NoSuchUpload', 'The specified multipart upload does not exist.');
+					const bad = checkWrite(d, e.key, e.size, e);
+					if (bad) return bad;
+					const replaced = d.objects[e.key]?.blobId ?? null;
 					const partBlobs = Object.values(u.parts).map((p) => p.blobId);
-					d.objects[u.key] = { key: u.key, size, etag, lastModified: e.now, blobId };
-					d.lastWrite[u.key] = e.now;
+					d.objects[e.key] = { key: e.key, size: e.size, etag: e.etag, lastModified: e.now, blobId: e.blobId };
+					d.lastWrite[e.key] = e.now;
 					delete d.uploads[e.uploadId];
-					return { key: u.key, etag, size, replacedBlobId: replaced, dropBlobIds: partBlobs };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.mpuAbort,
-				answer<BucketData, { uploadId: string }>((d, e) => {
+					return { key: e.key, etag: e.etag, size: e.size, replacedBlobId: replaced, dropBlobIds: partBlobs };
+		},
+		[BUCKET_EVENTS.mpuAbort]: (d, e: { uploadId: string }) => {
 					const u = d.uploads[e.uploadId];
 					if (!u) return fail(404, 'NoSuchUpload', 'The specified multipart upload does not exist.');
 					delete d.uploads[e.uploadId];
 					return { dropBlobIds: Object.values(u.parts).map((p) => p.blobId) };
-				})
-			)
-			.on(
-				BUCKET_EVENTS.mpuList,
-				answer<BucketData>((d) =>
-					Object.values(d.uploads).map((u) => ({ uploadId: u.uploadId, key: u.key, initiatedAt: u.initiatedAt, parts: Object.keys(u.parts).length }))
-				)
-			)
-			.on(
-				BUCKET_EVENTS.seed,
-				answer<BucketData, { objects: { key: string; size: number; etag: string; lastModified: number; blobId: string }[] }>((d, e) => {
+		},
+		[BUCKET_EVENTS.mpuList]: (d) =>
+					Object.values(d.uploads).map((u) => ({ uploadId: u.uploadId, key: u.key, initiatedAt: u.initiatedAt, parts: Object.keys(u.parts).length })),
+		[BUCKET_EVENTS.seed]: (d, e: { objects: { key: string; size: number; etag: string; lastModified: number; blobId: string }[] }) => {
 					const replaced: string[] = [];
 					for (const o of e.objects) {
 						const prev = d.objects[o.key];
@@ -270,6 +260,6 @@ export const bucketChart = statechart<BucketData>({ family: BUCKET_FAMILY, revis
 						d.objects[o.key] = { ...o };
 					}
 					return { seeded: e.objects.length, dropBlobIds: replaced };
-				})
-			)
-	);
+		},
+	}
+});

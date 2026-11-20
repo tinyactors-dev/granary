@@ -4,12 +4,11 @@
  * `exe-peer`), its size, service and a decoded summary (span names, log
  * bodies, metric names) for assertions. Keeps the newest MAX_BATCHES.
  */
-import { statechart } from '@tinyactors/node-legacy';
+import { handlerChart } from '../../src/lib/charts';
 import type { Static } from '@sinclair/typebox';
 import type { FakeOtlpBatch } from '../schemas';
-import { answer } from '../io/reply';
 
-export const COLLECTOR_ADDRESS = { family: 'collector', name: 'main' } as const;
+export const COLLECTOR_ADDRESS = 'collector/main';
 export const MAX_BATCHES = 2000;
 
 export type OtlpBatch = Static<typeof FakeOtlpBatch>;
@@ -17,23 +16,20 @@ export type OtlpBatch = Static<typeof FakeOtlpBatch>;
 export interface CollectorData {
 	batches: OtlpBatch[];
 	total: number;
-	out: unknown;
 }
 
 export const COLLECTOR_EVENTS = { record: 'otlp.record' } as const;
 
-export const collectorChart = statechart<CollectorData>({ family: 'collector', revision: 'v1' })
-	.dataExpression('batches', () => [])
-	.data('total', 0)
-	.data('out', null)
-	.state('ready', (s) =>
-		s.on(
-			COLLECTOR_EVENTS.record,
-			answer<CollectorData, { batch: OtlpBatch }>((d, e) => {
-				d.batches.push(e.batch);
-				d.total += 1;
-				if (d.batches.length > MAX_BATCHES) d.batches.splice(0, d.batches.length - MAX_BATCHES);
-				return { ok: true, total: d.total };
-			})
-		)
-	);
+export const collectorChart = handlerChart<CollectorData>({
+	name: 'collector',
+	initial: { batches: [], total: 0 },
+	handlers: {
+		[COLLECTOR_EVENTS.record]: (d, e: { batch: OtlpBatch }) => {
+			d.batches.push(e.batch);
+			d.total += 1;
+			const max = 2000; // MAX_BATCHES (a helper cannot read module scope)
+			if (d.batches.length > max) d.batches.splice(0, d.batches.length - max);
+			return { ok: true, total: d.total };
+		}
+	}
+});

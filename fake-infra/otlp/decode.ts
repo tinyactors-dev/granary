@@ -4,7 +4,7 @@
  * use tinyactors' `decodeTraces`; protobuf logs and metrics use the small
  * field walker below; JSON (OTLP/JSON) is read structurally.
  */
-import { decodeTraces } from '@tinyactors/node-legacy';
+import { decodeTraces } from '@tinyactors/node';
 
 export type Signal = 'traces' | 'logs' | 'metrics';
 
@@ -123,7 +123,7 @@ function metricsProto(buf: Uint8Array): OtlpSummary {
 
 function tracesProto(buf: Uint8Array): OtlpSummary {
 	const spans = decodeTraces(buf);
-	const service = (spans[0]?.resource.attributes['service.name'] as string | undefined) ?? null;
+	const service = (spans[0]?.resource['service.name'] as string | undefined) ?? null;
 	return { service, summary: spans.slice(0, MAX_ITEMS).map((s) => clip(s.name)) };
 }
 
