@@ -92,9 +92,7 @@ export function createHostHealth(rt: Runtime): { health(): HostHealthSnapshot; s
 				at,
 				outbox,
 				inbox,
-				// 0.4 has neither dead letters nor quarantine (ADR 0300); the ops port replaces these fields.
-				deadLettersTotal: 0,
-				quarantinedActors: 0,
+				actorFaultsTotal: rt.stats.faults,
 				relayLastSuccessAt,
 				lastWebhookAt,
 				process: { eventLoopLagP99Ms: lag.p99(), rssBytes: process.memoryUsage().rss },

@@ -202,7 +202,6 @@ export class Collector {
 	readonly spans: CollectedSpan[] = [];
 	readonly logs: DecodedLog[] = [];
 	/** `${service}:${epoch}:${definitionId}` → family */
-	readonly families = new Map<string, string>();
 	readonly epochs = new Map<string, number>();
 	readonly errors: string[] = [];
 	/** Every payload as received (for secret-leak checks, ADR 0150). */
@@ -266,11 +265,8 @@ export class Collector {
 	}
 
 	familyOf(span: CollectedSpan): string | undefined {
-		// A span names its chart (@tinyactors/node 0.4); 0.1 hosts named it in a log record.
 		const chart = span.attributes['tinyactors.chart.name'];
-		if (typeof chart === 'string') return chart;
-		const def = span.attributes['scxml.definition'];
-		return def === undefined ? undefined : this.families.get(`${span.service}:${span.epoch}:${String(def)}`);
+		return typeof chart === 'string' ? chart : undefined;
 	}
 
 	private addTraces(bytes: Uint8Array) {
@@ -289,11 +285,6 @@ export class Collector {
 			const service = String(resourceAttributes['service.name'] ?? 'unknown');
 			const log: DecodedLog = { ...rest, service, epoch: this.epochOf(service) };
 			this.logs.push(log);
-			const id = log.attributes['tinyactors.definition.id'];
-			const family = log.attributes['tinyactors.definition.family'];
-			if (id !== undefined && typeof family === 'string') {
-				this.families.set(`${service}:${log.epoch}:${String(id)}`, family);
-			}
 		}
 		this.notify();
 	}

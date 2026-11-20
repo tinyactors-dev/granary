@@ -29,7 +29,6 @@
 	},
 	"dependencies": {
 		"@sinclair/typebox": "^0.34.52",
-		"@tinyactors/node": "0.4.0",
-		"@tinyactors/node-legacy": "npm:@tinyactors/node@0.1.0"
+		"@tinyactors/node": "0.4.0"
 	}
 }
