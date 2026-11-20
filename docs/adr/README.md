@@ -13,19 +13,20 @@ superseded by N`) and the newer ADR says what changed.
 - **Databases:** one baseline migration each for granary.sqlite and
   ops.sqlite (0230).
 - **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290). On phones tables stack into cards and the nav is a drawer (0295, 0296).
+- **tinyactors:** granary runs on @tinyactors/node 0.4.0: SCXML charts built in TypeScript, no loaders, no debugger (0300).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233).
 
 | ADR | Title | State |
 |---|---|---|
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | active |
-| [0002](0002-actor-topology.md) | Actor and I/O processor topology | active |
+| [0002](0002-actor-topology.md) | Actor and I/O processor topology | partly superseded (0300) |
 | [0003](0003-sqlite-write-ahead-log.md) | Application-level write-ahead log in SQLite | partly superseded |
 | [0004](0004-policy-decisions.md) | Policy: who may open issues | partly superseded (0260: blocklist first; wording → 0250) |
 | [0005](0005-processes-ports-and-configuration.md) | Processes, ports and configuration | partly superseded |
 | [0006](0006-fake-github-contract.md) | Fake GitHub contract | partly superseded |
 | [0007](0007-testing-through-traces.md) | Tests run against a running system and assert on traces | active |
 | [0008](0008-sveltekit-on-bun-with-vite.md) | SvelteKit on Bun (Vite is the one exception to "no Vite") | active |
-| [0009](0009-dev-route-and-debugger.md) | The /__dev route and the debugger | partly superseded |
+| [0009](0009-dev-route-and-debugger.md) | The /__dev route and the debugger | partly superseded; 0300 |
 | [0020](0020-package-and-tooling-layout.md) | Package and tooling layout | active |
 | [0021](0021-shadcn-svelte-setup.md) | shadcn-svelte setup | active |
 | [0022](0022-native-addon-under-vite-and-adapter-bun.md) | Loading the @tinyactors/node native addon under Vite and adapter-bun | active |
@@ -37,11 +38,11 @@ superseded by N`) and the newer ADR says what changed.
 | [0030](0030-typebox-schemas-and-standard-schema-adapter.md) | TypeBox schemas and the Standard Schema adapter | active |
 | [0031](0031-remote-function-catalogue-and-authorization.md) | Remote function catalogue and authorization rules | active |
 | [0032](0032-backend-interface-seam.md) | The `Backend` interface is the seam between UI and actor system | active |
-| [0033](0033-actor-event-protocol.md) | Event and message protocol between actors, processors and the WAL | active |
+| [0033](0033-actor-event-protocol.md) | Event and message protocol between actors, processors and the WAL | partly superseded (0300) |
 | [0034](0034-oauth-and-session-routes.md) | OAuth and session route contract | partly superseded |
 | [0035](0035-fake-github-control-schemas.md) | Fake GitHub control API schemas | active |
 | [0036](0036-configuration-loading-and-dev-mode.md) | Configuration loading and dev-mode computation | partly superseded |
-| [0040](0040-runtime-boot-and-lifecycle.md) | Runtime boot, issue actor states and process lifecycle | partly superseded |
+| [0040](0040-runtime-boot-and-lifecycle.md) | Runtime boot, issue actor states and process lifecycle | partly superseded; 0300 |
 | [0041](0041-outbox-relay-behaviour.md) | Outbox relay behaviour and its observable effects | partly superseded |
 | [0042](0042-trace-vocabulary.md) | Observable trace vocabulary | partly superseded |
 | [0050](0050-ui-shell-navigation-and-auth-gating.md) | UI shell, navigation and auth gating | partly superseded |
@@ -49,15 +50,15 @@ superseded by N`) and the newer ADR says what changed.
 | [0052](0052-ui-components-and-visual-conventions.md) | UI components and visual conventions | active |
 | [0053](0053-dev-console-design.md) | Developer console (`/__dev`) design | partly superseded |
 | [0054](0054-jaeger-style-trace-explorer.md) | Jaeger-style trace explorer in /__dev | active |
-| [0056](0056-actor-inspector.md) | Actor inspector: snapshots of an actor's inside | active |
+| [0056](0056-actor-inspector.md) | Actor inspector: snapshots of an actor's inside | partly superseded (0300) |
 | [0057](0057-json-view-component.md) | A standalone JsonView component | active |
 | [0058](0058-json-view-everywhere.md) | JSON view everywhere, through JsonBlock | active |
-| [0060](0060-fake-github-architecture.md) | Fake GitHub architecture: actors, I/O processors, faults | partly superseded |
+| [0060](0060-fake-github-architecture.md) | Fake GitHub architecture: actors, I/O processors, faults | partly superseded; 0300 |
 | [0061](0061-integration-test-harness.md) | Integration test harness | partly superseded |
 | [0062](0062-trace-vocabulary-and-predicates.md) | Trace vocabulary and test predicates | partly superseded |
 | [0063](0063-integration-test-scenarios.md) | Integration test scenarios | active |
 | [0070](0070-loadgen-process-placement.md) | The load generator is a separate process with its own actor system | active |
-| [0071](0071-personas-as-statecharts.md) | Personas are statecharts | active |
+| [0071](0071-personas-as-statecharts.md) | Personas are statecharts | partly superseded (0300) |
 | [0072](0072-scenarios-and-populations.md) | Scenarios are seeded populations with an arrival process | active |
 | [0073](0073-observation-metrics-and-invariants.md) | Observation, metrics and invariants | active |
 | [0074](0074-fuzzing-and-chaos.md) | Fuzzing and chaos personas | active |
@@ -66,7 +67,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0077](0077-ui-component-previews.md) | Storybook-style component previews under /__dev/ui | active |
 | [0080](0080-ops-domain-module-boundary.md) | Operations is a separate domain module with a pinned contract | active |
 | [0081](0081-ops-process-and-system-placement.md) | Ops runs in the app process, in its own tinyactors System | partly superseded |
-| [0082](0082-ops-actor-and-io-topology.md) | Ops actor and I/O processor topology | partly superseded |
+| [0082](0082-ops-actor-and-io-topology.md) | Ops actor and I/O processor topology | partly superseded; 0300 |
 | [0083](0083-backup-method-vacuum-into-in-a-worker.md) | Backups use `VACUUM INTO` in a Worker (no online backup API in bun:sqlite) | partly superseded |
 | [0084](0084-object-storage-destinations.md) | Object storage destinations via Bun.S3Client, committed by manifest | partly superseded |
 | [0085](0085-telemetry-sinks-otlp-first.md) | Telemetry export: OTLP/HTTP first, native Loki push as a log sink | partly superseded |
@@ -95,7 +96,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0108](0108-confirmed-defaults-and-contract-tests.md) | Confirmed defaults and agreed contract tests | active |
 | [0109](0109-m0-scope-clarifications.md) | M0 scope clarifications | partly superseded |
 | [0110](0110-m0-composition-seam-and-ownership.md) | M0 composition seam, shared DB opener, and M1–M4 ownership | active |
-| [0111](0111-backups-feature-internals-and-ledger.md) | Backups feature internals: pure charts, a ledger processor, one runtime | active |
+| [0111](0111-backups-feature-internals-and-ledger.md) | Backups feature internals: pure charts, a ledger processor, one runtime | partly superseded (0300) |
 | [0112](0112-object-store-behaviour.md) | Object store behaviour: trust nothing, verify everything | active |
 | [0113](0113-backup-artifact-format.md) | Backup artifact format and the snapshot Worker | active |
 | [0114](0114-retention-implementation.md) | Retention implementation details | active |
@@ -103,10 +104,10 @@ superseded by N`) and the newer ADR says what changed.
 | [0116](0116-restore-cli.md) | `mise run ops:restore`: restore with only 1Password and bucket credentials | active |
 | [0117](0117-secret-store-implementation.md) | Secret store implementation details | active |
 | [0118](0118-backups-seeds-and-backend-semantics.md) | Backups seeds and OpsBackend semantics | partly superseded |
-| [0120](0120-ops-assembly-and-system.md) | Ops assembly: features, the ops System, failure isolation | active |
+| [0120](0120-ops-assembly-and-system.md) | Ops assembly: features, the ops System, failure isolation | partly superseded (0300) |
 | [0121](0121-telemetry-fan-out-on-the-wire.md) | Telemetry fan-out works on the OTLP wire format | active |
 | [0122](0122-sink-seeds-and-test-gating.md) | Telemetry sink seeds, the legacy endpoint, and test gating | partly superseded |
-| [0123](0123-conditions-are-sample-driven.md) | Conditions are sample-driven; remediations are contributed by features | active |
+| [0123](0123-conditions-are-sample-driven.md) | Conditions are sample-driven; remediations are contributed by features | partly superseded (0300) |
 | [0124](0124-granary-host-health-provider.md) | granary's host health provider | active |
 | [0125](0125-boundary-rule-regex.md) | Boundary rules match ops module paths only | active |
 | [0130](0130-fake-infra-process-and-actors.md) | fake-infra: process, System and actors | active |
@@ -172,7 +173,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0220](0220-one-source-for-github-mode-and-disconnect.md) | One source for `github.mode`; admins table at sign-in; disconnect | active |
 | [0221](0221-catch-up-health-and-ignore-reasons.md) | Catch-up health in ops; stored ignore reasons | active |
 | [0222](0222-manual-walkthrough-findings.md) | The manual is verified by walking through it | active |
-| [0230](0230-one-naming-scheme-no-legacy-before-first-release.md) | One naming scheme, no legacy before the first release | active |
+| [0230](0230-one-naming-scheme-no-legacy-before-first-release.md) | One naming scheme, no legacy before the first release | partly superseded (0300) |
 | [0231](0231-production-deployment-on-exe-dev.md) | Production deployment: ta-granary and the shared ta-metrics stack | active |
 | [0232](0232-cli-never-writes-to-an-unexpected-data-dir.md) | The CLI never writes to an unexpected data dir | active |
 | [0233](0233-deploy-task-and-operations-handbook.md) | `mise run deploy` and the operations handbook | active |
@@ -193,3 +194,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0292](0292-readable-labels-and-production-copy.md) | Readable labels everywhere, no tooling talk in production copy | active |
 | [0295](0295-stacked-tables-on-phones.md) | Tables stack into cards on phones | active |
 | [0296](0296-mobile-navigation-drawer.md) | Mobile navigation is a drawer; scrollers show they scroll | active |
+| [0300](0300-tinyactors-0.4.md) | granary runs on @tinyactors/node 0.4.0 | active |

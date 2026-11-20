@@ -56,10 +56,12 @@ await step('install tarball globally', async () => {
 });
 
 await step('native addon loads', async () => {
-	const r = await run(['bun', '-e', `const t=require(${JSON.stringify(PKG + '/node_modules/@tinyactors/node')});const s=t.createSystem({clock:'manual'});console.log(t.version);s.close()`]);
+	// @tinyactors/node is ESM: import it, make a host with no charts, close it.
+	const probe = (dir: string) => `const t=await import(${JSON.stringify(dir + '/index.mjs')});new t.Host([],{system:'smoke'}).close();console.log(t.version)`;
+	const r = await run(['bun', '-e', probe(PKG + '/node_modules/@tinyactors/node')]);
 	if (r.code === 0) return { ok: true, detail: `@tinyactors/node ${r.text}` };
 	// hoisted into the global node_modules instead of nested
-	const r2 = await run(['bun', '-e', `const t=require(${JSON.stringify(GLOBAL + '/@tinyactors/node')});const s=t.createSystem({clock:'manual'});console.log(t.version);s.close()`]);
+	const r2 = await run(['bun', '-e', probe(GLOBAL + '/@tinyactors/node')]);
 	return { ok: r2.code === 0, detail: r2.code === 0 ? `@tinyactors/node ${r2.text}` : tail(r.text + '\n' + r2.text) };
 });
 

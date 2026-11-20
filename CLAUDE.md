@@ -137,23 +137,26 @@ architecture, and add a new ADR for every new decision.
 
 ## Coding guidelines
 
-- **One file per actor.** Each actor's statechart (definition + its data type)
-  lives in its own file under `src/lib/server/actors/` (main system) or
-  `fake-github/actors/` (fake GitHub).
+- **One file per actor.** Each actor's statechart (its SCXML, built in
+  TypeScript with `src/lib/charts`, and its data type) lives in its own file
+  under `src/lib/server/actors/` (main system), `src/lib/ops/actors/`,
+  `fake-github/actors/`, `fake-infra/actors/` or `loadgen/` (ADR 0300).
+  Logic is a self-contained helper function embedded in the chart, never a
+  closure over module scope.
 - **No unit tests.** Tests always run against a running system (the app, the
   fake GitHub, and an OTLP collector started by the test harness).
-- **Observe through OpenTelemetry traces.** tinyactors exports OTLP traces
-  (`System.setTraceSink`, `decodeTraces`); tests assert on and observe system
-  properties via those traces rather than reaching into internals.
+- **Observe through OpenTelemetry traces.** Each tinyactors host exports OTLP
+  traces (its `telemetry` handler; `decodeTraces` reads them); tests assert on
+  and observe system properties via those traces rather than reaching into
+  internals.
 - **Fake GitHub.** A separate system (`fake-github/`) emulates the subset of
   GitHub we use (REST, webhooks, OAuth) so things can be tested interactively
   and automatically.
 - **`/admin` section** (ADR 0290): for admins in every environment — actors
-  and the inspector, traces, the debugger, the simulation services (fake
-  GitHub, fake-infra, load tester) and component previews. Each area is gated
-  by a capability: impersonation ("log in as") and the dev JSON API only in
-  development mode; the debugger with `GRANARY_DEBUGGER=1`; simulation
-  services when their URL is configured.
+  and the inspector, traces, the simulation services (fake GitHub,
+  fake-infra, load tester) and component previews. Each area is gated by a
+  capability: impersonation ("log in as") and the dev JSON API only in
+  development mode; simulation services when their URL is configured.
 - **UI:** SvelteKit + shadcn-svelte (https://github.com/huntabyte/shadcn-svelte).
   Frontend/backend communication uses SvelteKit remote functions.
 - **Schemas:** `@sinclair/typebox` at every serialization boundary (webhooks,
