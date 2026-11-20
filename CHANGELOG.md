@@ -7,6 +7,44 @@ refuses to publish a version without a `## [<version>]` entry (ADR 0182).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-20
+
+### Changed
+- granary runs on `@tinyactors/node` 0.4.0 (ADR 0300): every actor (the app,
+  ops, the fake GitHub, fake-infra and the load generator) is an SCXML chart
+  built in TypeScript, issue actors are started from SQLite when something is
+  sent to them, and traces name each actor and chart natively.
+- The admin section is available in every environment, with each area gated
+  by a capability; the app is reorganised around Activity and Policy with one
+  glossary (item, delivery, decision, action).
+- Readable labels, issue and pull-request badges, and production copy that
+  does not name the host.
+- On phones, tables stack into cards and the navigation is a drawer.
+
+### Added
+- Pull requests from people who aren't allowed are closed like issues
+  (with the GitHub App's pull-request permission).
+- Configurable closing-message templates, with an editor and a preview.
+- A blocklist that beats the allowlist and maintainer associations, with
+  expiry.
+- Structured logs, an HTTP access log, and log–trace correlation.
+- `/admin/deliveries` lists webhooks that aren't about an item.
+- A colored wheat logo, favicons, app icons, and a guided GitHub App logo
+  upload.
+
+### Removed
+- The DAP debugger, `/admin/debugger`, `GRANARY_DEBUGGER` and
+  `GRANARY_DAP_PORT`: `@tinyactors/node` 0.4.0 has no debug adapter.
+- The actor inspector no longer shows mailbox contents, step counters,
+  residency, scheduling or internal events, which 0.4.0 does not expose.
+
+### Fixed
+- Accessibility: no axe violations on the audited pages, a keyboard-reachable
+  trace list, heading order and a skip link.
+- The setup checklist is computed from the real state.
+- Release packing builds the exported tree outside the repository and passes
+  option values to its steps.
+
 ## [0.1.0] - 2026-09-28
 
 ### Added
