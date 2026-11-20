@@ -250,6 +250,112 @@ export type UpdatePullRequestRequest = Static<typeof UpdatePullRequestRequest>;
 export const parsePullRequest = (value: unknown): PullRequest => parse(PullRequest, value, 'pull request');
 
 // ---------------------------------------------------------------------------
+// Webhook: `discussion` event (X-GitHub-Event: discussion, ADR 0310)
+// ---------------------------------------------------------------------------
+
+/** A discussion category as the `discussion` webhook shows it (subset). */
+export const DiscussionCategory = Type.Object(
+	{
+		id: Type.Integer(),
+		node_id: Type.Optional(Type.String()),
+		name: Type.String(),
+		slug: Type.String()
+	},
+	{ ...open, title: 'DiscussionCategory' }
+);
+export type DiscussionCategory = Static<typeof DiscussionCategory>;
+
+/** A discussion as the `discussion` webhook shows it (subset). */
+export const Discussion = Type.Object(
+	{
+		id: Type.Integer(),
+		node_id: Type.String(),
+		number: Type.Integer({ minimum: 1 }),
+		title: Type.String(),
+		body: Type.Optional(Nullable(Type.String())),
+		html_url: Type.String(),
+		user: GitHubUser,
+		author_association: Type.Optional(Type.String()),
+		category: DiscussionCategory
+	},
+	{ ...open, title: 'Discussion' }
+);
+export type Discussion = Static<typeof Discussion>;
+
+export const DiscussionWebhookPayload = Type.Object(
+	{
+		action: Type.String(),
+		discussion: Discussion,
+		repository: Repository,
+		sender: GitHubUser
+	},
+	{ ...open, title: 'DiscussionWebhookPayload' }
+);
+export type DiscussionWebhookPayload = Static<typeof DiscussionWebhookPayload>;
+
+/** Parse a raw `discussion` webhook body (text). Throws SchemaValidationError. */
+export const parseDiscussionWebhook = (body: string): DiscussionWebhookPayload =>
+	parseJson(DiscussionWebhookPayload, body, 'discussion webhook payload');
+
+// ---------------------------------------------------------------------------
+// GraphQL (Discussions are GraphQL-only, ADR 0310)
+// ---------------------------------------------------------------------------
+
+/** One error of a GraphQL response; `type` is GitHub's (NOT_FOUND, FORBIDDEN, …). */
+export const GraphQLErrorItem = Type.Object({ message: Type.String(), type: Type.Optional(Type.String()) }, { ...open, title: 'GraphQLError' });
+export type GraphQLErrorItem = Static<typeof GraphQLErrorItem>;
+
+export const GraphQLResponse = Type.Object(
+	{ data: Type.Optional(Type.Unknown()), errors: Type.Optional(Type.Array(GraphQLErrorItem)) },
+	{ ...open, title: 'GraphQLResponse' }
+);
+export type GraphQLResponse = Static<typeof GraphQLResponse>;
+
+/** `repository { hasDiscussionsEnabled discussionCategories { nodes { id name slug } } }` */
+export const RepositoryDiscussionSetup = Type.Object(
+	{
+		repository: Nullable(
+			Type.Object(
+				{
+					hasDiscussionsEnabled: Type.Boolean(),
+					discussionCategories: Nullable(
+						Type.Object({ nodes: Type.Array(Nullable(Type.Object({ id: Type.String(), name: Type.String(), slug: Type.String() }, open))) }, open)
+					)
+				},
+				open
+			)
+		)
+	},
+	{ ...open, title: 'RepositoryDiscussionSetup' }
+);
+export type RepositoryDiscussionSetup = Static<typeof RepositoryDiscussionSetup>;
+
+/** `repository { discussion(number) { comments { nodes { databaseId body } } } }` */
+export const DiscussionComments = Type.Object(
+	{
+		repository: Nullable(
+			Type.Object(
+				{
+					discussion: Nullable(
+						Type.Object({ comments: Type.Object({ nodes: Type.Array(Nullable(Type.Object({ databaseId: Nullable(Type.Integer()), body: Type.String() }, open))) }, open) }, open)
+					)
+				},
+				open
+			)
+		)
+	},
+	{ ...open, title: 'DiscussionComments' }
+);
+export type DiscussionComments = Static<typeof DiscussionComments>;
+
+/** `addDiscussionComment(input) { comment { databaseId url } }` */
+export const AddDiscussionCommentResult = Type.Object(
+	{ addDiscussionComment: Nullable(Type.Object({ comment: Nullable(Type.Object({ databaseId: Nullable(Type.Integer()), url: Type.String() }, open)) }, open)) },
+	{ ...open, title: 'AddDiscussionCommentResult' }
+);
+export type AddDiscussionCommentResult = Static<typeof AddDiscussionCommentResult>;
+
+// ---------------------------------------------------------------------------
 // REST request bodies (what granary sends)
 // ---------------------------------------------------------------------------
 

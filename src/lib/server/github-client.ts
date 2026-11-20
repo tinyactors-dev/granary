@@ -5,6 +5,11 @@
  * sending.
  */
 import {
+	AddDiscussionCommentResult,
+	DiscussionComments,
+	GraphQLResponse,
+	RepositoryDiscussionSetup,
+	type GraphQLErrorItem,
 	CreateCommentRequest,
 	UpdateIssueRequest,
 	UpdatePullRequestRequest,
@@ -17,6 +22,38 @@ import {
 	type IssueComment
 } from '../schemas/github';
 import { parse } from '../schemas/standard';
+import type { TSchema, Static } from '@sinclair/typebox';
+
+/** A GraphQL response with `errors` (GitHub answers 200 with them). `types` are GitHub's: NOT_FOUND, FORBIDDEN, … */
+export class GitHubGraphQLError extends Error {
+	readonly errors: GraphQLErrorItem[];
+	constructor(operation: string, errors: GraphQLErrorItem[]) {
+		super(`GraphQL ${operation}: ${errors.map((e) => (e.type ? `${e.type}: ${e.message}` : e.message)).join('; ').slice(0, 300)}`);
+		this.name = 'GitHubGraphQLError';
+		this.errors = errors;
+	}
+	get types(): string[] {
+		return this.errors.map((e) => e.type ?? '');
+	}
+}
+
+/** The GraphQL documents granary sends (ADR 0310); the fake GitHub checks them against GitHub's schema. */
+const QUERIES = {
+	discussionSetup: `query DiscussionSetup($owner: String!, $name: String!) {
+  repository(owner: $owner, name: $name) {
+    hasDiscussionsEnabled
+    discussionCategories(first: 100) { nodes { id name slug } }
+  }
+}`,
+	discussionComments: `query DiscussionComments($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    discussion(number: $number) { comments(first: 100) { nodes { databaseId body } } }
+  }
+}`,
+	addDiscussionComment: `mutation AddDiscussionComment($discussionId: ID!, $body: String!) {
+  addDiscussionComment(input: { discussionId: $discussionId, body: $body }) { comment { databaseId url } }
+}`
+} as const;
 
 export class GitHubHttpError extends Error {
 	readonly status: number;
@@ -160,6 +197,44 @@ export class GitHubClient {
 	async closeIssue(owner: string, repo: string, number: number, signal?: AbortSignal): Promise<Issue> {
 		const req = parse(UpdateIssueRequest, { state: 'closed', state_reason: 'not_planned' }, 'update issue request');
 		return parseIssue(await this.#request('PATCH', this.#issuePath(owner, repo, number), req, signal));
+	}
+
+	/** `PATCH …/issues/{n}` `{state:'open', state_reason:'reopened'}` — idempotent (ADR 0310). */
+	async reopenIssue(owner: string, repo: string, number: number, signal?: AbortSignal): Promise<Issue> {
+		const req = parse(UpdateIssueRequest, { state: 'open', state_reason: 'reopened' }, 'update issue request');
+		return parseIssue(await this.#request('PATCH', this.#issuePath(owner, repo, number), req, signal));
+	}
+
+	/** `PATCH …/pulls/{n}` `{state:'open'}` — idempotent (ADR 0310). */
+	async reopenPullRequest(owner: string, repo: string, number: number, signal?: AbortSignal): Promise<PullRequest> {
+		const req = parse(UpdatePullRequestRequest, { state: 'open' }, 'update pull request request');
+		const path = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}`;
+		return parsePullRequest(await this.#request('PATCH', path, req, signal));
+	}
+
+	/** `POST /graphql`: the `data` parsed with `schema`; `errors` throw GitHubGraphQLError. */
+	async graphql<T extends TSchema>(operation: keyof typeof QUERIES, variables: Record<string, unknown>, schema: T, signal?: AbortSignal): Promise<Static<T>> {
+		const res = parse(GraphQLResponse, await this.#request('POST', '/graphql', { query: QUERIES[operation], variables }, signal), 'GraphQL response');
+		if (res.errors?.length) throw new GitHubGraphQLError(operation, res.errors);
+		return parse(schema, res.data, `GraphQL ${operation}`);
+	}
+
+	/** Is Discussions on, and which categories exist (ADR 0310)? */
+	async discussionSetup(owner: string, name: string, signal?: AbortSignal): Promise<RepositoryDiscussionSetup> {
+		return this.graphql('discussionSetup', { owner, name }, RepositoryDiscussionSetup, signal);
+	}
+
+	/** The first 100 comments of a discussion (for the reply's marker on a retry). */
+	async discussionComments(owner: string, name: string, number: number, signal?: AbortSignal): Promise<{ databaseId: number | null; body: string }[]> {
+		const r = await this.graphql('discussionComments', { owner, name, number }, DiscussionComments, signal);
+		return (r.repository?.discussion?.comments.nodes ?? []).filter((n): n is { databaseId: number | null; body: string } => n !== null);
+	}
+
+	async addDiscussionComment(discussionId: string, body: string, signal?: AbortSignal): Promise<{ databaseId: number | null; url: string }> {
+		const r = await this.graphql('addDiscussionComment', { discussionId, body }, AddDiscussionCommentResult, signal);
+		const c = r.addDiscussionComment?.comment;
+		if (!c) throw new Error('GraphQL addDiscussionComment: no comment returned');
+		return { databaseId: c.databaseId, url: c.url };
 	}
 
 	/** `PATCH /repos/{o}/{r}/pulls/{n}` `{state:'closed'}` — idempotent; needs `pull_requests: write` (ADR 0280). */

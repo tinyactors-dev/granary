@@ -1,13 +1,13 @@
 <!-- Renders <MessageTemplateEditor> from story args (ADR 0077, ADR 0252). -->
 <script lang="ts">
 	import { MessageTemplateEditor } from '$lib/components/message-template';
-	import { DEFAULT_TEMPLATES, type ClosingKind } from '$lib/schemas/message-template';
+	import { defaultTemplate, type ClosingKind } from '$lib/schemas/message-template';
 	import type { Args } from '../types';
 
 	let { args, setArgs }: { args: Args; setArgs?: (patch: Args) => void } = $props();
 
 	const kind = $derived((args.kind === 'pull_request' ? 'pull_request' : 'issue') as ClosingKind);
-	const inherited = $derived(typeof args.inherited === 'string' && args.inherited !== '' ? args.inherited : DEFAULT_TEMPLATES[kind]);
+	const inherited = $derived(typeof args.inherited === 'string' && args.inherited !== '' ? args.inherited : defaultTemplate(kind));
 	const inheritedLabel = $derived(typeof args.inheritedLabel === 'string' && args.inheritedLabel !== '' ? args.inheritedLabel : 'the built-in default');
 
 	// Controls → canvas: a story or control change sets the editor's value/sample.

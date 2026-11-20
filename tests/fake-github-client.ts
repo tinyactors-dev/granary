@@ -16,7 +16,14 @@ import {
 	RedeliverResponse,
 	ReopenIssueResponse,
 	ResetResponse,
+	CreateDiscussionResponse,
+	DiscussionDeliveryResponse,
+	FakeCategory,
 	parseFakeState,
+	type CreateCategoryRequest,
+	type CreateDiscussionRequest,
+	type EditDiscussionRequest,
+	type DeleteDiscussionRequest,
 	type CreateIssueRequest,
 	type CreatePullRequestRequest,
 	type SetAppPermissionsRequest,
@@ -97,6 +104,28 @@ export class FakeGithubClient {
 	/** ADR 0164: while down, deliveries fail with status_code 0. */
 	webhookOutage(down: boolean) {
 		return this.call(ResetResponse, 'POST', CONTROL_PATHS.webhookOutage, { down });
+	}
+	/** ADR 0310: Discussions on/off for a repository. */
+	setDiscussionsEnabled(owner: string, repo: string, enabled: boolean) {
+		return this.call(ResetResponse, 'POST', CONTROL_PATHS.discussionsEnabled, { owner, repo, enabled });
+	}
+	/** ADR 0310: add a discussion category (GitHub's web UI; there is no API). */
+	createCategory(body: CreateCategoryRequest) {
+		return this.call(FakeCategory, 'POST', CONTROL_PATHS.discussionCategories, body);
+	}
+	/** ADR 0310: open a discussion; delivers `discussion.created`. */
+	createDiscussion(body: CreateDiscussionRequest) {
+		return this.call(CreateDiscussionResponse, 'POST', CONTROL_PATHS.discussions, body);
+	}
+	/** ADR 0310: edit or move a discussion; delivers `edited` or `category_changed`. */
+	editDiscussion(body: EditDiscussionRequest) {
+		return this.call(DiscussionDeliveryResponse, 'POST', CONTROL_PATHS.editDiscussion, body);
+	}
+	deleteDiscussion(body: DeleteDiscussionRequest) {
+		return this.call(DiscussionDeliveryResponse, 'POST', CONTROL_PATHS.deleteDiscussion, body);
+	}
+	async discussion(owner: string, repo: string, number: number) {
+		return (await this.state()).discussions?.find((d) => d.owner === owner && d.repo === repo && d.number === number);
 	}
 	async state(): Promise<FakeState> {
 		const res = await fetch(`${this.baseUrl}${CONTROL_PATHS.state}`);

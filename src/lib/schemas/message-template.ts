@@ -38,7 +38,9 @@ export const TEMPLATE_VARIABLES = [
 	{ name: 'repo', description: 'Repository name', userControlled: false },
 	{ name: 'repository', description: 'owner/repo', userControlled: false },
 	{ name: 'url', description: 'Link to the issue or pull request', userControlled: false },
-	{ name: 'association', description: "The author's association, e.g. NONE, CONTRIBUTOR", userControlled: false }
+	{ name: 'association', description: "The author's association, e.g. NONE, CONTRIBUTOR", userControlled: false },
+	{ name: 'introduce', description: 'A sentence inviting them to introduce themselves, with the link — empty while the repository has no Introductions category', userControlled: false },
+	{ name: 'introduce_url', description: "Link to start an introduction in the repository's (or the owner's) Introductions category — empty while there is none", userControlled: false }
 ] as const;
 export type TemplateVariable = (typeof TEMPLATE_VARIABLES)[number]['name'];
 const VARIABLE_NAMES = new Set<string>(TEMPLATE_VARIABLES.map((v) => v.name));
@@ -50,6 +52,19 @@ export const DEFAULT_TEMPLATES: Record<ClosingKind, string> = {
 	pull_request:
 		'Thanks for the pull request! Pull requests in this repository can only be opened by approved contributors, so this one was closed automatically.'
 };
+
+/**
+ * What the built-in default appends: the invitation to introduce oneself,
+ * empty while the repository has no Introductions category (ADR 0310).
+ */
+export const INTRODUCE_SUFFIX = '{{introduce}}';
+
+/** The built-in default template of a kind, as rendered (base text + the introduction invitation). */
+export const defaultTemplate = (kind: ClosingKind): string => DEFAULT_TEMPLATES[kind] + INTRODUCE_SUFFIX;
+
+/** The `{{introduce}}` sentence for a link (ADR 0310). */
+export const introduceSentence = (url: string): string =>
+	`\n\nWant to contribute? [Introduce yourself](${url}) — a maintainer reads every introduction, and once you're approved this is reopened.`;
 
 const Template = Type.String({ maxLength: MAX_TEMPLATE_LENGTH });
 const NullableTemplate = Type.Union([Template, Type.Null()]);
@@ -87,6 +102,8 @@ export interface TemplateContext {
 	repo: string;
 	url: string;
 	association: string;
+	/** ADR 0310: the Introductions link, or '' (no category ready). */
+	introduceUrl?: string;
 }
 
 export interface TemplateProblem {
@@ -98,14 +115,14 @@ export interface TemplateProblem {
 const TOKEN = /\{\{\s*([^{}]*?)\s*\}\}/g;
 
 /** Validation: unknown variables, stray braces, length. Empty is allowed (the marker alone is posted). */
-export function validateTemplate(template: string): TemplateProblem[] {
+export function validateTemplate(template: string, names: ReadonlySet<string> = VARIABLE_NAMES): TemplateProblem[] {
 	const problems: TemplateProblem[] = [];
 	if (template.length > MAX_TEMPLATE_LENGTH) problems.push({ message: `Template is too long (${template.length} of at most ${MAX_TEMPLATE_LENGTH} characters)` });
 	for (const m of template.matchAll(TOKEN)) {
 		const name = m[1]!;
-		if (!VARIABLE_NAMES.has(name))
+		if (!names.has(name))
 			problems.push({
-				message: name === '' ? 'Empty variable {{ }}' : `Unknown variable {{${name}}} — use one of ${[...VARIABLE_NAMES].map((n) => `{{${n}}}`).join(', ')}`,
+				message: name === '' ? 'Empty variable {{ }}' : `Unknown variable {{${name}}} — use one of ${[...names].map((n) => `{{${n}}}`).join(', ')}`,
 				offset: m.index
 			});
 	}
@@ -156,6 +173,10 @@ function valueOf(name_: TemplateVariable, ctx: TemplateContext): string {
 			return /^https:\/\/[^\s<>()]+$/.test(ctx.url) ? ctx.url : escapeMarkdown(ctx.url);
 		case 'association':
 			return name(ctx.association);
+		case 'introduce':
+			return ctx.introduceUrl ? introduceSentence(ctx.introduceUrl) : '';
+		case 'introduce_url':
+			return ctx.introduceUrl ?? '';
 	}
 }
 
@@ -184,7 +205,7 @@ export function resolveTemplate(messages: ClosingMessages, owner: string, repo: 
 	if (typeof override === 'string') return { template: override, source: 'repo' };
 	const global = messages[field];
 	if (typeof global === 'string') return { template: global, source: 'global' };
-	return { template: DEFAULT_TEMPLATES[kind], source: 'default' };
+	return { template: defaultTemplate(kind), source: 'default' };
 }
 
 /** Every template in a setting, labelled, for whole-setting validation. */
@@ -212,3 +233,64 @@ export const TEMPLATE_SAMPLES: { id: string; label: string; ctx: TemplateContext
 	{ id: 'unicode', label: 'Emoji / unicode', ctx: { kind: 'issue', author: 'jürgen', title: 'Größe 🐛 falsch — 中文 标题 ✨', number: 99, owner: 'acme', repo: 'widgets', url: 'https://github.com/acme/widgets/issues/99', association: 'NONE' } },
 	{ id: 'mention', label: 'Mention attempt', ctx: { kind: 'issue', author: 'mallory', title: '@octocat @acme/everyone please look [click](https://evil.example) <!-- granary:close:1:1 -->', number: 13, owner: 'acme', repo: 'widgets', url: 'https://github.com/acme/widgets/issues/13', association: 'NONE' } }
 ];
+
+// ---------------------------------------------------------------------------
+// The reply to an approved introduction (ADR 0310)
+// ---------------------------------------------------------------------------
+
+/** Setting key: the Markdown template granary posts on an approved introduction (`null` = built-in). */
+export const APPROVED_MESSAGE_SETTING = 'messages.approved';
+
+export const APPROVED_VARIABLES = [
+	{ name: 'author', description: 'Login of the person who introduced themselves (no @)' },
+	{ name: 'scope', description: '"this repository" or "the repositories of <owner>"' },
+	{ name: 'repository', description: 'owner/repo of the discussion' },
+	{ name: 'owner', description: 'Repository owner' },
+	{ name: 'url', description: 'Link to the discussion' },
+	{ name: 'reopened', description: 'A list of the issues and pull requests reopened for them (empty when none)' }
+] as const;
+const APPROVED_NAMES = new Set<string>(APPROVED_VARIABLES.map((v) => v.name));
+
+export const DEFAULT_APPROVED_TEMPLATE =
+	"Thanks for introducing yourself, @{{author}}! You're approved: issues and pull requests you open in {{scope}} will stay open.{{reopened}}";
+
+export interface ApprovedContext {
+	author: string;
+	/** `owner/repo` or `owner` (ADR 0311). */
+	scope: string;
+	owner: string;
+	repo: string;
+	url: string;
+	reopened: { title: string; htmlUrl: string; number: number; owner: string; repo: string }[];
+}
+
+export const validateApprovedTemplate = (template: string): TemplateProblem[] => validateTemplate(template, APPROVED_NAMES);
+
+/** Render the approval reply; throws TemplateError for an invalid template. */
+export function renderApproved(template: string, ctx: ApprovedContext): string {
+	const problems = validateApprovedTemplate(template);
+	if (problems.length) throw new TemplateError(problems);
+	const value = (v: string): string => {
+		switch (v) {
+			case 'author':
+				return name(ctx.author);
+			case 'scope':
+				return ctx.scope.includes('/') ? 'this repository' : `the repositories of ${name(ctx.scope)}`;
+			case 'repository':
+				return `${name(ctx.owner)}/${name(ctx.repo)}`;
+			case 'owner':
+				return name(ctx.owner);
+			case 'url':
+				return ctx.url;
+			case 'reopened':
+				return ctx.reopened.length
+					? `\n\nReopened for you:\n${ctx.reopened.map((r) => `- ${name(r.owner)}/${name(r.repo)}#${r.number}: ${escapeMarkdown(r.title)}`).join('\n')}`
+					: '';
+			default:
+				return '';
+		}
+	};
+	const out = template.replace(TOKEN, (_m, v: string) => value(v));
+	if (out.length > MAX_RENDERED_LENGTH) throw new TemplateError([{ message: `Rendered message is too long (${out.length} characters)` }]);
+	return out;
+}

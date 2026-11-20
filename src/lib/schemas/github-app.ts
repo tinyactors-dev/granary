@@ -61,8 +61,11 @@ export const GitHubAppManifest = Type.Object(
 );
 export type GitHubAppManifest = Static<typeof GitHubAppManifest>;
 
-export const GITHUB_APP_PERMISSIONS = { issues: 'write', pull_requests: 'write', metadata: 'read' } as const;
-export const GITHUB_APP_EVENTS = ['issues', 'pull_request'] as const;
+export const GITHUB_APP_PERMISSIONS = { issues: 'write', pull_requests: 'write', discussions: 'write', metadata: 'read' } as const;
+export const GITHUB_APP_EVENTS = ['issues', 'pull_request', 'discussion'] as const;
+/** Permission and event introductions need (ADR 0310). */
+export const DISCUSSIONS_PERMISSION = 'discussions';
+export const DISCUSSION_EVENT = 'discussion';
 /** Permission and event gating pull requests needs (ADR 0281). */
 export const PR_PERMISSION = 'pull_requests';
 export const PR_EVENT = 'pull_request';

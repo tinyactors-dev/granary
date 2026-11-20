@@ -7,7 +7,7 @@
  * Relative imports only (no `$lib`).
  */
 import { Type, type Static } from '@sinclair/typebox';
-import { ActorAddress, EffectKey, GitHubCloseData, IssueKey } from './actors';
+import { ActorAddress, EffectKey, GitHubCloseData, IssueKey, ItemKind } from './actors';
 import { IssuesWebhookPayload, Nullable } from './github';
 import { parse, parseJson, stringifyJson } from './standard';
 import { MAX_RENDERED_LENGTH } from './message-template';
@@ -63,11 +63,50 @@ export type InboxPayload = Static<typeof InboxPayload>;
  * same text even if the template changes meanwhile. Rows without it (enqueued
  * before templates existed) are rendered by the relay from the current setting.
  */
-export const OutboxPayload = Type.Composite(
+export const CloseEffectPayload = Type.Composite(
 	[GitHubCloseData, Type.Object({ commentBody: Type.Optional(Type.String({ maxLength: MAX_RENDERED_LENGTH })) })],
-	{ additionalProperties: false, title: 'outbox.payload' }
+	{ additionalProperties: false, title: 'outbox.payload (close)' }
 );
+export type CloseEffectPayload = Static<typeof CloseEffectPayload>;
+
+/** An item granary closed that an approval reopens (ADR 0310). */
+export const ReopenItem = Type.Object(
+	{ kind: ItemKind, repoId: Type.Integer(), owner: Type.String(), repo: Type.String(), number: Type.Integer({ minimum: 1 }), title: Type.String(), htmlUrl: Type.String() },
+	{ additionalProperties: false, title: 'ReopenItem' }
+);
+export type ReopenItem = Static<typeof ReopenItem>;
+
+/**
+ * `outbox.payload` of an `approve:<repoId>:<number>` effect (ADR 0310):
+ * everything the relay needs, fixed when the admin approved — the items to
+ * reopen and the reply, rendered then, so retries do the same.
+ */
+export const ApproveEffectPayload = Type.Object(
+	{
+		effect: Type.Literal('approve'),
+		introKey: IssueKey,
+		repoId: Type.Integer(),
+		owner: Type.String(),
+		repo: Type.String(),
+		/** The discussion's number and GraphQL node id. */
+		number: Type.Integer({ minimum: 1 }),
+		nodeId: Type.String(),
+		author: Type.String(),
+		title: Type.String(),
+		htmlUrl: Type.String(),
+		/** The allowlist scope granted: `owner/repo` or `owner`. */
+		scope: Type.String(),
+		by: Type.String(),
+		reopen: Type.Array(ReopenItem),
+		replyBody: Type.String({ maxLength: MAX_RENDERED_LENGTH })
+	},
+	{ additionalProperties: false, title: 'outbox.payload (approve)' }
+);
+export type ApproveEffectPayload = Static<typeof ApproveEffectPayload>;
+
+export const OutboxPayload = Type.Union([CloseEffectPayload, ApproveEffectPayload], { title: 'outbox.payload' });
 export type OutboxPayload = Static<typeof OutboxPayload>;
+export const isApprovePayload = (p: OutboxPayload): p is ApproveEffectPayload => 'effect' in p && p.effect === 'approve';
 
 /** `outbox.reply_to` JSON — the actor to notify (`issue/<key>`). */
 export const ReplyTo = ActorAddress;
@@ -75,6 +114,12 @@ export type ReplyTo = Static<typeof ReplyTo>;
 
 export const parseInboxPayload = (text: string): InboxPayload => parseJson(InboxPayload, text, 'inbox.payload');
 export const parseOutboxPayload = (text: string): OutboxPayload => parseJson(OutboxPayload, text, 'outbox.payload');
+/** A close effect's payload; throws for any other kind. */
+export function parseClosePayload(text: string): CloseEffectPayload {
+	const p = parseOutboxPayload(text);
+	if (isApprovePayload(p)) throw new Error('outbox.payload: an approve effect where a close effect was expected');
+	return p;
+}
 export const encodeOutboxPayload = (p: OutboxPayload): string => stringifyJson(OutboxPayload, p, 'outbox.payload');
 export const parseReplyTo = (text: string): ReplyTo => parseJson(ReplyTo, text, 'outbox.reply_to');
 export const encodeReplyTo = (a: ReplyTo): string => stringifyJson(ReplyTo, a, 'outbox.reply_to');
@@ -158,6 +203,77 @@ export const parseVerdictRow = (v: unknown): VerdictRow => parse(VerdictRow, v, 
 export const parseAllowedUserRow = (v: unknown): AllowedUserRow => parse(AllowedUserRow, v, 'allowed_users row');
 export const parseBlockedUserRow = (v: unknown): BlockedUserRow => parse(BlockedUserRow, v, 'blocked_users row');
 export const parseSessionRow = (v: unknown): SessionRow => parse(SessionRow, v, 'session row');
+
+/** `introductions.state` (ADR 0310). */
+export const IntroductionState = Type.Union([
+	Type.Literal('pending'),
+	Type.Literal('approving'),
+	Type.Literal('approved'),
+	Type.Literal('declined'),
+	Type.Literal('withdrawn'),
+	Type.Literal('failed')
+]);
+export type IntroductionState = Static<typeof IntroductionState>;
+export const INTRODUCTION_STATES: readonly IntroductionState[] = ['pending', 'approving', 'approved', 'declined', 'withdrawn', 'failed'];
+
+/** `introductions` (ADR 0310): one row per discussion in an Introductions category. */
+export const IntroductionRow = Type.Object(
+	{
+		intro_key: IssueKey,
+		repo_id: Type.Integer(),
+		owner: Type.String(),
+		repo: Type.String(),
+		number: Type.Integer({ minimum: 1 }),
+		node_id: Type.String(),
+		author: Type.String(),
+		author_association: Nullable(Type.String()),
+		title: Type.String(),
+		body: Type.String(),
+		html_url: Type.String(),
+		/** `owner/repo` (a repository's Introductions) or `owner` (the org discussions repository). */
+		scope: Type.String(),
+		state: IntroductionState,
+		received_at: EpochMs,
+		updated_at: EpochMs,
+		decided_by: Nullable(Type.String()),
+		decided_at: Nullable(EpochMs),
+		note: Nullable(Type.String()),
+		delivery_id: Nullable(Type.String())
+	},
+	{ ...closed, title: 'IntroductionRow' }
+);
+export type IntroductionRow = Static<typeof IntroductionRow>;
+export const parseIntroductionRow = (v: unknown): IntroductionRow => parse(IntroductionRow, v, 'introductions row');
+
+/** What granary found when it checked a repository's Discussions (ADR 0310). */
+export const DiscussionSetupState = Type.Union([
+	Type.Literal('ready'),
+	Type.Literal('no-category'),
+	Type.Literal('disabled'),
+	Type.Literal('no-access'),
+	Type.Literal('missing'),
+	Type.Literal('error')
+]);
+export type DiscussionSetupState = Static<typeof DiscussionSetupState>;
+
+/** `discussion_setup` (ADR 0310): the last check per repository. */
+export const DiscussionSetupRow = Type.Object(
+	{
+		/** Lower-cased `owner/repo` (the org discussions repository may not be a gated one). */
+		full_name: Type.String(),
+		repo_id: Nullable(Type.Integer()),
+		state: DiscussionSetupState,
+		category_id: Nullable(Type.String()),
+		category_slug: Nullable(Type.String()),
+		/** Where someone starts an introduction (set when `ready`). */
+		new_url: Nullable(Type.String()),
+		error: Nullable(Type.String()),
+		checked_at: EpochMs
+	},
+	{ ...closed, title: 'DiscussionSetupRow' }
+);
+export type DiscussionSetupRow = Static<typeof DiscussionSetupRow>;
+export const parseDiscussionSetupRow = (v: unknown): DiscussionSetupRow => parse(DiscussionSetupRow, v, 'discussion_setup row');
 
 /** Session lifetime (ADR 0034): 30 days. */
 export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;

@@ -19,7 +19,7 @@
 	import { isAdmin, shellData } from '$lib/components/app/session';
 	import { MessageTemplateEditor } from '$lib/components/message-template';
 	import {
-		DEFAULT_TEMPLATES,
+		defaultTemplate,
 		validateClosingMessages,
 		type ClosingMessages,
 		type RepoTemplateOverride
@@ -101,7 +101,7 @@
 					<Card.Description>Used for every guarded repository without its own override.</Card.Description>
 				</Card.Header>
 				<Card.Content>
-					<MessageTemplateEditor id="tpl-issue" label="Issue closing message" kind="issue" bind:value={draft.issue} inherited={DEFAULT_TEMPLATES.issue} readonly={!admin} />
+					<MessageTemplateEditor id="tpl-issue" label="Issue closing message" kind="issue" bind:value={draft.issue} inherited={defaultTemplate("issue")} readonly={!admin} />
 				</Card.Content>
 			</Card.Root>
 
@@ -116,7 +116,7 @@
 						label="Pull request closing message"
 						kind="pull_request"
 						bind:value={draft.pullRequest}
-						inherited={DEFAULT_TEMPLATES.pull_request}
+						inherited={defaultTemplate("pull_request")}
 						readonly={!admin}
 					/>
 				</Card.Content>
@@ -140,7 +140,7 @@
 								label="{key} · issues"
 								kind="issue"
 								bind:value={() => o.issue ?? null, (v) => (o.issue = v)}
-								inherited={draft.issue ?? DEFAULT_TEMPLATES.issue}
+								inherited={draft.issue ?? defaultTemplate("issue")}
 								inheritedLabel="the issue template above"
 								readonly={!admin}
 							/>
@@ -149,7 +149,7 @@
 								label="{key} · pull requests"
 								kind="pull_request"
 								bind:value={() => o.pullRequest ?? null, (v) => (o.pullRequest = v)}
-								inherited={draft.pullRequest ?? DEFAULT_TEMPLATES.pull_request}
+								inherited={draft.pullRequest ?? defaultTemplate("pull_request")}
 								inheritedLabel="the pull request template above"
 								readonly={!admin}
 							/>

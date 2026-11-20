@@ -453,3 +453,113 @@ export type RetryEffectInput = Static<typeof RetryEffectInput>;
 
 // Re-exports used by consumers of this module.
 export { ActorAddress };
+
+// ---------------------------------------------------------------------------
+// Introductions (ADR 0310)
+// ---------------------------------------------------------------------------
+
+export const INTRODUCTION_STATES = ['pending', 'approving', 'approved', 'declined', 'withdrawn', 'failed'] as const;
+export type IntroductionStateName = (typeof INTRODUCTION_STATES)[number];
+
+export interface IntroductionClosedItem {
+	kind: ItemKind;
+	issueKey: string;
+	owner: string;
+	repo: string;
+	number: number;
+	title: string;
+	htmlUrl: string;
+}
+
+export interface IntroductionSummary {
+	introKey: string;
+	owner: string;
+	repo: string;
+	number: number;
+	author: string;
+	association: string | null;
+	title: string;
+	body: string;
+	htmlUrl: string;
+	/** `owner/repo` or `owner` (an org-level introduction). */
+	scope: string;
+	state: IntroductionStateName;
+	receivedAt: number;
+	updatedAt: number;
+	decidedBy: string | null;
+	decidedAt: number | null;
+	note: string | null;
+	/** What the policy says about the author there now. */
+	policy: { allowed: boolean; reason: string };
+	/** What granary closed on them in the scope (an approval reopens these). */
+	closedItems: IntroductionClosedItem[];
+	/** The approval's GitHub action, once there is one. */
+	action: { state: OutboxState; attempts: number; lastError: string | null; effectKey: string } | null;
+}
+
+export interface IntroductionCounts {
+	pending: number;
+	approving: number;
+	approved: number;
+	declined: number;
+	withdrawn: number;
+	failed: number;
+}
+
+export const ListIntroductionsInput = Type.Object(
+	{ state: Type.Optional(Type.Union(INTRODUCTION_STATES.map((s) => Type.Literal(s)))) },
+	closed
+);
+export type ListIntroductionsInput = Static<typeof ListIntroductionsInput>;
+
+export const IntroductionKeyInput = Type.Object({ introKey: IssueKey }, closed);
+export type IntroductionKeyInput = Static<typeof IntroductionKeyInput>;
+
+export const DeclineIntroductionInput = Type.Object(
+	{ introKey: IssueKey, note: Type.Optional(Type.String({ maxLength: 2000 })) },
+	closed
+);
+export type DeclineIntroductionInput = Static<typeof DeclineIntroductionInput>;
+
+export type DiscussionSetupStateName = 'ready' | 'no-category' | 'disabled' | 'no-access' | 'missing' | 'error' | 'unchecked';
+
+export interface IntroductionSetupEntry {
+	owner: string;
+	repo: string;
+	/** The owner's org discussions repository: its introductions are about every repository of the owner. */
+	org: boolean;
+	state: DiscussionSetupStateName;
+	error: string | null;
+	checkedAt: number | null;
+	/** Where people start an introduction (when ready). */
+	newUrl: string | null;
+	/** GitHub pages for the next step. */
+	settingsUrl: string;
+	newCategoryUrl: string;
+}
+
+export interface IntroductionSetupStatus {
+	connected: boolean;
+	/** Whether the app asks for, and each installation accepted, Discussions (null: unknown yet). */
+	access: {
+		appPermission: boolean;
+		appEvent: boolean;
+		pendingInstallations: { installationId: number; account: string }[];
+		permissionsUrl: string;
+		ready: boolean;
+	} | null;
+	entries: IntroductionSetupEntry[];
+	/** Each owner's org discussions repository when not `.github`. */
+	orgRepositories: Record<string, string>;
+	category: { name: string; slug: string; emoji: string; description: string };
+	approvedTemplate: { template: string; custom: boolean; default: string };
+}
+
+export const SetOrgRepositoryInput = Type.Object(
+	{ owner: Login, repo: Type.Union([Type.String({ pattern: '^[A-Za-z0-9_.-]{1,100}$' }), Type.Null()]) },
+	closed
+);
+export type SetOrgRepositoryInput = Static<typeof SetOrgRepositoryInput>;
+
+export const SaveApprovedTemplateInput = Type.Object({ template: Type.Union([Type.String({ maxLength: 60_000 }), Type.Null()]) }, closed);
+export type SaveApprovedTemplateInput = Static<typeof SaveApprovedTemplateInput>;

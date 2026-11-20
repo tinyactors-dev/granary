@@ -9,19 +9,26 @@
 import { Database, type Statement } from 'bun:sqlite';
 import { mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
-import type { IssueDoneData } from '../schemas/actors';
+import type { IntroductionDoneData, IssueDoneData } from '../schemas/actors';
 import {
 	encodeOutboxPayload,
 	encodeReplyTo,
 	parseAllowedUserRow,
 	parseBlockedUserRow,
+	parseDiscussionSetupRow,
 	parseInboxRow,
+	parseIntroductionRow,
 	parseOutboxRow,
 	parseSessionRow,
 	parseVerdictRow,
 	type AllowedUserRow,
 	type BlockedUserRow,
+	type DiscussionSetupRow,
+	type DiscussionSetupState,
 	type InboxRow,
+	type IntroductionRow,
+	type IntroductionState,
+	type ReopenItem,
 	type InboxState,
 	type OutboxPayload,
 	type OutboxRow,
@@ -188,7 +195,40 @@ const MIGRATIONS: string[] = [
 	);
 	INSERT INTO allowed_users_scoped (login, scope, added_by, added_at) SELECT login, '', added_by, added_at FROM allowed_users;
 	DROP TABLE allowed_users;
-	ALTER TABLE allowed_users_scoped RENAME TO allowed_users;`
+	ALTER TABLE allowed_users_scoped RENAME TO allowed_users;`,
+	/* 6: introductions through GitHub Discussions (ADR 0310) */
+	`CREATE TABLE IF NOT EXISTS introductions (
+		intro_key TEXT PRIMARY KEY,
+		repo_id INTEGER NOT NULL,
+		owner TEXT NOT NULL,
+		repo TEXT NOT NULL,
+		number INTEGER NOT NULL,
+		node_id TEXT NOT NULL,
+		author TEXT NOT NULL,
+		author_association TEXT,
+		title TEXT NOT NULL,
+		body TEXT NOT NULL,
+		html_url TEXT NOT NULL,
+		scope TEXT NOT NULL,
+		state TEXT NOT NULL CHECK (state IN ('pending','approving','approved','declined','withdrawn','failed')),
+		received_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL,
+		decided_by TEXT,
+		decided_at INTEGER,
+		note TEXT,
+		delivery_id TEXT
+	);
+	CREATE INDEX IF NOT EXISTS introductions_state ON introductions(state, received_at);
+	CREATE TABLE IF NOT EXISTS discussion_setup (
+		full_name TEXT PRIMARY KEY,
+		repo_id INTEGER,
+		state TEXT NOT NULL CHECK (state IN ('ready','no-category','disabled','no-access','missing','error')),
+		category_id TEXT,
+		category_slug TEXT,
+		new_url TEXT,
+		error TEXT,
+		checked_at INTEGER NOT NULL
+	);`
 ];
 
 export interface InsertInbox {
@@ -197,7 +237,8 @@ export interface InsertInbox {
 	action: string | null;
 	issueKey: string | null;
 	payload: string;
-	state: 'pending' | 'ignored';
+	/** `done`: acted on while it was received (a discussion, ADR 0310). */
+	state: 'pending' | 'ignored' | 'done';
 	/** Why an `ignored` delivery is not acted on (ADR 0220). */
 	ignoreReason?: string | null;
 }
@@ -380,7 +421,7 @@ export class Wal {
 	}
 
 	outboxForIssue(issueKey: string): OutboxRow | null {
-		const r = this.#q('SELECT * FROM outbox WHERE issue_key = $key ORDER BY updated_at DESC LIMIT 1').get({
+		const r = this.#q(`SELECT * FROM outbox WHERE issue_key = $key AND effect_key LIKE 'close:%' ORDER BY updated_at DESC LIMIT 1`).get({
 			key: issueKey
 		});
 		return r ? parseOutboxRow(r) : null;
@@ -455,7 +496,12 @@ export class Wal {
 			this.#q(
 				`UPDATE outbox SET state = 'pending', attempts = 0, next_attempt_at = $now, updated_at = $now WHERE effect_key = $key`
 			).run({ key: effectKey, now });
-			this.#q(`DELETE FROM verdicts WHERE issue_key = $key AND verdict = 'failed'`).run({ key: row.issue_key });
+			if (row.effect_key.startsWith('approve:')) {
+				// An approval that gave up is carried out again (ADR 0310).
+				this.#q(`UPDATE introductions SET state = 'approving', updated_at = $now WHERE intro_key = $key AND state = 'failed'`).run({ key: row.issue_key, now });
+			} else {
+				this.#q(`DELETE FROM verdicts WHERE issue_key = $key AND verdict = 'failed'`).run({ key: row.issue_key });
+			}
 			return this.getOutbox(effectKey)!;
 		});
 	}
@@ -520,18 +566,18 @@ export class Wal {
 		const rows = this.#q(
 			`WITH items AS (
 				SELECT issue_key AS k FROM inbox WHERE issue_key IS NOT NULL
-				UNION SELECT issue_key FROM outbox
+				UNION SELECT issue_key FROM outbox WHERE effect_key LIKE 'close:%'
 				UNION SELECT issue_key FROM verdicts
 			), agg AS (
 				SELECT i.k AS issue_key,
 					MAX(
 						COALESCE((SELECT MAX(received_at) FROM inbox WHERE issue_key = i.k), 0),
-						COALESCE((SELECT MAX(updated_at) FROM outbox WHERE issue_key = i.k), 0),
+						COALESCE((SELECT MAX(updated_at) FROM outbox WHERE issue_key = i.k AND effect_key LIKE 'close:%'), 0),
 						COALESCE(v.decided_at, 0)
 					) AS updated_at,
 					CASE
 						WHEN v.verdict IS NOT NULL THEN v.verdict
-						WHEN EXISTS (SELECT 1 FROM outbox WHERE issue_key = i.k) THEN 'closing'
+						WHEN EXISTS (SELECT 1 FROM outbox WHERE issue_key = i.k AND effect_key LIKE 'close:%') THEN 'closing'
 						WHEN NOT EXISTS (SELECT 1 FROM inbox WHERE issue_key = i.k AND state <> 'ignored') THEN 'ignored'
 						ELSE 'pending'
 					END AS outcome,
@@ -643,6 +689,127 @@ export class Wal {
 
 	unblockUser(login: string): boolean {
 		return this.#q('DELETE FROM blocked_users WHERE login = $login').run({ login }).changes === 1;
+	}
+
+	// -------------------------------------------------------------------------
+	// introductions (ADR 0310)
+	// -------------------------------------------------------------------------
+
+	getIntroduction(introKey: string): IntroductionRow | null {
+		const r = this.#q('SELECT * FROM introductions WHERE intro_key = $key').get({ key: introKey });
+		return r ? parseIntroductionRow(r) : null;
+	}
+
+	/**
+	 * A discussion in an Introductions category was created (or moved in):
+	 * insert it `pending`, or bring a `withdrawn` one back; a decided one keeps
+	 * its state. Text is refreshed either way. Returns the row and whether it
+	 * is new.
+	 */
+	upsertIntroduction(
+		i: { introKey: string; repoId: number; owner: string; repo: string; number: number; nodeId: string; author: string; association: string | null; title: string; body: string; htmlUrl: string; scope: string; deliveryId: string },
+		now = Date.now()
+	): { row: IntroductionRow; created: boolean } {
+		return this.tx(() => {
+			const existing = this.getIntroduction(i.introKey);
+			if (!existing) {
+				this.#q(
+					`INSERT INTO introductions (intro_key, repo_id, owner, repo, number, node_id, author, author_association, title, body, html_url, scope, state, received_at, updated_at, delivery_id)
+					 VALUES ($key, $repoId, $owner, $repo, $number, $nodeId, $author, $assoc, $title, $body, $url, $scope, 'pending', $now, $now, $delivery)`
+				).run({ key: i.introKey, repoId: i.repoId, owner: i.owner, repo: i.repo, number: i.number, nodeId: i.nodeId, author: i.author, assoc: i.association, title: i.title, body: i.body, url: i.htmlUrl, scope: i.scope, now, delivery: i.deliveryId });
+			} else {
+				this.#q(
+					`UPDATE introductions SET title = $title, body = $body, html_url = $url, owner = $owner, repo = $repo, scope = $scope, updated_at = $now,
+					   state = CASE WHEN state = 'withdrawn' THEN 'pending' ELSE state END
+					 WHERE intro_key = $key`
+				).run({ key: i.introKey, title: i.title, body: i.body, url: i.htmlUrl, owner: i.owner, repo: i.repo, scope: existing.state === 'pending' || existing.state === 'withdrawn' ? i.scope : existing.scope, now });
+			}
+			return { row: this.getIntroduction(i.introKey)!, created: !existing };
+		});
+	}
+
+	/** `edited`: new title and body (any state). False when unknown. */
+	updateIntroductionText(introKey: string, title: string, body: string, now = Date.now()): boolean {
+		return this.#q('UPDATE introductions SET title = $title, body = $body, updated_at = $now WHERE intro_key = $key').run({ key: introKey, title, body, now }).changes === 1;
+	}
+
+	/** `deleted` or moved out of the category: a pending introduction is withdrawn. */
+	withdrawIntroduction(introKey: string, now = Date.now()): boolean {
+		return this.#q(`UPDATE introductions SET state = 'withdrawn', updated_at = $now WHERE intro_key = $key AND state = 'pending'`).run({ key: introKey, now }).changes === 1;
+	}
+
+	/** The approve processor: the introduction is being carried out. */
+	markIntroductionApproving(introKey: string, by: string, now = Date.now()): void {
+		this.#q(`UPDATE introductions SET state = 'approving', decided_by = $by, decided_at = $now, updated_at = $now WHERE intro_key = $key`).run({ key: introKey, by, now });
+	}
+
+	/** The introduction actor's done hook (not for `settled`). */
+	recordIntroductionDone(done: IntroductionDoneData, now = Date.now()): void {
+		if (done.verdict === 'settled') return;
+		this.#q(
+			`UPDATE introductions SET state = $state, decided_by = COALESCE($by, decided_by), decided_at = COALESCE(decided_at, $now), note = COALESCE($note, note), updated_at = $now WHERE intro_key = $key`
+		).run({ key: done.introKey, state: done.verdict, by: done.by, note: done.note, now });
+	}
+
+	listIntroductions(state: IntroductionState | undefined, limit: number, offset: number): IntroductionRow[] {
+		const sql = state
+			? `SELECT * FROM introductions WHERE state = $state ORDER BY received_at DESC, intro_key DESC LIMIT $limit OFFSET $offset`
+			: `SELECT * FROM introductions ORDER BY received_at DESC, intro_key DESC LIMIT $limit OFFSET $offset`;
+		return this.#q(sql)
+			.all(state ? { state, limit, offset } : { limit, offset })
+			.map(parseIntroductionRow);
+	}
+
+	introductionCounts(): Record<IntroductionState, number> {
+		const out = zeroCounts<IntroductionState>(['pending', 'approving', 'approved', 'declined', 'withdrawn', 'failed']);
+		for (const r of this.#q('SELECT state, COUNT(*) AS n FROM introductions GROUP BY state').all() as { state: IntroductionState; n: number }[]) out[r.state] = r.n;
+		return out;
+	}
+
+	/**
+	 * Items granary closed on `author` within `scope` (`owner/repo` or `owner`):
+	 * done close effects whose verdict is still `closed` (ADR 0310).
+	 */
+	closedItemsOf(author: string, scope: string): ReopenItem[] {
+		const [owner, repo] = scope.toLowerCase().split('/') as [string, string | undefined];
+		const rows = this.#q(
+			`SELECT o.payload AS payload FROM outbox o JOIN verdicts v ON v.issue_key = o.issue_key
+			 WHERE o.effect_key LIKE 'close:%' AND o.state = 'done' AND v.verdict = 'closed'
+			   AND lower(json_extract(o.payload, '$.author')) = lower($author)
+			   AND lower(json_extract(o.payload, '$.owner')) = $owner
+			   AND ($repo IS NULL OR lower(json_extract(o.payload, '$.repo')) = $repo)
+			 ORDER BY o.updated_at`
+		).all({ author, owner, repo: repo ?? null }) as { payload: string }[];
+		return rows.map(({ payload }) => {
+			const p = JSON.parse(payload) as { kind?: 'issue' | 'pull_request'; repoId: number; owner: string; repo: string; number: number; title: string; htmlUrl: string };
+			return { kind: p.kind ?? 'issue', repoId: p.repoId, owner: p.owner, repo: p.repo, number: p.number, title: p.title, htmlUrl: p.htmlUrl };
+		});
+	}
+
+	/** After an approval reopened an item: it is allowed now (ADR 0310). */
+	markReopened(issueKey: string, now = Date.now()): void {
+		this.#q(`UPDATE verdicts SET verdict = 'allowed', reason = 'introduction-approved', decided_at = $now WHERE issue_key = $key AND verdict = 'closed'`).run({ key: issueKey, now });
+	}
+
+	// -------------------------------------------------------------------------
+	// discussion_setup (ADR 0310)
+	// -------------------------------------------------------------------------
+
+	setDiscussionSetup(r: { fullName: string; repoId: number | null; state: DiscussionSetupState; categoryId: string | null; categorySlug: string | null; newUrl: string | null; error: string | null }, now = Date.now()): void {
+		this.#q(
+			`INSERT INTO discussion_setup (full_name, repo_id, state, category_id, category_slug, new_url, error, checked_at) VALUES ($name, $repoId, $state, $cat, $slug, $url, $error, $now)
+			 ON CONFLICT(full_name) DO UPDATE SET repo_id = COALESCE(excluded.repo_id, repo_id), state = excluded.state, category_id = excluded.category_id,
+			   category_slug = excluded.category_slug, new_url = excluded.new_url, error = excluded.error, checked_at = excluded.checked_at`
+		).run({ name: r.fullName.toLowerCase(), repoId: r.repoId, state: r.state, cat: r.categoryId, slug: r.categorySlug, url: r.newUrl, error: r.error, now });
+	}
+
+	getDiscussionSetup(fullName: string): DiscussionSetupRow | null {
+		const r = this.#q('SELECT * FROM discussion_setup WHERE full_name = $name').get({ name: fullName.toLowerCase() });
+		return r ? parseDiscussionSetupRow(r) : null;
+	}
+
+	listDiscussionSetup(): DiscussionSetupRow[] {
+		return this.#q('SELECT * FROM discussion_setup ORDER BY full_name').all().map(parseDiscussionSetupRow);
 	}
 
 	// -------------------------------------------------------------------------

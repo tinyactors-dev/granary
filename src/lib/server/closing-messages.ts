@@ -13,13 +13,14 @@ import {
 	renderTemplate,
 	resolveTemplate,
 	validateClosingMessages,
-	DEFAULT_TEMPLATES,
+	defaultTemplate,
 	type ClosingKind,
 	type TemplateContext
 } from '../schemas/message-template';
 import type { GitHubCloseData } from '../schemas/actors';
 import { AdminStore, AdminStoreError, type SettingSource } from './admins';
 import { log } from './log';
+import { introduceUrlFor } from './introductions';
 
 /** The stored setting, or the empty one (all defaults). A corrupt value falls back to defaults, loudly. */
 export function readClosingMessages(db: Database): ClosingMessages {
@@ -61,20 +62,20 @@ export function saveClosingMessages(db: Database, value: unknown, source: Settin
 	return messages;
 }
 
-function contextOf(p: GitHubCloseData & { kind?: unknown }): TemplateContext {
+function contextOf(db: Database, p: GitHubCloseData & { kind?: unknown }): TemplateContext {
 	const kind: ClosingKind = p.kind === 'pull_request' ? 'pull_request' : 'issue';
-	return { kind, author: p.author, title: p.title, number: p.number, owner: p.owner, repo: p.repo, url: p.htmlUrl, association: p.association };
+	return { kind, author: p.author, title: p.title, number: p.number, owner: p.owner, repo: p.repo, url: p.htmlUrl, association: p.association, introduceUrl: introduceUrlFor(db, p.owner, p.repo) };
 }
 
 /** The comment body (without the marker) for a close effect, from the templates in effect now. */
 export function renderClosingBody(db: Database, payload: GitHubCloseData): string {
-	const ctx = contextOf(payload);
+	const ctx = contextOf(db, payload);
 	const { template, source } = resolveTemplate(readClosingMessages(db), payload.owner, payload.repo, ctx.kind);
 	try {
 		return renderTemplate(template, ctx);
 	} catch (e) {
 		log.warn(`closing messages: ${source} template for ${payload.owner}/${payload.repo} failed to render (${(e as Error).message}); using the default`);
-		return renderTemplate(DEFAULT_TEMPLATES[ctx.kind], ctx);
+		return renderTemplate(defaultTemplate(ctx.kind), ctx);
 	}
 }
 

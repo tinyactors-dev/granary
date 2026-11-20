@@ -41,7 +41,11 @@ import type {
 	Resolved,
 	SessionUser,
 	UnblockUserResult,
-	VerdictSummary
+	VerdictSummary,
+	IntroductionCounts,
+	IntroductionSetupStatus,
+	IntroductionSummary,
+	ListIntroductionsInput
 } from '$lib/schemas/api';
 import type { ActorAddress } from '$lib/schemas/actors';
 import type {
@@ -143,6 +147,20 @@ export interface Backend {
 	blockUser(input: BlockUserRequest, actor: string): Promise<BlockUserResult>;
 	/** Delete from blocked_users, audit, then post `blocklist.replace`. */
 	unblockUser(login: string, actor: string): Promise<UnblockUserResult>;
+
+	// -- introductions (ADR 0310) ----------------------------------------------------
+	/** Newest first; at most 200. */
+	listIntroductions(input: ListIntroductionsInput): Promise<IntroductionSummary[]>;
+	introductionCounts(): Promise<IntroductionCounts>;
+	/** Send `introduction.approve` to its actor (pending or failed introductions). */
+	approveIntroduction(introKey: string, by: string): Promise<IntroductionSummary>;
+	/** Send `introduction.decline` (pending introductions); nothing is posted on GitHub. */
+	declineIntroduction(introKey: string, by: string, note: string | null): Promise<IntroductionSummary>;
+	introductionSetup(): Promise<IntroductionSetupStatus>;
+	/** Check every repository's Discussions now. */
+	checkIntroductionSetup(): Promise<IntroductionSetupStatus>;
+	setOrgRepository(owner: string, repo: string | null, by: string): Promise<IntroductionSetupStatus>;
+	saveApprovedTemplate(template: string | null, by: string): Promise<IntroductionSetupStatus>;
 
 	// -- effects -----------------------------------------------------------------
 

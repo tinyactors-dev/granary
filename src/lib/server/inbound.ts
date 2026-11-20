@@ -11,6 +11,8 @@ import {
 	WEBHOOK_HEADERS,
 	parseIssuesWebhook,
 	parsePullRequestWebhook,
+	parseDiscussionWebhook,
+	type DiscussionWebhookPayload,
 	type IssuesWebhookPayload,
 	type PullRequestWebhookPayload
 } from '../schemas/github';
@@ -20,6 +22,8 @@ import type { InboxRow } from '../schemas/wal';
 import { installationIdOf } from './github/webhooks';
 import { currentLogContext, log, traceparentFor } from './log';
 import type { Runtime } from './system';
+import { introductionScope, isIntroductionsCategory } from './introductions';
+import type { Wal } from './wal';
 
 /** Constant-time check of `X-Hub-Signature-256: sha256=<hex hmac>`. */
 export function verifySignature(secret: string, body: Uint8Array, header: string | null): boolean {
@@ -90,6 +94,60 @@ export interface WebhookResult {
 
 const LIFECYCLE = new Set<string>(GITHUB_APP_LIFECYCLE_EVENTS);
 
+/** `discussion` actions that matter to introductions (ADR 0310). */
+const DISCUSSION_ACTIONS = new Set(['created', 'edited', 'deleted', 'category_changed']);
+
+/**
+ * What a `discussion` delivery does to introductions (ADR 0310), decided
+ * before the inbox row is written; `apply` runs in the same transaction.
+ */
+export function discussionDecision(
+	wal: Wal,
+	p: DiscussionWebhookPayload,
+	deliveryId: string,
+	guarded: boolean
+): { reason: string | null; apply: () => string } {
+	const d = p.discussion;
+	const owner = p.repository.owner.login;
+	const repo = p.repository.name;
+	const key = issueKey(p.repository.id, d.number);
+	const ignore = (reason: string) => ({ reason, apply: () => reason });
+	const scope = introductionScope(wal.db, owner, repo, guarded);
+	if (!scope) return ignore(`${owner}/${repo} is not gated, and not ${owner}'s org discussions repository`);
+	if (!DISCUSSION_ACTIONS.has(p.action)) return ignore(`discussion.${p.action} is not acted on`);
+	const inCategory = isIntroductionsCategory(d.category);
+	const existing = wal.getIntroduction(key);
+	const record = () => {
+		const { created } = wal.upsertIntroduction({
+			introKey: key,
+			repoId: p.repository.id,
+			owner,
+			repo,
+			number: d.number,
+			nodeId: d.node_id,
+			author: d.user.login,
+			association: d.author_association ?? null,
+			title: d.title,
+			body: d.body ?? '',
+			htmlUrl: d.html_url,
+			scope,
+			deliveryId
+		});
+		return created ? `introduction ${key} received` : `introduction ${key} updated`;
+	};
+	if (p.action === 'deleted') {
+		if (!existing) return ignore('not an introduction');
+		return { reason: null, apply: () => (wal.withdrawIntroduction(key) ? `introduction ${key} withdrawn (deleted)` : `introduction ${key} deleted (already ${existing.state})`) };
+	}
+	if (p.action === 'category_changed' && !inCategory) {
+		if (!existing) return ignore('not in the Introductions category');
+		return { reason: null, apply: () => (wal.withdrawIntroduction(key) ? `introduction ${key} withdrawn (moved out)` : `introduction ${key} moved out (already ${existing.state})`) };
+	}
+	if (!inCategory) return ignore('not in the Introductions category');
+	if (p.action === 'edited' && existing) return { reason: null, apply: () => (wal.updateIntroductionText(key, d.title, d.body ?? ''), `introduction ${key} edited`) };
+	return { reason: null, apply: record };
+}
+
 /**
  * `POST /webhook` (ADR 0003, 0160, 0192):
  * 1. no connection / no secret (setup required) → 503;
@@ -97,7 +155,9 @@ const LIFECYCLE = new Set<string>(GITHUB_APP_LIFECYCLE_EVENTS);
  * 3. installation lifecycle events sync installations/repos (app mode);
  * 4. `issues` of a disabled or unknown repo → stored `ignored` with a reason;
  * 5. `INSERT OR IGNORE` the inbox row (committed), 202 (also for duplicates),
- *    and for a new `issues.opened` row post `issue.opened`.
+ *    and for a new `issues.opened` row post `issue.opened`;
+ * 6. `discussion` in an Introductions category records the introduction in
+ *    the same transaction (ADR 0310).
  */
 export async function handleWebhook(rt: Runtime, request: Request): Promise<WebhookResult> {
 	const secret = await rt.github.webhookSecret();
@@ -124,6 +184,7 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 
 	let payload: IssuesWebhookPayload | null = null;
 	let prPayload: PullRequestWebhookPayload | null = null;
+	let discPayload: DiscussionWebhookPayload | null = null;
 	let json: unknown = null;
 	let action: string | null = null;
 	let key: string | null = null;
@@ -137,6 +198,9 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 			prPayload = parsePullRequestWebhook(raw);
 			action = prPayload.action;
 			key = issueKey(prPayload.repository.id, prPayload.pull_request.number);
+		} else if (event === 'discussion') {
+			discPayload = parseDiscussionWebhook(raw);
+			action = discPayload.action;
 		} else {
 			const a = (json as { action?: unknown } | null)?.action;
 			action = typeof a === 'string' ? a : null;
@@ -164,18 +228,31 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 		if (!policy.guarded) reason = policy.reason;
 	}
 
+	// Introductions (ADR 0310): recorded here, in the inbox row's transaction.
+	let discussion: ReturnType<typeof discussionDecision> | null = null;
+	if (discPayload) {
+		const policy = rt.github.repoPolicy(discPayload.repository.id, discPayload.repository.full_name, installationIdOf(json));
+		discussion = discussionDecision(rt.wal, discPayload, deliveryId, policy.guarded);
+		reason = discussion.reason;
+	}
+
 	const actionable = (event === 'issues' || event === 'pull_request') && action === 'opened' && reason === null;
-	const state = actionable ? 'pending' : 'ignored';
+	const applied = discussion !== null && discussion.reason === null;
+	const state = actionable ? 'pending' : applied ? 'done' : 'ignored';
 	let inserted: boolean;
 	try {
-		const ignoreReason = actionable ? null : (reason ?? `${action ? `${event}.${action}` : event} is not acted on`);
-		inserted = rt.wal.insertInbox({ deliveryId, event, action, issueKey: key, payload: raw, state, ignoreReason });
+		const ignoreReason = actionable || applied ? null : (reason ?? `${action ? `${event}.${action}` : event} is not acted on`);
+		inserted = rt.wal.tx(() => {
+			const fresh = rt.wal.insertInbox({ deliveryId, event, action, issueKey: key, payload: raw, state, ignoreReason });
+			if (fresh && applied) note = discussion!.apply();
+			return fresh;
+		});
 	} catch (e) {
 		log.error(`webhook: could not store delivery ${deliveryId}`, e);
 		return { status: 500, body: 'Could not store delivery' };
 	}
-	const outcome = !inserted ? 'duplicate' : actionable ? 'accepted' : 'ignored';
-	const ignoreReason = actionable ? undefined : (reason ?? `${action ? `${event}.${action}` : event} is not acted on`);
+	const outcome = !inserted ? 'duplicate' : actionable || applied ? 'accepted' : 'ignored';
+	const ignoreReason = actionable || applied ? undefined : (reason ?? `${action ? `${event}.${action}` : event} is not acted on`);
 	log.info(`webhook: ${event}${action ? `.${action}` : ''} ${outcome}${outcome === 'ignored' && ignoreReason ? ` (${ignoreReason})` : ''}`, {
 		'github.event': event,
 		'github.action': action ?? undefined,
@@ -190,6 +267,10 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 
 	if (inserted && actionable && payload) rt.postIssueOpened(issueOpenedData(deliveryId, payload), traceparentFor(currentLogContext()));
 	if (inserted && actionable && prPayload) rt.postIssueOpened(pullRequestOpenedData(deliveryId, prPayload), traceparentFor(currentLogContext()));
+	// A discussion shows Discussions are on there: check the repository again (its category may be new).
+	if (inserted && discPayload && (applied || /Introductions category/.test(reason ?? ''))) {
+		rt.introductions.check(discPayload.repository.owner.login, discPayload.repository.name).catch((e) => log.warn('introductions: setup check failed', e));
+	}
 
 	return { status: 202, body: { deliveryId, state, duplicate: !inserted, ...(reason ? { reason } : {}), ...(note ? { note } : {}) } };
 }

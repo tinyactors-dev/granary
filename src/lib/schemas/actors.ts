@@ -21,7 +21,7 @@ export const ActorAddress = Type.Object(
 );
 export type ActorAddress = Static<typeof ActorAddress>;
 
-export const FAMILY = { issue: 'issue', allowlist: 'allowlist' } as const;
+export const FAMILY = { issue: 'issue', allowlist: 'allowlist', introduction: 'introduction' } as const;
 
 /** The main system's name: actors' addresses are `tinyactors://granary/@<family>%2F<name>` (ADR 0300). */
 export const GRANARY_SYSTEM = 'granary';
@@ -59,10 +59,19 @@ export const issueAddress = (repoId: number, number: number): ActorAddress => ({
 
 export const issueAddressFromKey = (key: string): ActorAddress => ({ family: FAMILY.issue, name: key });
 
-/** Outbox effect key for closing an issue: `close:<repoId>:<number>`. */
-export const EffectKey = Type.String({ pattern: '^close:[0-9]+:[0-9]+$', title: 'effect key' });
+/**
+ * Outbox effect keys: `close:<repoId>:<number>` closes an issue or pull
+ * request; `approve:<repoId>:<number>` carries out an approved introduction
+ * (the discussion's repository and number, ADR 0310).
+ */
+export const EffectKey = Type.String({ pattern: '^(close|approve):[0-9]+:[0-9]+$', title: 'effect key' });
 export type EffectKey = Static<typeof EffectKey>;
 export const closeEffectKey = (repoId: number, number: number): string => `close:${repoId}:${number}`;
+export const approveEffectKey = (repoId: number, number: number): string => `approve:${repoId}:${number}`;
+export const isApproveEffectKey = (key: string): boolean => key.startsWith('approve:');
+
+/** `introduction/<repoId>-<number>`: one actor per introduction (a discussion; ADR 0310). */
+export const introductionAddress = (introKey: string): ActorAddress => ({ family: FAMILY.introduction, name: introKey });
 
 /** `family/name`: the display form, and the name the actor is spawned under (ADR 0300). */
 export const formatAddress = (a: ActorAddress): string => `${a.family}/${a.name}`;
@@ -95,7 +104,15 @@ export const EVENTS = {
 	/** outbox relay → reply_to (issue/<key>), after 6 failed attempts */
 	githubGaveUp: 'github.gave-up',
 	/** issue/<key> → itself, delayed CHECK_TIMEOUT_MS, send id CHECK_TIMEOUT_SEND_ID */
-	checkTimeout: 'check.timeout'
+	checkTimeout: 'check.timeout',
+	/** backend (an admin) → introduction/<key> (ADR 0310) */
+	introductionApprove: 'introduction.approve',
+	/** backend (an admin) → introduction/<key> */
+	introductionDecline: 'introduction.decline',
+	/** introduction/<key> → `github` I/O processor */
+	githubApprove: 'github.approve',
+	/** github I/O processor (already done) or outbox relay → introduction/<key> */
+	githubApproved: 'github.approved'
 } as const;
 export type EventName = (typeof EVENTS)[keyof typeof EVENTS];
 
@@ -234,6 +251,28 @@ export const GitHubGaveUpData = Type.Object(
 );
 export type GitHubGaveUpData = Static<typeof GitHubGaveUpData>;
 
+/** `introduction.approve` — who decided. */
+export const IntroductionApproveData = Type.Object({ by: Type.String({ minLength: 1 }) }, { ...closed, title: 'introduction.approve' });
+export type IntroductionApproveData = Static<typeof IntroductionApproveData>;
+
+/** `introduction.decline` — who decided, and an optional note kept in granary (nothing is posted). */
+export const IntroductionDeclineData = Type.Object(
+	{ by: Type.String({ minLength: 1 }), note: Nullable(Type.String({ maxLength: 2000 })) },
+	{ ...closed, title: 'introduction.decline' }
+);
+export type IntroductionDeclineData = Static<typeof IntroductionDeclineData>;
+
+/** `github.approve` — the processor reads the rest from the `introductions` row. */
+export const GitHubApproveData = Type.Object({ introKey: IssueKey, by: Type.String({ minLength: 1 }) }, { ...closed, title: 'github.approve' });
+export type GitHubApproveData = Static<typeof GitHubApproveData>;
+
+/** `github.approved` — allowlisted, items reopened, reply posted. */
+export const GitHubApprovedData = Type.Object(
+	{ effectKey: EffectKey, commentId: Nullable(Type.Integer()), reopened: Type.Integer({ minimum: 0 }) },
+	{ ...closed, title: 'github.approved' }
+);
+export type GitHubApprovedData = Static<typeof GitHubApprovedData>;
+
 /** `check.timeout` carries no data (`undefined`). */
 export const CheckTimeoutData = Type.Undefined({ title: 'check.timeout' });
 export type CheckTimeoutData = Static<typeof CheckTimeoutData>;
@@ -248,7 +287,11 @@ export const EVENT_DATA = {
 	[EVENTS.githubClose]: GitHubCloseData,
 	[EVENTS.githubClosed]: GitHubClosedData,
 	[EVENTS.githubGaveUp]: GitHubGaveUpData,
-	[EVENTS.checkTimeout]: CheckTimeoutData
+	[EVENTS.checkTimeout]: CheckTimeoutData,
+	[EVENTS.introductionApprove]: IntroductionApproveData,
+	[EVENTS.introductionDecline]: IntroductionDeclineData,
+	[EVENTS.githubApprove]: GitHubApproveData,
+	[EVENTS.githubApproved]: GitHubApprovedData
 } as const;
 
 export interface EventDataMap {
@@ -261,6 +304,10 @@ export interface EventDataMap {
 	'github.closed': GitHubClosedData;
 	'github.gave-up': GitHubGaveUpData;
 	'check.timeout': CheckTimeoutData;
+	'introduction.approve': IntroductionApproveData;
+	'introduction.decline': IntroductionDeclineData;
+	'github.approve': GitHubApproveData;
+	'github.approved': GitHubApprovedData;
 }
 
 /** Validate an event's data against its schema; throws SchemaValidationError. */
@@ -363,3 +410,48 @@ export const AllowlistActorData = Type.Object(
 	{ ...closed, title: 'AllowlistActorData' }
 );
 export type AllowlistActorData = Static<typeof AllowlistActorData>;
+
+// ---------------------------------------------------------------------------
+// Introduction actor (ADR 0310)
+// ---------------------------------------------------------------------------
+
+/** Where an `introduction/<key>` actor starts: undecided, carrying out an approval, or already decided. */
+export const IntroductionPhase = Type.Union([Type.Literal('pending'), Type.Literal('approving'), Type.Literal('settled')]);
+export type IntroductionPhase = Static<typeof IntroductionPhase>;
+
+export const IntroductionOutcome = Type.Union([
+	Type.Literal('approved'),
+	Type.Literal('declined'),
+	Type.Literal('failed'),
+	Type.Literal('settled')
+]);
+export type IntroductionOutcome = Static<typeof IntroductionOutcome>;
+
+/** The introduction actor's data model (its spawn params come from the `introductions` row). */
+export const IntroductionActorData = Type.Object(
+	{
+		introKey: IssueKey,
+		phase: IntroductionPhase,
+		by: Nullable(Type.String()),
+		note: Nullable(Type.String()),
+		verdict: Nullable(IntroductionOutcome),
+		reason: Nullable(Type.String())
+	},
+	{ ...closed, title: 'IntroductionActorData' }
+);
+export type IntroductionActorData = Static<typeof IntroductionActorData>;
+
+/** Done-data: the system's `done` hook writes the introduction's state (not for `settled`). */
+export const IntroductionDoneData = Type.Object(
+	{
+		introKey: IssueKey,
+		verdict: IntroductionOutcome,
+		by: Nullable(Type.String()),
+		note: Nullable(Type.String()),
+		reason: Type.String()
+	},
+	{ ...closed, title: 'IntroductionDoneData' }
+);
+export type IntroductionDoneData = Static<typeof IntroductionDoneData>;
+
+export const parseIntroductionDoneData = (value: unknown): IntroductionDoneData => parse(IntroductionDoneData, value, 'introduction done-data');

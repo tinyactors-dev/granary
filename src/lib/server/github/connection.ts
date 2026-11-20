@@ -24,6 +24,8 @@ import {
 	InstallationRepositories,
 	PR_EVENT,
 	PR_PERMISSION,
+	DISCUSSIONS_PERMISSION,
+	DISCUSSION_EVENT,
 	InstallationToken,
 	ManifestConversion,
 	type BeginManifestInput,
@@ -350,6 +352,34 @@ export class GitHubConnection {
 		});
 	}
 
+	/** A REST/GraphQL client acting as one installation (introductions' setup checks, ADR 0310). */
+	clientForInstallation(installationId: number): GitHubClient {
+		if (this.mode() !== 'app') throw new Error('GitHub is not connected (setup required)');
+		return new GitHubClient({
+			apiUrl: this.#config.githubApiUrl,
+			token: () => this.#tokens.get(installationId),
+			onUnauthorized: () => this.#tokens.invalidate(installationId)
+		});
+	}
+
+	/**
+	 * Discussions access (ADR 0310), like pull request access (ADR 0281): what
+	 * the app asks for, and which installations have not accepted it yet.
+	 */
+	discussionAccess(): { appPermission: boolean; appEvent: boolean; pendingInstallations: { installationId: number; account: string }[]; permissionsUrl: string; ready: boolean } | null {
+		const app = this.#store.getApp();
+		if (!app || app.permissions === null) return null;
+		const perms = jsonRecord(app.permissions);
+		const events = jsonArray(app.events);
+		const appPermission = perms[DISCUSSIONS_PERMISSION] === 'write';
+		const appEvent = events.includes(DISCUSSION_EVENT);
+		const pendingInstallations = this.#store
+			.listInstallations()
+			.filter((i) => !i.suspended && !installationDiscussionAccess(i))
+			.map((i) => ({ installationId: i.installation_id, account: i.account_login }));
+		return { appPermission, appEvent, pendingInstallations, permissionsUrl: this.permissionsUrl() ?? '', ready: appPermission && appEvent && pendingInstallations.length === 0 };
+	}
+
 	/** OAuth client for UI sign-in: the GitHub App's user-to-server credentials. */
 	async oauthCredentials(): Promise<{ clientId: string; clientSecret: string } | null> {
 		if (this.mode() !== 'app') return null;
@@ -662,4 +692,9 @@ function jsonArray(text: string | null): string[] {
 /** The installation accepted `pull_requests: write` and subscribes to `pull_request` (ADR 0281). */
 export function installationPrAccess(i: InstallationRow): boolean {
 	return jsonRecord(i.permissions)[PR_PERMISSION] === 'write' && jsonArray(i.events).includes(PR_EVENT);
+}
+
+/** The installation accepted `discussions: write` and subscribes to `discussion` (ADR 0310). */
+export function installationDiscussionAccess(i: InstallationRow): boolean {
+	return jsonRecord(i.permissions)[DISCUSSIONS_PERMISSION] === 'write' && jsonArray(i.events).includes(DISCUSSION_EVENT);
 }

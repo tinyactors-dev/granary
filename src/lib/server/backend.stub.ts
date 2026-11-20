@@ -40,8 +40,13 @@ import type {
 	Resolved,
 	SessionUser,
 	UnblockUserResult,
-	VerdictSummary
+	VerdictSummary,
+	IntroductionCounts,
+	IntroductionSetupStatus,
+	IntroductionSummary,
+	ListIntroductionsInput
 } from '$lib/schemas/api';
+import { DEFAULT_APPROVED_TEMPLATE } from '$lib/schemas/message-template';
 import { closeEffectKey, formatAddress, issueKey, parseIssueKey, type ActorAddress } from '$lib/schemas/actors';
 import type { AuthorAssociation } from '$lib/schemas/github';
 import type {
@@ -425,6 +430,95 @@ export class StubBackend implements Backend {
 	async removeAllowedUser(login: string, _removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {
 		const removed = this.allowed.delete(`${login.toLowerCase()} ${scope.toLowerCase()}`);
 		return { login, scope: scope.toLowerCase(), removed };
+	}
+
+	// -- introductions (ADR 0310) ----------------------------------------------------------
+
+	private introductions: IntroductionSummary[] = [
+		{
+			introKey: '1001-14',
+			owner: 'acme',
+			repo: 'widgets',
+			number: 14,
+			author: 'mallory',
+			association: 'NONE',
+			title: 'Hi, I would like to help with the docs',
+			body: "I'm Mallory. I write technical docs for a living and noticed the widget guides are out of date. I'd like to start with the install page.",
+			htmlUrl: 'https://github.com/acme/widgets/discussions/14',
+			scope: 'acme/widgets',
+			state: 'pending',
+			receivedAt: Date.now() - 3 * 60 * 60_000,
+			updatedAt: Date.now() - 3 * 60 * 60_000,
+			decidedBy: null,
+			decidedAt: null,
+			note: null,
+			policy: { allowed: false, reason: 'not-allowed' },
+			closedItems: [{ kind: 'issue', issueKey: '1001-9', owner: 'acme', repo: 'widgets', number: 9, title: 'Install docs are wrong', htmlUrl: 'https://github.com/acme/widgets/issues/9' }],
+			action: null
+		}
+	];
+	private orgRepositories: Record<string, string> = {};
+	private approvedTemplate: string | null = null;
+
+	async listIntroductions(input: ListIntroductionsInput): Promise<IntroductionSummary[]> {
+		return this.introductions.filter((i) => !input.state || i.state === input.state);
+	}
+
+	async introductionCounts(): Promise<IntroductionCounts> {
+		const c: IntroductionCounts = { pending: 0, approving: 0, approved: 0, declined: 0, withdrawn: 0, failed: 0 };
+		for (const i of this.introductions) c[i.state]++;
+		return c;
+	}
+
+	async approveIntroduction(introKey: string, by: string): Promise<IntroductionSummary> {
+		const i = this.introductions.find((x) => x.introKey === introKey);
+		if (!i) throw new BackendError('not-found', `No introduction ${introKey}`);
+		Object.assign(i, { state: 'approved', decidedBy: by, decidedAt: Date.now(), policy: { allowed: true, reason: 'allowlist' }, closedItems: [] });
+		return i;
+	}
+
+	async declineIntroduction(introKey: string, by: string, note: string | null): Promise<IntroductionSummary> {
+		const i = this.introductions.find((x) => x.introKey === introKey);
+		if (!i) throw new BackendError('not-found', `No introduction ${introKey}`);
+		Object.assign(i, { state: 'declined', decidedBy: by, decidedAt: Date.now(), note });
+		return i;
+	}
+
+	async introductionSetup(): Promise<IntroductionSetupStatus> {
+		const entry = (repo: string, org: boolean, state: IntroductionSetupStatus['entries'][number]['state']) => ({
+			owner: 'acme',
+			repo,
+			org,
+			state,
+			error: null,
+			checkedAt: Date.now() - 60_000,
+			newUrl: state === 'ready' ? `https://github.com/acme/${repo}/discussions/new?category=introductions` : null,
+			settingsUrl: `https://github.com/acme/${repo}/settings`,
+			newCategoryUrl: `https://github.com/acme/${repo}/discussions/categories/new`
+		});
+		return {
+			connected: true,
+			access: { appPermission: true, appEvent: true, pendingInstallations: [], permissionsUrl: 'https://github.com/settings/apps/granary/permissions', ready: true },
+			entries: [entry('.github', true, 'disabled'), entry('widgets', false, 'ready'), entry('gadgets', false, 'no-category')],
+			orgRepositories: this.orgRepositories,
+			category: { name: 'Introductions', slug: 'introductions', emoji: ':wave:', description: 'Say hello: who you are and what you would like to work on.' },
+			approvedTemplate: { template: this.approvedTemplate ?? DEFAULT_APPROVED_TEMPLATE, custom: this.approvedTemplate !== null, default: DEFAULT_APPROVED_TEMPLATE }
+		};
+	}
+
+	async checkIntroductionSetup(): Promise<IntroductionSetupStatus> {
+		return this.introductionSetup();
+	}
+
+	async setOrgRepository(owner: string, repo: string | null): Promise<IntroductionSetupStatus> {
+		if (repo === null) delete this.orgRepositories[owner.toLowerCase()];
+		else this.orgRepositories[owner.toLowerCase()] = repo;
+		return this.introductionSetup();
+	}
+
+	async saveApprovedTemplate(template: string | null): Promise<IntroductionSetupStatus> {
+		this.approvedTemplate = template;
+		return this.introductionSetup();
 	}
 
 	// -- blocklist (ADR 0260) ----------------------------------------------------------

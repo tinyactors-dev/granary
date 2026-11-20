@@ -14,16 +14,21 @@ import {
 	IssueKey,
 	formatAddress,
 	issueAddressFromKey,
+	parseIntroductionDoneData,
 	parseIssueDoneData,
+	type IntroductionActorData,
+	type IntroductionPhase,
 	type IssueActorData,
 	type IssueLoaderBinding,
 	type IssueOpenedData
 } from '../schemas/actors';
 import type { Config } from '../schemas/config';
 import { check } from '../schemas/standard';
-import { parseOutboxPayload } from '../schemas/wal';
+import { parseClosePayload } from '../schemas/wal';
 import { allowlistChart } from './actors/allowlist';
 import { issueChart } from './actors/issue';
+import { introductionChart } from './actors/introduction';
+import { IntroductionSetup } from './introductions';
 import { CATCHUP_INTERVAL_MS, deliveryCatchupChart, type DeliveryCatchupData } from './actors/delivery-catchup';
 import { CATCHUP_ADDRESS, CATCHUP_EVENTS, CATCHUP_FAMILY, CATCHUP_IO_TYPE, catchupProcessor } from './github/catchup';
 import { GitHubConnection } from './github/connection';
@@ -44,6 +49,7 @@ export const SWEEP_INTERVAL_MS = 30_000;
 export const ALLOWLIST_NAME = formatAddress(ALLOWLIST_ADDRESS);
 export const CATCHUP_NAME = formatAddress(CATCHUP_ADDRESS);
 export const issueName = (key: string): string => formatAddress(issueAddressFromKey(key));
+export const introductionName = (key: string): string => `${FAMILY.introduction}/${key}`;
 
 export interface Runtime {
 	config: Config;
@@ -53,6 +59,8 @@ export interface Runtime {
 	relay: Relay;
 	/** The GitHub connection: mode, secrets, auth, installations (ADR 0160). */
 	github: GitHubConnection;
+	/** Where introductions come from and whether each repository is set up (ADR 0310). */
+	introductions: IntroductionSetup;
 	tracer: Tracer;
 	startedAt: number;
 	/**
@@ -64,6 +72,8 @@ export interface Runtime {
 	postIssueOpened(data: IssueOpenedData, traceparent?: string): boolean;
 	/** The issue actor `key`, spawned from SQLite when it is not running. */
 	issueActor(key: string, traceparent?: string): Actor;
+	/** The introduction actor `key` (ADR 0310), spawned from SQLite when it is not running. */
+	introductionActor(key: string, traceparent?: string): Actor;
 	/** Send `allowlist.replace` with the current `allowed_users`. */
 	publishAllowlist(): void;
 	/** Send `blocklist.replace` with the current (unexpired) `blocked_users` (ADR 0260). */
@@ -86,7 +96,7 @@ export function issueLoaderBinding(wal: Wal, key: string): IssueLoaderBinding {
 	if (wal.getVerdict(key)) return { issueKey: key, phase: 'settled' };
 	const outbox = wal.outboxForIssue(key);
 	if (outbox) {
-		const p = parseOutboxPayload(outbox.payload);
+		const p = parseClosePayload(outbox.payload);
 		let authorType = 'User';
 		const inbox = wal.getInbox(p.deliveryId);
 		if (inbox) authorType = issueOpenedFromInbox(inbox)?.authorType ?? authorType;
@@ -124,6 +134,19 @@ export function issueParams(b: IssueLoaderBinding): IssueActorData {
 	};
 }
 
+/** Where an introduction actor starts (ADR 0310): from the row's state. */
+export function introductionPhase(wal: Wal, key: string): IntroductionPhase {
+	const row = wal.getIntroduction(key);
+	if (!row) return 'settled';
+	if (row.state === 'approving') return 'approving';
+	if (row.state === 'pending' || row.state === 'failed') return 'pending';
+	return 'settled';
+}
+
+export function introductionParams(wal: Wal, key: string): IntroductionActorData {
+	return { introKey: key, phase: introductionPhase(wal, key), by: null, note: null, verdict: null, reason: null };
+}
+
 /**
  * Boot order (ADR 0003, ADR 0300): open DB → create the host → spawn
  * allowlist → start relay on pending/inflight rows → re-send every pending
@@ -156,18 +179,29 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		deliveries.delete(String(actor.id));
 		names.delete(String(actor.id));
 	};
-	const charts = compileCharts([issueChart(), allowlistChart(), deliveryCatchupChart()], { warningsAsErrors: true });
+	const charts = compileCharts([issueChart(), allowlistChart(), deliveryCatchupChart(), introductionChart()], { warningsAsErrors: true });
 	const host = new Host(charts, {
 		system: GRANARY_SYSTEM,
 		config: tracer.hostConfig(),
 		telemetry: (signal, data) => tracer.onExport(signal, data),
 		ioProcessors: {
-			[GITHUB_IO_TYPE]: githubProcessor({ wal, kickRelay: () => relay?.kick() }),
+			[GITHUB_IO_TYPE]: githubProcessor({ wal, kickRelay: () => relay?.kick(), allowlistChanged: () => publishAllowlistLate() }),
 			[CATCHUP_IO_TYPE]: catchupProcessor({ connection: () => github, wal })
 		},
 		onDone(actor, donedata) {
+			const name = names.get(String(actor.id)) ?? '';
 			ended(actor);
 			if (donedata === undefined) return;
+			if (name.startsWith(`${FAMILY.introduction}/`)) {
+				try {
+					const done = parseIntroductionDoneData(donedata);
+					wal.recordIntroductionDone(done);
+					log.info(`introduction/${done.introKey} finished: ${done.verdict} (${done.reason})`, { 'granary.introduction_key': done.introKey, 'granary.verdict': done.verdict, 'granary.reason': done.reason, 'granary.actor.address': name });
+				} catch (e) {
+					log.error("recording an introduction's outcome failed", e);
+				}
+				return;
+			}
 			try {
 				const done = parseIssueDoneData(donedata);
 				wal.recordDone(done);
@@ -212,13 +246,22 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		return spawn(FAMILY.issue, name, { params, ...(traceparent ? { traceparent } : {}) });
 	};
 
+	const introductionActor = (key: string, traceparent?: string): Actor => {
+		const name = introductionName(key);
+		const running = findActor(host, name);
+		if (running) return running;
+		return spawn(FAMILY.introduction, name, { params: introductionParams(wal, key), ...(traceparent ? { traceparent } : {}) });
+	};
+
 	// 5. relay
 	relay = new Relay({
 		wal,
-		github: (payload) => github.clientForRepo({ owner: payload.owner, repo: payload.repo, repoId: payload.repoId }),
+		github: (target) => github.clientForRepo({ owner: target.owner, repo: target.repo, repoId: target.repoId }),
 		reply: (to, event, data) => {
-			if (to.family !== FAMILY.issue || !check(IssueKey, to.name)) throw new Error(`relay: unknown reply_to ${to.family}/${to.name}`);
-			issueActor(to.name).send(event, data as never);
+			if (!check(IssueKey, to.name)) throw new Error(`relay: unknown reply_to ${to.family}/${to.name}`);
+			if (to.family === FAMILY.issue) issueActor(to.name).send(event, data as never);
+			else if (to.family === FAMILY.introduction) introductionActor(to.name).send(event, data as never);
+			else throw new Error(`relay: unknown reply_to ${to.family}/${to.name}`);
 		},
 		baseDelayMs: config.relayBaseDelayMs
 	});
@@ -232,10 +275,18 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		log.info('github: delivery catch-up started');
 	};
 	spawnCatchup();
+
+	// 5c. introductions (ADR 0310): check every repository's Discussions once connected.
+	const introductions = new IntroductionSetup({ wal, github, webUrl: config.githubWebUrl });
+	const checkIntroductions = () => {
+		introductions.checkAll().catch((e) => log.warn('introductions: setup check failed', e));
+	};
+	if (github.mode() === 'app') setTimeout(checkIntroductions, 1000).unref?.();
 	github.onModeChange((mode) => {
 		if (mode === 'app') {
 			spawnCatchup();
 			findActor(host, CATCHUP_NAME)?.send(CATCHUP_EVENTS.runNow);
+			checkIntroductions();
 		}
 	});
 
@@ -281,6 +332,9 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	sweeper.unref?.();
 
 	const allowlist = () => host.actor(ALLOWLIST_NAME);
+	function publishAllowlistLate(): void {
+		allowlist().send(EVENTS.allowlistReplace, { entries: wal.allowlistEntries() });
+	}
 	const runtime: Runtime = {
 		config,
 		devMode: opts.devMode,
@@ -288,15 +342,15 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		host,
 		relay,
 		github,
+		introductions,
 		tracer,
 		startedAt: Date.now(),
 		postIssueOpened,
 		issueActor,
+		introductionActor,
 		nameOf: (actor) => names.get(String(actor.id)) ?? null,
 		stats,
-		publishAllowlist() {
-			allowlist().send(EVENTS.allowlistReplace, { entries: wal.allowlistEntries() });
-		},
+		publishAllowlist: publishAllowlistLate,
 		publishBlocklist() {
 			allowlist().send(EVENTS.blocklistReplace, { entries: wal.blocklistEntries() } as never);
 		},

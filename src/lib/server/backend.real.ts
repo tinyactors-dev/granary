@@ -39,7 +39,12 @@ import type {
 	RemoveAllowedUserResult,
 	Resolved,
 	SessionUser,
-	VerdictSummary
+	VerdictSummary,
+	IntroductionClosedItem,
+	IntroductionCounts,
+	IntroductionSetupStatus,
+	IntroductionSummary,
+	ListIntroductionsInput
 } from '../schemas/api';
 import { formatAddress, parseIssueKey, type ActorAddress } from '../schemas/actors';
 import { AdminStore, AdminStoreError } from './admins';
@@ -113,6 +118,20 @@ import { findActor } from '../charts/runtime';
 import { detailOfActor, snapshotOf, summaryOfActor } from './inspect/snapshot';
 import { destinationConsoleLink, getOpsBackend, hasOpsBackend, type OpsStatus } from '$lib/ops/contract';
 import { setupSteps } from './setup-steps';
+import { EVENTS, issueKey as itemKey } from '../schemas/actors';
+import { AuthorAssociation } from '../schemas/github';
+import { check as checkSchema } from '../schemas/standard';
+import { DEFAULT_APPROVED_TEMPLATE } from '../schemas/message-template';
+import { decidePolicy } from './policy';
+import {
+	INTRODUCTIONS_CATEGORY,
+	INTRODUCTIONS_CATEGORY_DESCRIPTION,
+	readApprovedTemplate,
+	readOrgRepositories,
+	saveApprovedTemplate as storeApprovedTemplate,
+	setOrgRepository as storeOrgRepository
+} from './introductions';
+import type { IntroductionRow } from '../schemas/wal';
 
 function offsetPage<T>(rows: T[], limit: number, offset: number): Page<T> {
 	// rows were fetched with limit + 1 to know whether there is a next page
@@ -373,6 +392,123 @@ export class RealBackend implements Backend {
 			log.info(`allowlist: ${subject} removed by ${removedBy}`, { 'audit.action': 'allowlist.remove', 'audit.subject': subject, 'audit.actor': removedBy });
 		}
 		return { login, scope: scope.toLowerCase(), removed };
+	}
+
+	// -- introductions (ADR 0310) ---------------------------------------------------------
+
+	#introduction(r: IntroductionRow): IntroductionSummary {
+		const assoc = checkSchema(AuthorAssociation, r.author_association) ? r.author_association : 'NONE';
+		const verdict = decidePolicy({ allowed: this.#wal.allowlistEntries(), blocked: this.#wal.blocklistEntries() }, { login: r.author, association: assoc, owner: r.owner, repo: r.repo });
+		const closedItems: IntroductionClosedItem[] = this.#wal
+			.closedItemsOf(r.author, r.scope)
+			.map((i) => ({ kind: i.kind, issueKey: itemKey(i.repoId, i.number), owner: i.owner, repo: i.repo, number: i.number, title: i.title, htmlUrl: i.htmlUrl }));
+		const effect = this.#wal.getOutbox(`approve:${r.repo_id}:${r.number}`);
+		return {
+			introKey: r.intro_key,
+			owner: r.owner,
+			repo: r.repo,
+			number: r.number,
+			author: r.author,
+			association: r.author_association,
+			title: r.title,
+			body: r.body,
+			htmlUrl: r.html_url,
+			scope: r.scope,
+			state: r.state,
+			receivedAt: r.received_at,
+			updatedAt: r.updated_at,
+			decidedBy: r.decided_by,
+			decidedAt: r.decided_at,
+			note: r.note,
+			policy: { allowed: verdict.allowed, reason: verdict.reason },
+			closedItems,
+			action: effect ? { state: effect.state, attempts: effect.attempts, lastError: effect.last_error, effectKey: effect.effect_key } : null
+		};
+	}
+
+	#introductionRow(introKey: string): IntroductionRow {
+		const row = this.#wal.getIntroduction(introKey);
+		if (!row) throw new BackendError('not-found', `No introduction ${introKey}`);
+		return row;
+	}
+
+	async listIntroductions(input: ListIntroductionsInput): Promise<IntroductionSummary[]> {
+		return this.#wal.listIntroductions(input.state, 200, 0).map((r) => this.#introduction(r));
+	}
+
+	async introductionCounts(): Promise<IntroductionCounts> {
+		return this.#wal.introductionCounts();
+	}
+
+	async approveIntroduction(introKey: string, by: string): Promise<IntroductionSummary> {
+		const row = this.#introductionRow(introKey);
+		if (row.state !== 'pending' && row.state !== 'failed' && row.state !== 'approving') throw new BackendError('conflict', `This introduction is ${row.state}`);
+		this.#rt.introductionActor(introKey).send(EVENTS.introductionApprove, { by });
+		log.info(`introduction/${introKey} approved by ${by}`, { 'audit.action': 'introduction.approve', 'audit.subject': introKey, 'audit.actor': by });
+		return this.#introduction(this.#introductionRow(introKey));
+	}
+
+	async declineIntroduction(introKey: string, by: string, note: string | null): Promise<IntroductionSummary> {
+		const row = this.#introductionRow(introKey);
+		if (row.state !== 'pending') throw new BackendError('conflict', `This introduction is ${row.state}`);
+		this.#rt.introductionActor(introKey).send(EVENTS.introductionDecline, { by, note });
+		log.info(`introduction/${introKey} declined by ${by}`, { 'audit.action': 'introduction.decline', 'audit.subject': introKey, 'audit.actor': by });
+		return this.#introduction(this.#introductionRow(introKey));
+	}
+
+	async introductionSetup(): Promise<IntroductionSetupStatus> {
+		const web = this.#rt.config.githubWebUrl.replace(/\/+$/, '');
+		const connected = this.#rt.github.mode() === 'app';
+		return {
+			connected,
+			access: connected ? this.#rt.github.discussionAccess() : null,
+			entries: connected
+				? this.#rt.introductions.entries().map(({ target, check }) => {
+						const repoUrl = `${web}/${encodeURIComponent(target.owner)}/${encodeURIComponent(target.repo)}`;
+						return {
+							owner: target.owner,
+							repo: target.repo,
+							org: target.org,
+							state: check?.state ?? 'unchecked',
+							error: check?.error ?? null,
+							checkedAt: check?.checked_at ?? null,
+							newUrl: check?.new_url ?? null,
+							settingsUrl: `${repoUrl}/settings`,
+							newCategoryUrl: `${repoUrl}/discussions/categories/new`
+						};
+					})
+				: [],
+			orgRepositories: readOrgRepositories(this.#wal.db),
+			category: { ...INTRODUCTIONS_CATEGORY, description: INTRODUCTIONS_CATEGORY_DESCRIPTION },
+			approvedTemplate: { ...readApprovedTemplate(this.#wal.db), default: DEFAULT_APPROVED_TEMPLATE }
+		};
+	}
+
+	async checkIntroductionSetup(): Promise<IntroductionSetupStatus> {
+		await this.#rt.github.status();
+		await this.#rt.introductions.checkAll();
+		return this.introductionSetup();
+	}
+
+	async setOrgRepository(owner: string, repo: string | null, by: string): Promise<IntroductionSetupStatus> {
+		try {
+			storeOrgRepository(this.#wal.db, owner, repo, by);
+		} catch (e) {
+			if (e instanceof AdminStoreError) throw new BackendError('invalid', e.message);
+			throw e;
+		}
+		await this.#rt.introductions.checkAll();
+		return this.introductionSetup();
+	}
+
+	async saveApprovedTemplate(template: string | null, by: string): Promise<IntroductionSetupStatus> {
+		try {
+			storeApprovedTemplate(this.#wal.db, template, by);
+		} catch (e) {
+			if (e instanceof AdminStoreError) throw new BackendError('invalid', e.message);
+			throw e;
+		}
+		return this.introductionSetup();
 	}
 
 	// -- blocklist (ADR 0260) -------------------------------------------------------------

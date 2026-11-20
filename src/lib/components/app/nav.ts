@@ -2,6 +2,7 @@
 import LayoutDashboardIcon from '@lucide/svelte/icons/layout-dashboard';
 import ListChecksIcon from '@lucide/svelte/icons/list-checks';
 import ShieldCheckIcon from '@lucide/svelte/icons/shield-check';
+import HandIcon from '@lucide/svelte/icons/hand';
 import MoonStarIcon from '@lucide/svelte/icons/moon-star';
 import SettingsIcon from '@lucide/svelte/icons/settings';
 import WrenchIcon from '@lucide/svelte/icons/wrench';
@@ -18,6 +19,7 @@ export interface NavItem {
 export const NAV: NavItem[] = [
 	{ href: '/', label: 'Overview', icon: LayoutDashboardIcon },
 	{ href: '/activity', label: 'Activity', icon: ListChecksIcon },
+	{ href: '/introductions', label: 'Introductions', icon: HandIcon },
 	{ href: '/policy', label: 'Policy', icon: ShieldCheckIcon },
 	{ href: '/ops', label: 'Ops', icon: MoonStarIcon },
 	{ href: '/settings', label: 'Settings', icon: SettingsIcon },

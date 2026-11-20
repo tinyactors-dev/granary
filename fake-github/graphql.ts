@@ -158,6 +158,9 @@ function parseDiscussionId(id: string): { repoId: number; number: number } | nul
 	return m ? { repoId: Number(m[1]), number: Number(m[2]) } : null;
 }
 
+/** GraphQL `Int` is 32-bit (GitHub's `databaseId` too); the fake's ids are larger, so they are folded into range. */
+const int32 = (id: unknown): number | null => (typeof id === 'number' ? id % 2_147_483_647 : null);
+
 function actorView(u: { login: string; type?: string; node_id?: string }): Raw {
 	return { __typename: u.type === 'Bot' ? 'Bot' : 'User', id: u.node_id ?? `U_${u.login}`, login: u.login };
 }
@@ -183,14 +186,14 @@ export function createGraphQL(deps: GraphQLDeps) {
 	}
 
 	function commentNode(c: Raw): Raw {
-		return { id: c.node_id, databaseId: c.id, body: c.body, url: c.html_url, createdAt: c.created_at, author: actorView(c.user as never) };
+		return { id: c.node_id, databaseId: int32(c.id), body: c.body, url: c.html_url, createdAt: c.created_at, author: actorView(c.user as never) };
 	}
 
 	function discussionNode(repoId: number, view: Raw): Raw {
 		const number = view.number as number;
 		return {
 			id: view.node_id,
-			databaseId: view.id,
+			databaseId: int32(view.id),
 			number,
 			title: view.title,
 			body: view.body,
@@ -227,7 +230,7 @@ export function createGraphQL(deps: GraphQLDeps) {
 			const info = async () => askActor<{ enabled: boolean; categories: Raw[] }>(host, address, REPOSITORY_EVENTS.discussionInfo, {});
 			return {
 				id: `R_fake${repo.id}`,
-				databaseId: repo.id,
+				databaseId: int32(repo.id),
 				name: repo.name,
 				nameWithOwner: repo.fullName,
 				url: `${deps.bases.web}/${repo.fullName}`,

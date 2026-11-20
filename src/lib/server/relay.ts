@@ -14,22 +14,28 @@
  * On failure: `pending` again with exponential backoff (or `Retry-After`),
  * or after MAX_EFFECT_ATTEMPTS `dead` + `github.gave-up` to `reply_to`.
  * At most `concurrency` effects run at once.
+ *
+ * An `approve:<repoId>:<number>` effect (ADR 0310) reopens each item in its
+ * payload (idempotent PATCHes; the verdict becomes `allowed`), then posts the
+ * reply on the discussion with GraphQL, marked like the closing comment (on a
+ * retry it looks for the marker first; a discussion that is gone is
+ * skipped), and replies `github.approved` to `introduction/<key>`.
  */
-import { EVENTS, MAX_EFFECT_ATTEMPTS, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
+import { EVENTS, MAX_EFFECT_ATTEMPTS, issueKey, type GitHubApprovedData, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
 import { commentMarker } from '../schemas/github';
 import { commentWithMarker, renderClosingBody } from './closing-messages';
-import { parseOutboxPayload, parseReplyTo, type OutboxPayload, type OutboxRow } from '../schemas/wal';
-import { GitHubHttpError, type GitHubClient } from './github-client';
+import { isApprovePayload, parseOutboxPayload, parseReplyTo, type ApproveEffectPayload, type OutboxRow } from '../schemas/wal';
+import { GitHubGraphQLError, GitHubHttpError, type GitHubClient } from './github-client';
 import { log } from './log';
 import type { Wal } from './wal';
 
-/** A fixed client, or one resolved per effect (app mode: the repo's installation token, ADR 0191). */
-export type RelayGitHub = GitHubClient | ((payload: OutboxPayload) => Promise<GitHubClient>);
+/** The client for a repository (app mode: its installation's token, ADR 0191). */
+export type RelayGitHub = (target: { owner: string; repo: string; repoId: number }) => Promise<GitHubClient>;
 
 export interface RelayOptions {
 	wal: Wal;
 	github: RelayGitHub;
-	/** Deliver `event` to the issue actor `to`, spawning it from SQLite when it is not running (ADR 0300). */
+	/** Deliver `event` to the actor `to` (issue or introduction), spawning it from SQLite when it is not running (ADR 0300). */
 	reply: (to: { family: string; name: string }, event: string, data: unknown) => void;
 	/** Max effects in flight; default 4. */
 	concurrency?: number;
@@ -150,7 +156,14 @@ export class Relay {
 		}
 		const signal = this.#abort.signal;
 		try {
-			const github = typeof this.#github === 'function' ? await this.#github(payload) : this.#github;
+			if (isApprovePayload(payload)) {
+				const result = await this.#approve(row, payload, signal);
+				this.#wal.markOutboxDone(key);
+				log.info(`relay: ${key} done (reopened ${payload.reopen.length}, reply ${result.commentId ?? 'skipped'}, attempt ${row.attempts})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.discussion.number': payload.number, 'relay.attempts': row.attempts });
+				this.#reply(replyTo, EVENTS.githubApproved, { effectKey: key, commentId: result.commentId, reopened: payload.reopen.length } satisfies GitHubApprovedData);
+				return;
+			}
+			const github = await this.#github(payload);
 			let commentId = row.comment_id;
 			if (commentId === null) {
 				const marker = commentMarker(key);
@@ -200,6 +213,39 @@ export class Relay {
 			this.#wal.markOutboxRetry(key, next, message);
 			log.warn(`relay: ${key} attempt ${row.attempts} failed, retry in ${delay} ms: ${message}`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts, 'relay.retry_in_ms': delay, 'http.response.status_code': e instanceof GitHubHttpError ? e.status : undefined, 'error.message': message });
 			this.#armTimer(next);
+		}
+	}
+
+	/** Reopen what was closed on them, then reply on the discussion (ADR 0310). */
+	async #approve(row: OutboxRow, p: ApproveEffectPayload, signal: AbortSignal): Promise<{ commentId: number | null }> {
+		for (const item of p.reopen) {
+			const github = await this.#github(item);
+			if (item.kind === 'pull_request') await github.reopenPullRequest(item.owner, item.repo, item.number, signal);
+			else await github.reopenIssue(item.owner, item.repo, item.number, signal);
+			this.#wal.markReopened(issueKey(item.repoId, item.number));
+			log.info(`relay: ${row.effect_key} reopened ${item.owner}/${item.repo}#${item.number}`, { 'relay.effect_key': row.effect_key, 'github.repository': `${item.owner}/${item.repo}`, 'github.issue.number': item.number });
+		}
+		if (row.comment_id !== null) return { commentId: row.comment_id };
+		const github = await this.#github(p);
+		const marker = commentMarker(row.effect_key);
+		try {
+			if (row.attempts > 1) {
+				const found = (await github.discussionComments(p.owner, p.repo, p.number, signal)).find((c) => c.body.includes(marker));
+				if (found) {
+					if (found.databaseId !== null) this.#wal.setCommentId(row.effect_key, found.databaseId);
+					return { commentId: found.databaseId };
+				}
+			}
+			const comment = await github.addDiscussionComment(p.nodeId, commentWithMarker(p.replyBody, marker), signal);
+			if (comment.databaseId !== null) this.#wal.setCommentId(row.effect_key, comment.databaseId);
+			return { commentId: comment.databaseId };
+		} catch (e) {
+			// The discussion was deleted: they are approved all the same; there is nowhere to reply.
+			if (e instanceof GitHubGraphQLError && e.types.includes('NOT_FOUND')) {
+				log.warn(`relay: ${row.effect_key}: the discussion is gone, no reply posted`, { 'relay.effect_key': row.effect_key });
+				return { commentId: null };
+			}
+			throw e;
 		}
 	}
 
