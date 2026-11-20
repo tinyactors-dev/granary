@@ -86,7 +86,36 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 	{ name: 'backup now', args: [], transport: 'socket', description: 'Run a backup plan now', options: [DATA, JSON_OUT, { name: 'plan', type: 'string', description: 'Plan id (default: all enabled plans)' }] },
 	{ name: 'backup list', args: [], transport: 'socket', description: 'List recent backup runs', options: [DATA, JSON_OUT] },
 	{ name: 'restore', args: [], transport: 'offline', description: 'Restore a backup (see `granary restore --help`, ADR 0115)', options: [DATA] },
-	{ name: 'systemd-unit', args: [], transport: 'none', description: 'Print a systemd unit for granary', options: [DATA, { name: 'user', type: 'string', description: 'Service user', default: 'granary' }, { name: 'bin', type: 'string', description: 'Path to the granary binary' }] },
+	{
+		name: 'systemd-unit',
+		args: [],
+		transport: 'none',
+		description: 'Print a systemd unit for granary (or for its updater, ADR 0301)',
+		options: [
+			DATA,
+			{ name: 'unit', type: 'string', description: 'service (granary.service), update-service or update-timer (granary-update.*)', default: 'service' },
+			{ name: 'user', type: 'string', description: 'Service user', default: 'granary' },
+			{ name: 'bin', type: 'string', description: 'Path to the granary binary' },
+			{ name: 'channel', type: 'string', description: 'npm channel the updater follows: dev or latest', default: 'dev' },
+			{ name: 'bun-install', type: 'string', description: 'BUN_INSTALL of the global install the updater manages', default: '/opt/bun' },
+			{ name: 'interval', type: 'string', description: 'How often the updater runs (systemd time span)', default: '5min' }
+		]
+	},
+	{
+		name: 'update',
+		args: [],
+		transport: 'none',
+		description: 'Install the newest version of an npm channel, restart, verify, roll back on failure (ADR 0301)',
+		options: [
+			DATA,
+			JSON_OUT,
+			{ name: 'channel', type: 'string', description: 'dev or latest', default: 'dev' },
+			{ name: 'bun-install', type: 'string', description: 'BUN_INSTALL of the global install', default: '/opt/bun' },
+			{ name: 'service', type: 'string', description: 'systemd service to restart', default: 'granary' },
+			{ name: 'timeout', type: 'string', description: 'Seconds to wait for /healthz to report the new version', default: '60' },
+			{ name: 'dry-run', type: 'boolean', description: 'Print what would happen; change nothing' }
+		]
+	},
 	{ name: 'version', args: [], transport: 'none', description: 'Print granary, Bun and tinyactors versions', options: [DATA, JSON_OUT] }
 ] as const;
 

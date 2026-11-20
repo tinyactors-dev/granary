@@ -198,13 +198,31 @@ Restore a backup (see `granary restore --help`, ADR 0115). It refuses while the 
 
 ### `granary systemd-unit`
 
-Print a systemd unit for granary. It talks to neither the server nor the database.
+Print a systemd unit for granary (or for its updater, ADR 0301). It talks to neither the server nor the database.
 
 | Option | Description |
 |---|---|
 | `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
+| `--unit <value>` | service (granary.service), update-service or update-timer (granary-update.*) (default `service`) |
 | `--user <value>` | Service user (default `granary`) |
 | `--bin <value>` | Path to the granary binary |
+| `--channel <value>` | npm channel the updater follows: dev or latest (default `dev`) |
+| `--bun-install <value>` | BUN_INSTALL of the global install the updater manages (default `/opt/bun`) |
+| `--interval <value>` | How often the updater runs (systemd time span) (default `5min`) |
+
+### `granary update`
+
+Install the newest version of an npm channel, restart, verify, roll back on failure (ADR 0301). It talks to neither the server nor the database.
+
+| Option | Description |
+|---|---|
+| `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
+| `--json` | Print the raw JSON result |
+| `--channel <value>` | dev or latest (default `dev`) |
+| `--bun-install <value>` | BUN_INSTALL of the global install (default `/opt/bun`) |
+| `--service <value>` | systemd service to restart (default `granary`) |
+| `--timeout <value>` | Seconds to wait for /healthz to report the new version (default `60`) |
+| `--dry-run` | Print what would happen; change nothing |
 
 ### `granary version`
 

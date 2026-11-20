@@ -8,6 +8,7 @@ import { UsageError, parseArgs, usage } from './args';
 import * as cmd from './commands';
 import { CliError, createContext, requireDataDir } from './context';
 import { init, restore, serve } from './lifecycle';
+import { update } from './update';
 
 async function main(argv: string[]): Promise<number> {
 	const parsed = parseArgs(argv);
@@ -29,6 +30,7 @@ async function main(argv: string[]): Promise<number> {
 		case 'restore':
 		case 'systemd-unit':
 		case 'version':
+		case 'update':
 			break;
 		default:
 			requireDataDir(ctx);
@@ -90,6 +92,8 @@ async function main(argv: string[]): Promise<number> {
 		case 'version':
 			await cmd.version(ctx);
 			return EXIT.ok;
+		case 'update':
+			return update(ctx, parsed);
 	}
 	throw new UsageError(`unhandled command ${parsed.command.name}`);
 }

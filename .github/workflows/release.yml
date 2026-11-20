@@ -1,5 +1,7 @@
-# Manually triggered release (ADR 0186). Every step delegates to the single
-# release script, tools/release/release.ts — the same one used on a laptop.
+# Release (ADR 0186): triggered by hand, or called by the `main` workflow for
+# the rolling dev build of every push to main (ADR 0301). Every step delegates
+# to the single release script, tools/release/release.ts — the same one used
+# on a laptop.
 #
 #   pack      → one tarball, uploaded as an artifact
 #   verify    → installs that tarball natively on x86-64 and arm64 runners
@@ -21,6 +23,14 @@ on:
         default: dev
       dry_run:
         description: "Dry run (pack + verify + npm publish --dry-run)"
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      channel:
+        type: string
+        default: dev
+      dry_run:
         type: boolean
         default: true
 
