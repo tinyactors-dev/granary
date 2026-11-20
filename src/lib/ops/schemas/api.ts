@@ -151,10 +151,11 @@ export type ImportResult = Static<typeof ImportResult>;
 
 export const OpsActorSummary = Type.Object({
 	address: Type.Object({ family: Type.String(), name: Type.String() }),
-	/** `slot:generation`: unique among resident actors (two actors can share an address, e.g. an on-demand drill next to the scheduled one). */
+	/** The actor's session id: unique among live actors. */
 	runtimeId: Type.String(),
 	activeStates: Type.Array(Type.String()),
-	scheduling: Type.String()
+	/** Events waiting for it. */
+	mailbox: Type.Integer({ minimum: 0 })
 });
 export type OpsActorSummary = Static<typeof OpsActorSummary>;
 

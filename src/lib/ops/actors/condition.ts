@@ -1,9 +1,9 @@
 /**
  * `condition/<id>` — one per watched condition (ADR 0100, 0101, 0123).
- * Virtual: loaded from the `conditions` table by the family loader when the
- * watchdog's sampler posts `signal.sample`. Every decision is driven by
- * samples (which carry their own time), so no timer has to survive a
- * restart.
+ * Virtual: spawned from its `conditions` row (at boot for a condition that
+ * is not ok, or when the watchdog's sampler sends `signal.sample`). Every
+ * decision is driven by samples (which carry their own time), so no timer
+ * has to survive a restart.
  *
  *   ok ──breached (immediate kind)──▶ attention
  *   ok ──breached──▶ suspect
@@ -18,13 +18,17 @@
  *
  * Each state entry journals the condition row (and an ops event when the
  * transition produced one) through the `journal` I/O processor.
+ *
+ * All of the condition's state is the one variable `d` (`ConditionData`),
+ * changed in place by the chart's helpers. The policies (ladder, grace and
+ * settle periods, titles) are `health/policies.ts`'s, embedded as the
+ * helpers `policy(kind)` and `title(kind, subject, facts)`.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
-import { OPS_FAMILY, REMEDIATOR_ADDRESS, opsTargetUri, type OpsEventData } from '../schemas/events';
+import { chart, scxml } from '../../charts';
+import { OPS_FAMILY, OPS_IO, REMEDIATOR_ADDRESS, opsName, type OpsEventData } from '../schemas/events';
 import type { ConditionKind, ConditionState, OpsEventKind, RemediationAction } from '../schemas/conditions';
-import { policyFor } from '../health/policies';
+import { POLICIES, type ConditionPolicy } from '../health/policies';
 
-export const CONDITION_REVISION = 'v1';
 export const JOURNAL_IO_TYPE = 'journal';
 export const JOURNAL_CONDITION_EVENT = 'journal.condition';
 
@@ -32,7 +36,7 @@ export interface ConditionData {
 	id: string;
 	kind: ConditionKind;
 	subject: string | null;
-	/** Persisted state to resume in (loader binding); `ok` for new conditions. */
+	/** Persisted state to resume in (spawn params); `ok` for new conditions. */
 	resumeState: ConditionState;
 	since: number | null;
 	/** Consecutive breached samples. */
@@ -52,6 +56,25 @@ export interface ConditionData {
 	note: { kind: OpsEventKind; message: string } | null;
 }
 
+export const initialConditionData = (): ConditionData => ({
+	id: 'unset',
+	kind: 'disk-low',
+	subject: null,
+	resumeState: 'ok',
+	since: null,
+	breachedSamples: 0,
+	step: 0,
+	tried: [],
+	lastActionAt: null,
+	lastRemediation: null,
+	facts: {},
+	value: null,
+	lastSampleAt: 0,
+	acknowledgedBy: null,
+	timeScale: 1,
+	note: null
+});
+
 /** What the journal processor receives. */
 export interface JournalConditionRequest {
 	id: string;
@@ -68,192 +91,155 @@ export interface JournalConditionRequest {
 	event: { kind: OpsEventKind; message: string } | null;
 }
 
-type Ctx = EvaluationContext<ConditionData>;
 type Sample = OpsEventData<'signal.sample'>;
+type Policy = Pick<ConditionPolicy, 'ladder' | 'graceMs' | 'settleMs' | 'confirm'>;
 
-const sample = (ctx: Ctx) => ctx.event!.data as Sample;
-const policy = ({ data }: Ctx) => policyFor(data.kind);
-const breached = (ctx: Ctx) => sample(ctx).breached;
-const cleared = (ctx: Ctx) => !sample(ctx).breached;
-const immediate = (ctx: Ctx) => {
-	const p = policy(ctx);
-	return p.ladder.length === 0 && p.graceMs === 0 && !p.confirm;
-};
+/** `policy(kind)`: the numbers of POLICIES, as a literal. */
+const policyHelper = new Function(
+	'kind',
+	`return (${JSON.stringify(Object.fromEntries(Object.entries(POLICIES).map(([k, p]) => [k, { ladder: p.ladder, graceMs: p.graceMs, settleMs: p.settleMs, confirm: p.confirm }])))})[kind];`
+);
+/** `title(kind, subject, facts)`: each policy's `title`, by kind (each is self-contained). */
+const titleHelper = new Function(
+	'kind',
+	'subject',
+	'facts',
+	`switch (kind) {\n${Object.entries(POLICIES)
+		.map(([k, p]) => `case ${JSON.stringify(k)}: return (${p.title.toString()})(subject, facts);`)
+		.join('\n')}\ndefault: return kind;\n}`
+);
 
-function absorb(ctx: Ctx) {
-	const s = sample(ctx);
-	ctx.data.facts = s.facts;
-	ctx.data.value = s.value;
-	ctx.data.lastSampleAt = s.at;
-	ctx.data.breachedSamples = s.breached ? ctx.data.breachedSamples + 1 : 0;
-}
-
-function begin(ctx: Ctx) {
-	absorb(ctx);
-	ctx.data.since = sample(ctx).at;
-	ctx.data.step = 0;
-	ctx.data.tried = [];
-	ctx.data.lastActionAt = null;
-	ctx.data.acknowledgedBy = null;
-}
-
-const title = ({ data }: Ctx) => policyFor(data.kind).title(data.subject, data.facts);
-const note = (kind: OpsEventKind, message: (ctx: Ctx) => string) => (ctx: Ctx) => {
-	ctx.data.note = { kind, message: message(ctx) };
-};
-function reset(ctx: Ctx) {
-	absorb(ctx);
-	ctx.data.since = null;
-	ctx.data.step = 0;
-	ctx.data.tried = [];
-	ctx.data.lastActionAt = null;
-	ctx.data.acknowledgedBy = null;
-}
-
-const confirmed = (ctx: Ctx) => !policy(ctx).confirm || ctx.data.breachedSamples >= 2;
-const settled = ({ data }: Ctx) => data.lastActionAt === null || data.lastSampleAt - data.lastActionAt >= policyFor(data.kind).settleMs * data.timeScale;
-const hasNextStep = (ctx: Ctx) => ctx.data.step < policy(ctx).ladder.length;
-const graceOver = ({ data }: Ctx) => data.since !== null && data.lastSampleAt - data.since >= policyFor(data.kind).graceMs * data.timeScale;
-
-function journal(state: ConditionState) {
-	return ({ data }: Ctx): JournalConditionRequest => {
-		const event = data.note;
-		data.note = null;
+const helpers = {
+	policy: policyHelper,
+	title: titleHelper,
+	immediate: (p: Policy) => p.ladder.length === 0 && p.graceMs === 0 && !p.confirm,
+	absorb: (d: ConditionData, s: Sample) => {
+		d.facts = s.facts;
+		d.value = s.value;
+		d.lastSampleAt = s.at;
+		d.breachedSamples = s.breached ? d.breachedSamples + 1 : 0;
+	},
+	/** absorb, then start an episode (`since` = the sample's time) or end one (`since` = null). */
+	restart: (d: ConditionData, s: Sample, starting: boolean) => {
+		d.facts = s.facts;
+		d.value = s.value;
+		d.lastSampleAt = s.at;
+		d.breachedSamples = s.breached ? d.breachedSamples + 1 : 0;
+		d.since = starting ? s.at : null;
+		d.step = 0;
+		d.tried = [];
+		d.lastActionAt = null;
+		d.acknowledgedBy = null;
+	},
+	note: (d: ConditionData, kind: OpsEventKind, message: string) => {
+		d.note = { kind, message };
+	},
+	confirmed: (d: ConditionData, p: Policy) => !p.confirm || d.breachedSamples >= 2,
+	settled: (d: ConditionData, p: Policy) => d.lastActionAt === null || d.lastSampleAt - d.lastActionAt >= p.settleMs * d.timeScale,
+	hasNextStep: (d: ConditionData, p: Policy) => d.step < p.ladder.length,
+	graceOver: (d: ConditionData, p: Policy) => d.since !== null && d.lastSampleAt - d.since >= p.graceMs * d.timeScale,
+	journal: (d: ConditionData, state: ConditionState): JournalConditionRequest => {
+		const event = d.note;
+		d.note = null;
 		return {
-			id: data.id,
-			kind: data.kind,
-			subject: data.subject,
+			id: d.id,
+			kind: d.kind,
+			subject: d.subject,
 			state,
-			since: state === 'ok' ? null : data.since,
-			facts: data.facts,
-			step: data.step,
-			tried: data.tried,
-			lastRemediation: data.lastRemediation,
-			acknowledgedBy: data.acknowledgedBy,
-			at: data.lastSampleAt || Date.now(),
+			since: state === 'ok' ? null : d.since,
+			facts: d.facts,
+			step: d.step,
+			tried: d.tried,
+			lastRemediation: d.lastRemediation,
+			acknowledgedBy: d.acknowledgedBy,
+			at: d.lastSampleAt || Date.now(),
 			event
 		};
-	};
-}
+	},
+	nextAction: (d: ConditionData, p: Policy): OpsEventData<'remediate'> => {
+		const action = p.ladder[d.step]!;
+		d.step++;
+		d.tried = [...d.tried, action];
+		d.lastActionAt = d.lastSampleAt || Date.now();
+		return { conditionId: d.id, action, attempt: d.step };
+	},
+	recordRemediation: (d: ConditionData, name: string, r: { action: RemediationAction; outcome?: 'done' | 'noop' }) => {
+		d.lastRemediation = { action: r.action, at: Date.now(), outcome: name === 'remediation.failed' ? 'failed' : (r.outcome ?? 'done') };
+	}
+};
 
-function nextAction(ctx: Ctx): OpsEventData<'remediate'> {
-	const d = ctx.data;
-	const action = policyFor(d.kind).ladder[d.step]!;
-	d.step++;
-	d.tried = [...d.tried, action];
-	d.lastActionAt = d.lastSampleAt || Date.now();
-	return { conditionId: d.id, action, attempt: d.step };
-}
+const P = 'policy(d.kind)';
+const TITLE = 'title(d.kind, d.subject, d.facts)';
+const journal = (state: ConditionState) => scxml`<send type="${JOURNAL_IO_TYPE}" event="${JOURNAL_CONDITION_EVENT}"><content expr="${`journal(d, '${state}')`}"/></send>`;
+const absorb = scxml`<transition event="signal.sample"><script>absorb(d, _event.data)</script></transition>`;
+const remediations = scxml`
+	<transition event="remediated"><script>recordRemediation(d, _event.name, _event.data)</script></transition>
+	<transition event="remediation.failed"><script>recordRemediation(d, _event.name, _event.data)</script></transition>`;
+/** A cleared sample: back to ok with an info note (`message`, JavaScript), the episode ended. */
+const resolved = (message: string, extra = '') => scxml`
+	<transition event="signal.sample" cond="!_event.data.breached" target="ok">
+		<script>${`note(d, 'info', ${message});${extra} restart(d, _event.data, false);`}</script>
+	</transition>`;
+const toAttention = (guard: string) => scxml`
+	<transition cond="${guard}" target="attention"><script>${`note(d, 'attention', ${TITLE});`}</script></transition>`;
 
-function recordRemediation(ctx: Ctx) {
-	const e = ctx.event!;
-	const r = e.data as { action: RemediationAction; outcome?: 'done' | 'noop' };
-	ctx.data.lastRemediation = { action: r.action, at: Date.now(), outcome: e.name === 'remediation.failed' ? 'failed' : (r.outcome ?? 'done') };
-}
+export const conditionChart = chart({
+	name: OPS_FAMILY.condition,
+	initial: 'restore',
+	helpers,
+	data: { d: initialConditionData() },
+	body: scxml`
+<!-- Resume where the persisted row left off, without re-running side effects:
+     healing resumes as suspect (the ladder position is kept), notes are empty. -->
+<state id="restore">
+	<transition cond="d.resumeState === 'attention'" target="attention"/>
+	<transition cond="d.resumeState === 'acknowledged'" target="acknowledged"/>
+	<transition cond="${"d.resumeState === 'suspect' || d.resumeState === 'healing'"}" target="suspect"/>
+	<transition target="ok"/>
+</state>
 
-export function conditionChart(): DefinitionBuilder<ConditionData> {
-	return (
-		statechart<ConditionData>({ family: OPS_FAMILY.condition, revision: CONDITION_REVISION, name: 'condition' })
-			.data('id', 'unset')
-			.data('kind', 'disk-low')
-			.data('subject', null)
-			.data('resumeState', 'ok')
-			.data('since', null)
-			.data('breachedSamples', 0)
-			.data('step', 0)
-			.data('tried', [])
-			.data('lastActionAt', null)
-			.data('lastRemediation', null)
-			.data('facts', {})
-			.data('value', null)
-			.data('lastSampleAt', 0)
-			.data('acknowledgedBy', null)
-			.data('timeScale', 1)
-			.data('note', null)
-			.initial('restore')
+<state id="ok">
+	<onentry>${journal('ok')}</onentry>
+	<transition event="signal.sample" cond="${`_event.data.breached && immediate(${P})`}" target="attention">
+		<script>${`restart(d, _event.data, true); note(d, 'attention', ${TITLE});`}</script>
+	</transition>
+	<transition event="signal.sample" cond="_event.data.breached" target="suspect"><script>restart(d, _event.data, true)</script></transition>
+	${absorb}
+</state>
 
-			// Resume where the persisted row left off, without re-running side effects:
-			// healing resumes as suspect (the ladder position is kept), notes are empty.
-			.state('restore', (s) =>
-				s
-					.always((t) => t.when(({ data }: Ctx) => data.resumeState === 'attention').target('attention'))
-					.always((t) => t.when(({ data }: Ctx) => data.resumeState === 'acknowledged').target('acknowledged'))
-					.always((t) => t.when(({ data }: Ctx) => data.resumeState === 'suspect' || data.resumeState === 'healing').target('suspect'))
-					.always((t) => t.target('ok'))
-			)
+<state id="suspect">
+	<onentry>${journal('suspect')}</onentry>
+	<transition cond="${`confirmed(d, ${P}) && settled(d, ${P}) && hasNextStep(d, ${P})`}" target="healing"/>
+	${toAttention(`confirmed(d, ${P}) && settled(d, ${P}) && !hasNextStep(d, ${P}) && graceOver(d, ${P})`)}
+	${resolved(`d.tried.length ? 'Resolved after ' + d.tried.join(', ') + ': ' + ${TITLE} : 'Cleared: ' + ${TITLE}`, ' if (!d.tried.length) d.note = null;')}
+	${absorb}
+	${remediations}
+</state>
 
-			.state('ok', (s) =>
-				s
-					.entry((a) => a.send(JOURNAL_CONDITION_EVENT, (b) => b.via(JOURNAL_IO_TYPE).data(journal('ok'))))
-					.on('signal.sample', (t) => t.when((c: Ctx) => breached(c) && immediate(c)).target('attention').script(begin).script(note('attention', title)))
-					.on('signal.sample', (t) => t.when(breached).target('suspect').script(begin))
-					.on('signal.sample', (t) => t.internal().script(absorb))
-			)
+<state id="healing">
+	<onentry>
+		<send type="${OPS_IO.route}" event="remediate" target="${opsName(REMEDIATOR_ADDRESS)}"><content expr="${`nextAction(d, ${P})`}"/></send>
+		${journal('healing')}
+	</onentry>
+	<transition cond="${`settled(d, ${P}) && hasNextStep(d, ${P})`}" target="healing"/>
+	${toAttention(`settled(d, ${P}) && !hasNextStep(d, ${P}) && graceOver(d, ${P})`)}
+	${resolved(`'Handled automatically (' + d.tried.join(', ') + '): ' + ${TITLE}`)}
+	${absorb}
+	${remediations}
+</state>
 
-			.state('suspect', (s) =>
-				s
-					.entry((a) => a.send(JOURNAL_CONDITION_EVENT, (b) => b.via(JOURNAL_IO_TYPE).data(journal('suspect'))))
-					.always((t) => t.when((c: Ctx) => confirmed(c) && settled(c) && hasNextStep(c)).target('healing'))
-					.always((t) => t.when((c: Ctx) => confirmed(c) && settled(c) && !hasNextStep(c) && graceOver(c)).target('attention').script(note('attention', title)))
-					.on('signal.sample', (t) =>
-						t
-							.when(cleared)
-							.target('ok')
-							.script(
-								note('info', (c) => (c.data.tried.length ? `Resolved after ${c.data.tried.join(', ')}: ${title(c)}` : `Cleared: ${title(c)}`))
-							)
-							.script((c: Ctx) => {
-								if (!c.data.tried.length) c.data.note = null; // blips are not news
-							})
-							.script(reset)
-					)
-					.on('signal.sample', (t) => t.internal().script(absorb))
-					.on('remediated', (t) => t.internal().script(recordRemediation))
-					.on('remediation.failed', (t) => t.internal().script(recordRemediation))
-			)
+<state id="attention">
+	<onentry>${journal('attention')}</onentry>
+	${resolved(`'Resolved: ' + ${TITLE}`)}
+	${absorb}
+	<transition event="condition.acknowledge" target="acknowledged">
+		<script>${`d.acknowledgedBy = _event.data.by; note(d, 'ack', 'Acknowledged by ' + d.acknowledgedBy + ': ' + ${TITLE});`}</script>
+	</transition>
+</state>
 
-			.state('healing', (s) =>
-				s
-					.entry((a) =>
-						a
-							.send('remediate', (b) => b.to(opsTargetUri(REMEDIATOR_ADDRESS)).data(nextAction))
-							.send(JOURNAL_CONDITION_EVENT, (b) => b.via(JOURNAL_IO_TYPE).data(journal('healing')))
-					)
-					.always((t) => t.when((c: Ctx) => settled(c) && hasNextStep(c)).target('healing'))
-					.always((t) => t.when((c: Ctx) => settled(c) && !hasNextStep(c) && graceOver(c)).target('attention').script(note('attention', title)))
-					.on('signal.sample', (t) =>
-						t
-							.when(cleared)
-							.target('ok')
-							.script(note('info', (c) => `Handled automatically (${c.data.tried.join(', ')}): ${title(c)}`))
-							.script(reset)
-					)
-					.on('signal.sample', (t) => t.internal().script(absorb))
-					.on('remediated', (t) => t.internal().script(recordRemediation))
-					.on('remediation.failed', (t) => t.internal().script(recordRemediation))
-			)
-
-			.state('attention', (s) =>
-				s
-					.entry((a) => a.send(JOURNAL_CONDITION_EVENT, (b) => b.via(JOURNAL_IO_TYPE).data(journal('attention'))))
-					.on('signal.sample', (t) => t.when(cleared).target('ok').script(note('info', (c) => `Resolved: ${title(c)}`)).script(reset))
-					.on('signal.sample', (t) => t.internal().script(absorb))
-					.on('condition.acknowledge', (t) =>
-						t
-							.target('acknowledged')
-							.script((c: Ctx) => {
-								c.data.acknowledgedBy = (c.event!.data as { by: string }).by;
-							})
-							.script(note('ack', (c) => `Acknowledged by ${c.data.acknowledgedBy}: ${title(c)}`))
-					)
-			)
-
-			.state('acknowledged', (s) =>
-				s
-					.entry((a) => a.send(JOURNAL_CONDITION_EVENT, (b) => b.via(JOURNAL_IO_TYPE).data(journal('acknowledged'))))
-					.on('signal.sample', (t) => t.when(cleared).target('ok').script(note('info', (c) => `Resolved: ${title(c)}`)).script(reset))
-					.on('signal.sample', (t) => t.internal().script(absorb))
-					.on('condition.acknowledge')
-			)
-	);
-}
+<state id="acknowledged">
+	<onentry>${journal('acknowledged')}</onentry>
+	${resolved(`'Resolved: ' + ${TITLE}`)}
+	${absorb}
+</state>`
+});

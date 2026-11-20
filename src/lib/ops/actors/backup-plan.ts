@@ -1,6 +1,6 @@
 /**
  * `backup-plan/<planId>` — the schedule of one plan (ADR 0082, 0098, 0111).
- * Spawned by the ledger's reconcile with a binding derived from ops.sqlite
+ * Spawned by the ledger's reconcile with params derived from ops.sqlite
  * (last started run, effective interval), so restarts re-arm correctly and
  * missed windows collapse into one catch-up run.
  *
@@ -14,7 +14,7 @@
  *   paused ──plan.run-now──▶ dispatching
  *   any: run.finished → plan.refresh-interval via backup-ledger (egress stretch)
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
+import { chart, scxml } from '../../charts';
 import { OPS_FAMILY, OPS_IO, SEND_ID } from '../schemas/events';
 
 export interface BackupPlanData {
@@ -29,72 +29,64 @@ export interface BackupPlanData {
 	lastRefused: string | null;
 }
 
-export const BACKUP_PLAN_REVISION = 'v1';
 export const BACKUP_PLAN_STATES = { restore: 'restore', armed: 'armed', dispatching: 'dispatching', paused: 'paused' } as const;
 
-type Ctx = EvaluationContext<BackupPlanData>;
-const ev = <T>(c: Ctx) => c.event!.data as T;
+const S = BACKUP_PLAN_STATES;
 
-const dueIn = ({ data }: Ctx) => Math.max(0, (data.lastStartedAt ?? 0) + data.intervalMs - Date.now());
-/** More than one interval missed → a single catch-up run. */
-const scheduledTrigger = ({ data }: Ctx) =>
-	data.lastStartedAt !== null && Date.now() - data.lastStartedAt > 2 * data.intervalMs ? 'catch-up' : 'schedule';
+const helpers = {
+	/** Milliseconds until the next scheduled run. */
+	dueIn: (lastStartedAt: number | null, intervalMs: number) => Math.max(0, (lastStartedAt ?? 0) + intervalMs - Date.now()),
+	/** More than one interval missed → a single catch-up run. */
+	scheduledTrigger: (lastStartedAt: number | null, intervalMs: number) =>
+		lastStartedAt !== null && Date.now() - lastStartedAt > 2 * intervalMs ? 'catch-up' : 'schedule'
+};
 
-export function backupPlanChart(): DefinitionBuilder<BackupPlanData> {
-	const S = BACKUP_PLAN_STATES;
-	const refresh = (t: any) => t.send('plan.refresh-interval', (b: any) => b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({ planId: data.planId })));
-	return statechart<BackupPlanData>({ family: OPS_FAMILY.plan, revision: BACKUP_PLAN_REVISION, name: 'backup-plan' })
-		.data('planId', 'plan')
-		.data('enabled', true)
-		.data('intervalMs', 3_600_000)
-		.data('lastStartedAt', null)
-		.data('trigger', 'schedule')
-		.data('requestedBy', null)
-		.data('lastRefused', null)
-		.initial(S.restore)
-		.state(S.restore, (s) => s.always((t) => t.when(({ data }: Ctx) => data.enabled).target(S.armed)).always((t) => t.target(S.paused)))
-		.state(S.armed, (s) =>
-			s
-				.entry((a) => a.send('plan.tick', (b) => b.id(SEND_ID.tick).after(dueIn)))
-				.exit((a) => a.cancel(SEND_ID.tick))
-				.on('plan.tick', (t) => t.target(S.dispatching).assign('trigger', scheduledTrigger).assign('requestedBy', literal(null)))
-				.on('plan.run-now', (t) =>
-					t.target(S.dispatching).assign('trigger', literal('manual')).assign('requestedBy', (c: Ctx) => ev<{ requestedBy: string }>(c).requestedBy)
-				)
-				.on('plan.interval', (t) => t.target(S.armed).assign('intervalMs', (c: Ctx) => ev<{ effectiveIntervalMs: number }>(c).effectiveIntervalMs))
-				.on('run.finished', refresh)
-				.on('config.updated')
-		)
-		.state(S.dispatching, (s) =>
-			s
-				.entry((a) =>
-					a.send('plan.dispatch', (b) =>
-						b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({ planId: data.planId, trigger: data.trigger, requestedBy: data.requestedBy }))
-					)
-				)
-				.on('plan.dispatched', (t) =>
-					t
-						.target(S.restore)
-						// Manual runs don't move the schedule; refused scheduled runs wait one interval.
-						.assign('lastStartedAt', (c: Ctx) => (c.data.trigger === 'manual' ? c.data.lastStartedAt : ev<{ startedAt: number }>(c).startedAt))
-						.assign('lastRefused', (c: Ctx) => ev<{ refused: string | null }>(c).refused)
-				)
-				.on('error.communication', (t) =>
-					t.target(S.restore).assign('lastStartedAt', (c: Ctx) => (c.data.trigger === 'manual' ? c.data.lastStartedAt : Date.now()))
-				)
-				.on('plan.interval', (t) => t.assign('intervalMs', (c: Ctx) => ev<{ effectiveIntervalMs: number }>(c).effectiveIntervalMs))
-				.on('run.finished', refresh)
-				.on('plan.run-now')
-				.on('plan.tick')
-		)
-		.state(S.paused, (s) =>
-			s
-				.on('plan.run-now', (t) =>
-					t.target(S.dispatching).assign('trigger', literal('manual')).assign('requestedBy', (c: Ctx) => ev<{ requestedBy: string }>(c).requestedBy)
-				)
-				.on('plan.interval', (t) => t.assign('intervalMs', (c: Ctx) => ev<{ effectiveIntervalMs: number }>(c).effectiveIntervalMs))
-				.on('run.finished', refresh)
-				.on('plan.tick')
-				.on('config.updated')
-		);
-}
+const refresh = scxml`<send type="${OPS_IO.ledger}" event="plan.refresh-interval"><content expr="({ planId: planId })"/></send>`;
+const runNow = (target: string) => scxml`
+	<transition event="plan.run-now" target="${target}">
+		<assign location="trigger" expr="'manual'"/>
+		<assign location="requestedBy" expr="_event.data.requestedBy"/>
+	</transition>`;
+
+export const backupPlanChart = chart({
+	name: OPS_FAMILY.plan,
+	initial: S.restore,
+	helpers,
+	data: { planId: 'plan', enabled: true, intervalMs: 3_600_000, lastStartedAt: null, trigger: 'schedule', requestedBy: null, lastRefused: null } satisfies BackupPlanData,
+	body: scxml`
+<state id="${S.restore}">
+	<transition cond="enabled" target="${S.armed}"/>
+	<transition target="${S.paused}"/>
+</state>
+<state id="${S.armed}">
+	<onentry><send event="plan.tick" id="${SEND_ID.tick}" delayexpr="dueIn(lastStartedAt, intervalMs) + 'ms'"/></onentry>
+	<onexit><cancel sendid="${SEND_ID.tick}"/></onexit>
+	<transition event="plan.tick" target="${S.dispatching}">
+		<assign location="trigger" expr="scheduledTrigger(lastStartedAt, intervalMs)"/>
+		<assign location="requestedBy" expr="null"/>
+	</transition>
+	${runNow(S.dispatching)}
+	<transition event="plan.interval" target="${S.armed}"><assign location="intervalMs" expr="_event.data.effectiveIntervalMs"/></transition>
+	<transition event="run.finished">${refresh}</transition>
+</state>
+<state id="${S.dispatching}">
+	<onentry>
+		<send type="${OPS_IO.ledger}" event="plan.dispatch"><content expr="({ planId: planId, trigger: trigger, requestedBy: requestedBy })"/></send>
+	</onentry>
+	<!-- Manual runs don't move the schedule; refused scheduled runs wait one interval. -->
+	<transition event="plan.dispatched" target="${S.restore}">
+		<assign location="lastStartedAt" expr="${"trigger === 'manual' ? lastStartedAt : _event.data.startedAt"}"/>
+		<assign location="lastRefused" expr="_event.data.refused"/>
+	</transition>
+	<transition event="error.communication" target="${S.restore}">
+		<assign location="lastStartedAt" expr="${"trigger === 'manual' ? lastStartedAt : Date.now()"}"/>
+	</transition>
+	<transition event="plan.interval"><assign location="intervalMs" expr="_event.data.effectiveIntervalMs"/></transition>
+	<transition event="run.finished">${refresh}</transition>
+</state>
+<state id="${S.paused}">
+	${runNow(S.dispatching)}
+	<transition event="plan.interval"><assign location="intervalMs" expr="_event.data.effectiveIntervalMs"/></transition>
+	<transition event="run.finished">${refresh}</transition>
+</state>`
+});

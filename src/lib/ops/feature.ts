@@ -1,15 +1,17 @@
 /**
  * Ops-internal composition seam (ADR 0109). NOT part of the granary contract.
  *
- * Each parallel build agent delivers one feature; `index.ts` (owned by the
- * telemetry/health agent) creates the ops System, merges the features' I/O
- * processors and loaders, defines their charts, starts them, and composes
- * the OpsBackend from their partial backends.
+ * Each feature delivers its charts, I/O processors and the spawners of its
+ * virtual families; `index.ts` creates the ops host from all of them, starts
+ * the features, resumes their unfinished work, and composes the OpsBackend
+ * from their partial backends.
  */
 import type { Database } from 'bun:sqlite';
-import type { IOProcessor, Invoker, LoadResult, LoaderOptions, System, ActorAddress } from '@tinyactors/node-legacy';
+import type { IOProcessor, Source } from '@tinyactors/node';
 import type { OpsBackendBackups, OpsBackendHealth, OpsHost, TelemetrySink } from './contract';
 import type { RemediationAction } from './schemas/conditions';
+import type { OpsAddress } from './schemas/events';
+import type { OpsActors, Spawner } from './system';
 
 /** Read access to secrets for I/O processors only (ADR 0086). Implemented by the backups feature. */
 export interface SecretReader {
@@ -28,21 +30,17 @@ export interface Redactor {
 export interface OpsContext {
 	host: OpsHost;
 	db: Database;
-	system: System;
+	/** The ops tinyactors host and its named actors (`system.ts`). */
+	actors: OpsActors;
 	now(): number;
 	secrets: SecretReader;
 	redactor: Redactor;
-	/** Post into the ops System (e.g. config.changed after a DB commit). */
-	post(target: ActorAddress, event: string, data?: unknown): void;
 	/**
-	 * Spawn a named actor and remember its address for `listOpsActors` and
-	 * trace attribution (additive, ADR 0120). Prefer it over `system.spawn`.
+	 * Send into the ops host (e.g. config.changed after a DB commit), spawning
+	 * a virtual actor from its row when needed. Never throws: an actor that
+	 * is not there is logged.
 	 */
-	spawn<Data extends object>(definition: import('@tinyactors/node-legacy').Definition<Data>, address: ActorAddress, binding?: Partial<Data>): import('@tinyactors/node-legacy').Actor<Data>;
-	/** Never export spans of this definition (telemetry loop breaking, ADR 0093/0120). */
-	excludeFromTraces?(definition: import('@tinyactors/node-legacy').Definition<object>): void;
-	/** Addresses the ops System has spawned or loaded (ADR 0150), for naming actors in listings. */
-	addresses?(): ActorAddress[];
+	post(target: OpsAddress, event: string, data?: unknown): void;
 }
 
 /** A self-healing action contributed by a feature (ADR 0101, 0123). Idempotent; never throws for "nothing to do". */
@@ -62,14 +60,21 @@ export interface OpsFeature<Backend> {
 	remediations?: Partial<Record<RemediationAction, RemediationHandler>>;
 	/** I/O processors by type (keys from OPS_IO). */
 	io: Record<string, IOProcessor>;
-	invokers?: Record<string, Invoker>;
-	/** Loaders for virtual families (e.g. backup-run, upload). */
-	loaders?: Record<string, { load: (ctx: OpsContext, address: ActorAddress) => LoadResult | Promise<LoadResult>; options?: LoaderOptions }>;
-	/** Define charts, spawn long-lived actors, run seeds. Called after all features' io are registered. */
+	/** The feature's charts (one per actor family), compiled with the ops host. */
+	charts: Source[];
+	/**
+	 * Virtual families (e.g. backup-run, upload, condition): the params of
+	 * `<family>/<name>` read from ops.sqlite, or null when the row is terminal
+	 * or gone. `OpsActors.ensure` uses them where 0.1.0 had loaders.
+	 */
+	spawners?: Record<string, (ctx: OpsContext, name: string) => ReturnType<Spawner>>;
+	/** After every feature started: spawn the actors of the non-terminal rows (crash recovery). */
+	resume?(ctx: OpsContext): void;
+	/** Spawn long-lived actors, run seeds. Called once the ops host runs every feature's charts and processors. */
 	start(ctx: OpsContext): Promise<void>;
 	stop(): Promise<void>;
 	backend(ctx: OpsContext): Backend;
 }
 
-export type BackupsFeature = OpsFeature<OpsBackendBackups> & { secrets(ctx: Omit<OpsContext, 'secrets' | 'system' | 'post' | 'spawn'>): SecretReader };
+export type BackupsFeature = OpsFeature<OpsBackendBackups> & { secrets(ctx: Omit<OpsContext, 'secrets' | 'actors' | 'post'>): SecretReader };
 export type HealthFeature = OpsFeature<OpsBackendHealth> & { redactor(): Redactor; telemetrySink(ctx: OpsContext): TelemetrySink };

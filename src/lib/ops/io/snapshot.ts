@@ -12,7 +12,8 @@
  *     → Worker: integrity_check + row counts of the restored copy
  *     → compare with the manifest → restore_drills row → reply drill.checked
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
+import type { IOProcessor, Send } from '@tinyactors/node';
+import { answerOnce } from './answer';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseOpsEventData } from '../schemas/events';
@@ -22,16 +23,17 @@ import { diskFacts, snapshotAllowed } from '../backups/disk';
 
 export function snapshotProcessor(rt: BackupsRuntime): IOProcessor {
 	return {
-		send(request: IORequest, context: EffectContext) {
-			const reply = (event: string, data: unknown) => context.post(request.source, event, data);
-			if (request.event === 'snapshot.request') void takeSnapshot(rt, request, reply);
-			else if (request.event === 'drill.check') void checkDrill(rt, request, reply);
-			else throw new Error(`snapshot processor: unknown request ${request.event}`);
+		// Async: the view stays valid and answers when the work is done.
+		receive(request: Send) {
+			const reply = answerOnce(request);
+			if (request.event === 'snapshot.request') return takeSnapshot(rt, request, reply);
+			if (request.event === 'drill.check') return checkDrill(rt, request, reply);
+			throw new Error(`snapshot processor: unknown request ${request.event}`);
 		}
 	};
 }
 
-async function takeSnapshot(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function takeSnapshot(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('snapshot.request', request.data);
 	const fail = (reason: 'disk-insufficient' | 'integrity' | 'sqlite-error' | 'worker-crashed', detail: string) => reply('snapshot.failed', { runId: d.runId, reason, detail });
 	try {
@@ -81,7 +83,7 @@ export async function removeRunFiles(spoolDir: string, runId: string): Promise<n
 	return n;
 }
 
-async function checkDrill(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function checkDrill(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('drill.check', request.data);
 	let result: DrillResult = 'ok';
 	let detail: string | null = null;

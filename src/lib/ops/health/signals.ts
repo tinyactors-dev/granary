@@ -44,6 +44,8 @@ export interface Measurements {
 	at: number;
 	host: HostHealthSnapshot | null;
 	disk: DiskFacts | null;
+	/** Actor faults counted so far (granary's host + the ops host), for the next pass's difference. */
+	faultsTotal: number;
 	samples: SignalSample[];
 }
 
@@ -54,6 +56,10 @@ export interface SamplerDeps {
 	sinks: () => SinkState[];
 	/** When ops first started (kv), for "no webhook in 7 days" on a fresh install. */
 	firstSeenAt: number;
+	/** Actors of the ops host that ended on a fault, monotonic. */
+	opsFaultsTotal: number;
+	/** `faultsTotal` of the previous pass (0 before the first: every fault since start counts). */
+	previousFaultsTotal: number;
 }
 
 export function readDisk(host: OpsHost): DiskFacts | null {
@@ -227,7 +233,6 @@ export function measure(deps: SamplerDeps): Measurements {
 	// --- granary (through OpsHost)
 	if (health) {
 		out.push(s('outbox-dead', null, health.outbox.dead > 0, health.outbox.dead, { dead: health.outbox.dead }));
-		out.push(s('actors-quarantined', null, health.quarantinedActors > 0, health.quarantinedActors, { quarantined: health.quarantinedActors }));
 		const age = health.outbox.oldestPendingAgeMs;
 		out.push(s('outbox-pending-old', null, age !== null && age > HOUR, age, { oldestPendingAgeMs: age }));
 		const lastWebhook = health.lastWebhookAt ?? deps.firstSeenAt;
@@ -240,5 +245,10 @@ export function measure(deps: SamplerDeps): Measurements {
 		}
 	}
 
-	return { at: now, host: health, disk, samples: out };
+	// --- actors that ended on a fault since the previous pass (granary's and ops' own)
+	const faultsTotal = (health?.actorFaultsTotal ?? 0) + deps.opsFaultsTotal;
+	const faults = Math.max(0, faultsTotal - deps.previousFaultsTotal);
+	out.push(s('actor-faults', null, faults > 0, faults, { faults, faultsTotal }));
+
+	return { at: now, host: health, disk, faultsTotal, samples: out };
 }

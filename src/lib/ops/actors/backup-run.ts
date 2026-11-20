@@ -1,7 +1,8 @@
 /**
  * `backup-run/<runId>` — one snapshot of one database, uploaded to each
- * destination of its plan (ADR 0082, 0098, 0111). Virtual: the loader
- * rebuilds it from `backup_runs` + `uploads` rows, so a crash at any step
+ * destination of its plan (ADR 0082, 0098, 0111). Virtual: spawned with
+ * params read from its `backup_runs` + `uploads` rows (at boot for an
+ * unfinished run, or by `ops-route` when mail comes), so a crash at any step
  * resumes where the rows say.
  *
  *   restore ──(row state)──▶ idle | snapshotting | uploading
@@ -15,7 +16,7 @@
  *     upload.done / upload.failed → tally; all terminal → finalizing
  *   finalizing (entry: run.finalize via backup-ledger) → succeeded | partial | failed | postponed
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
+import { chart, scxml } from '../../charts';
 import { OPS_FAMILY, OPS_IO } from '../schemas/events';
 import type { RawSnapshot } from '../backups/repo';
 
@@ -29,7 +30,7 @@ export interface BackupRunData {
 	spoolDir: string;
 	destinationIds: string[];
 	trigger: string;
-	/** Row state at load time (restore routing). */
+	/** Row state at spawn time (restore routing). */
 	phase: string;
 	snapshot: RawSnapshot | null;
 	/** destinationId → 'done' | 'failed' once terminal. */
@@ -40,7 +41,6 @@ export interface BackupRunData {
 	error: string | null;
 }
 
-export const BACKUP_RUN_REVISION = 'v1';
 export const MAX_SNAPSHOT_ATTEMPTS = 3;
 export const BACKUP_RUN_STATES = {
 	restore: 'restore',
@@ -54,124 +54,106 @@ export const BACKUP_RUN_STATES = {
 	postponed: 'postponed'
 } as const;
 
-type Ctx = EvaluationContext<BackupRunData>;
-const ev = <T>(c: Ctx) => c.event!.data as T;
+const S = BACKUP_RUN_STATES;
 
-const allTerminal = ({ data }: Ctx) => data.destinationIds.every((d) => data.uploads[d]);
-const tallyOutcome = ({ data }: Ctx): RunOutcome => {
-	const states = data.destinationIds.map((d) => data.uploads[d]);
-	if (!states.length) return 'failed';
-	if (states.every((s) => s === 'done')) return 'succeeded';
-	return states.some((s) => s === 'done') ? 'partial' : 'failed';
+const helpers = {
+	allTerminal: (destinationIds: string[], uploads: Record<string, string>) => destinationIds.every((d) => uploads[d]),
+	tallyOutcome: (destinationIds: string[], uploads: Record<string, string>) => {
+		const states = destinationIds.map((d) => uploads[d]);
+		if (!states.length) return 'failed';
+		if (states.every((s) => s === 'done')) return 'succeeded';
+		return states.some((s) => s === 'done') ? 'partial' : 'failed';
+	},
+	uploadError: (d: { destinationId: string; lastError: { code: string; message: string } }) => `${d.destinationId}: ${d.lastError.code} — ${d.lastError.message}`
 };
 
-export function backupRunChart(): DefinitionBuilder<BackupRunData> {
-	const S = BACKUP_RUN_STATES;
-	const finalState = (name: RunOutcome) => (s: any) =>
-		s.doneData((d: any) => d.content(({ data }: Ctx) => ({ runId: data.runId, state: name, sealedBytes: data.sealedBytes })));
-	return (
-		statechart<BackupRunData>({ family: OPS_FAMILY.run, revision: BACKUP_RUN_REVISION, name: 'backup-run' })
-			.data('runId', 'run')
-			.data('planId', 'plan')
-			.data('database', 'db')
-			.data('dbPath', '')
-			.data('spoolDir', '')
-			.data('destinationIds', [])
-			.data('trigger', 'schedule')
-			.data('phase', 'pending')
-			.data('snapshot', null)
-			.data('uploads', {})
-			.data('attempt', 0)
-			.data('sealedBytes', null)
-			.data('outcome', null)
-			.data('error', null)
-			.initial(S.restore)
-			.state(S.restore, (s) =>
-				s
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'snapshotting').target(S.snapshotting))
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'uploading' && data.snapshot !== null).target(S.uploading))
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'uploading').target(S.snapshotting))
-					.always((t) => t.target(S.idle))
-			)
-			.state(S.idle, (s) =>
-				s.on('run.start', (t) =>
-					t
-						.target(S.snapshotting)
-						.assign('destinationIds', (c: Ctx) => ev<{ destinationIds: string[] }>(c).destinationIds)
-						.assign('trigger', (c: Ctx) => ev<{ trigger: string }>(c).trigger)
-				)
-			)
-			.state(S.snapshotting, (s) =>
-				s
-					.entry((a) =>
-						a
-							.assign('attempt', ({ data }: Ctx) => data.attempt + 1)
-							.send('snapshot.request', (b) =>
-								b.via(OPS_IO.snapshot).data(({ data }: Ctx) => ({ runId: data.runId, database: data.database, dbPath: data.dbPath, spoolDir: data.spoolDir }))
-							)
-					)
-					.on('snapshot.ready', (t) => t.target(S.uploading).assign('snapshot', (c: Ctx) => ev<RawSnapshot>(c)))
-					.on('snapshot.failed', (t) =>
-						t
-							.when((c: Ctx) => ev<{ reason: string }>(c).reason === 'disk-insufficient')
-							.target(S.finalizing)
-							.assign('outcome', literal('postponed'))
-							.assign('error', (c: Ctx) => ev<{ detail: string }>(c).detail)
-					)
-					.on('snapshot.failed', (t) =>
-						t
-							.when(({ data }: Ctx) => data.attempt < MAX_SNAPSHOT_ATTEMPTS)
-							.target(S.snapshotting)
-							.assign('error', (c: Ctx) => ev<{ detail: string }>(c).detail)
-					)
-					.on('snapshot.failed', (t) =>
-						t.target(S.finalizing).assign('outcome', literal('failed')).assign('error', (c: Ctx) => `snapshot failed: ${ev<{ detail: string }>(c).detail}`)
-					)
-					.on('error.communication', (t) => t.target(S.finalizing).assign('outcome', literal('failed')).assign('error', literal('snapshot processor unavailable')))
-			)
-			.state(S.uploading, (s) =>
-				s
-					.entry((a) =>
-						a.send('run.uploads', (b) =>
-							b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({ runId: data.runId, destinationIds: data.destinationIds, snapshot: data.snapshot }))
-						)
-					)
-					.always((t) => t.when(allTerminal).target(S.finalizing).assign('outcome', tallyOutcome))
-					.on('upload.done', (t) =>
-						t
-							.assign('uploads', (c: Ctx) => ({ ...c.data.uploads, [ev<{ destinationId: string }>(c).destinationId]: 'done' }))
-							.assign('sealedBytes', (c: Ctx) => Math.max(c.data.sealedBytes ?? 0, ev<{ sealedBytes: number }>(c).sealedBytes))
-					)
-					.on('upload.failed', (t) =>
-						t
-							.assign('uploads', (c: Ctx) => ({ ...c.data.uploads, [ev<{ destinationId: string }>(c).destinationId]: 'failed' }))
-							.assign('error', (c: Ctx) => {
-								const d = ev<{ destinationId: string; lastError: { code: string; message: string } }>(c);
-								return `${d.destinationId}: ${d.lastError.code} — ${d.lastError.message}`;
-							})
-					)
-			)
-			.state(S.finalizing, (s) =>
-				s
-					.entry((a) =>
-						a.send('run.finalize', (b) =>
-							b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({
-								runId: data.runId,
-								planId: data.planId,
-								state: data.outcome ?? 'failed',
-								sealedBytes: data.sealedBytes,
-								error: data.outcome === 'succeeded' ? null : data.error
-							}))
-						)
-					)
-					.always((t) => t.when(({ data }: Ctx) => data.outcome === 'succeeded').target(S.succeeded))
-					.always((t) => t.when(({ data }: Ctx) => data.outcome === 'partial').target(S.partial))
-					.always((t) => t.when(({ data }: Ctx) => data.outcome === 'postponed').target(S.postponed))
-					.always((t) => t.target(S.failed))
-			)
-			.final(S.succeeded, finalState('succeeded'))
-			.final(S.partial, finalState('partial'))
-			.final(S.failed, finalState('failed'))
-			.final(S.postponed, finalState('postponed'))
-	);
-}
+const final = (name: RunOutcome) =>
+	scxml`<final id="${name}"><donedata><content expr="${`({ runId: runId, state: '${name}', sealedBytes: sealedBytes })`}"/></donedata></final>`;
+
+export const backupRunChart = chart({
+	name: OPS_FAMILY.run,
+	initial: S.restore,
+	helpers,
+	data: {
+		runId: 'run',
+		planId: 'plan',
+		database: 'db',
+		dbPath: '',
+		spoolDir: '',
+		destinationIds: [],
+		trigger: 'schedule',
+		phase: 'pending',
+		snapshot: null,
+		uploads: {},
+		attempt: 0,
+		sealedBytes: null,
+		outcome: null,
+		error: null
+	} satisfies BackupRunData,
+	body: scxml`
+<state id="${S.restore}">
+	<transition cond="phase === 'snapshotting'" target="${S.snapshotting}"/>
+	<transition cond="${"phase === 'uploading' && snapshot !== null"}" target="${S.uploading}"/>
+	<transition cond="phase === 'uploading'" target="${S.snapshotting}"/>
+	<transition target="${S.idle}"/>
+</state>
+<state id="${S.idle}">
+	<transition event="run.start" target="${S.snapshotting}">
+		<assign location="destinationIds" expr="_event.data.destinationIds"/>
+		<assign location="trigger" expr="_event.data.trigger"/>
+	</transition>
+</state>
+<state id="${S.snapshotting}">
+	<onentry>
+		<assign location="attempt" expr="attempt + 1"/>
+		<send type="${OPS_IO.snapshot}" event="snapshot.request"><content expr="({ runId: runId, database: database, dbPath: dbPath, spoolDir: spoolDir })"/></send>
+	</onentry>
+	<transition event="snapshot.ready" target="${S.uploading}"><assign location="snapshot" expr="_event.data"/></transition>
+	<transition event="snapshot.failed" cond="_event.data.reason === 'disk-insufficient'" target="${S.finalizing}">
+		<assign location="outcome" expr="'postponed'"/>
+		<assign location="error" expr="_event.data.detail"/>
+	</transition>
+	<transition event="snapshot.failed" cond="${`attempt < ${MAX_SNAPSHOT_ATTEMPTS}`}" target="${S.snapshotting}">
+		<assign location="error" expr="_event.data.detail"/>
+	</transition>
+	<transition event="snapshot.failed" target="${S.finalizing}">
+		<assign location="outcome" expr="'failed'"/>
+		<assign location="error" expr="'snapshot failed: ' + _event.data.detail"/>
+	</transition>
+	<transition event="error.communication" target="${S.finalizing}">
+		<assign location="outcome" expr="'failed'"/>
+		<assign location="error" expr="'snapshot processor unavailable'"/>
+	</transition>
+</state>
+<state id="${S.uploading}">
+	<onentry>
+		<send type="${OPS_IO.ledger}" event="run.uploads"><content expr="({ runId: runId, destinationIds: destinationIds, snapshot: snapshot })"/></send>
+	</onentry>
+	<transition cond="allTerminal(destinationIds, uploads)" target="${S.finalizing}">
+		<assign location="outcome" expr="tallyOutcome(destinationIds, uploads)"/>
+	</transition>
+	<transition event="upload.done">
+		<assign location="uploads" expr="({ ...uploads, [_event.data.destinationId]: 'done' })"/>
+		<assign location="sealedBytes" expr="Math.max(sealedBytes ?? 0, _event.data.sealedBytes)"/>
+	</transition>
+	<transition event="upload.failed">
+		<assign location="uploads" expr="({ ...uploads, [_event.data.destinationId]: 'failed' })"/>
+		<assign location="error" expr="uploadError(_event.data)"/>
+	</transition>
+</state>
+<state id="${S.finalizing}">
+	<onentry>
+		<send type="${OPS_IO.ledger}" event="run.finalize">
+			<content expr="${"({ runId: runId, planId: planId, state: outcome ?? 'failed', sealedBytes: sealedBytes, error: outcome === 'succeeded' ? null : error })"}"/>
+		</send>
+	</onentry>
+	<transition cond="outcome === 'succeeded'" target="${S.succeeded}"/>
+	<transition cond="outcome === 'partial'" target="${S.partial}"/>
+	<transition cond="outcome === 'postponed'" target="${S.postponed}"/>
+	<transition target="${S.failed}"/>
+</state>
+${final('succeeded')}
+${final('partial')}
+${final('failed')}
+${final('postponed')}`
+});

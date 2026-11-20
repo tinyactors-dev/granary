@@ -1,11 +1,12 @@
 /**
  * Ops-generated telemetry (ADR 0085, 0100, 0121): log records for ops
  * events (OTLP/JSON) and a small, constant-volume metric set from the
- * watchdog's latest sample (OTLP/protobuf via tinyactors' `metricsToOTLP`).
- * Both carry `service.name=granary-ops`.
+ * watchdog's latest sample (OTLP/protobuf, `otlp-metrics.ts`), plus the
+ * ops host's own counters (`host.metrics()`, passed on as they are). All
+ * carry `service.name=granary-ops`.
  */
-import { metricsToOTLP, type Metric } from '@tinyactors/node-legacy';
 import type { TelemetryBatch } from '../contract';
+import { encodeMetrics, type MetricData } from './otlp-metrics';
 import type { OpsEventKind } from '../schemas/conditions';
 import { OPS_SERVICE } from './fanout';
 
@@ -68,16 +69,31 @@ export interface MetricPointInput {
 
 /** Group points by metric name and encode one ExportMetricsServiceRequest. */
 export function opsMetricsBatch(points: MetricPointInput[], startTime: number, now: number, version: string): TelemetryBatch {
-	const byName = new Map<string, Metric>();
+	const byName = new Map<string, MetricData>();
 	for (const p of points) {
 		if (!Number.isFinite(p.value)) continue;
 		let m = byName.get(p.name);
 		if (!m) {
-			m = { name: p.name, unit: p.unit, kind: p.kind, points: [] } as Metric;
+			m = { name: p.name, unit: p.unit, kind: p.kind, points: [] };
 			byName.set(p.name, m);
 		}
-		(m.points as { attributes: Record<string, string>; value: number }[]).push({ attributes: p.attributes ?? {}, value: p.value });
+		m.points.push({ attributes: p.attributes ?? {}, value: p.value });
 	}
-	const bytes = metricsToOTLP({ startTime, time: now, system: {}, metrics: [...byName.values()] }, { resource: { 'service.name': OPS_SERVICE }, version });
+	const bytes = encodeMetrics({
+		metrics: [...byName.values()],
+		startTime,
+		time: now,
+		resource: { 'service.name': OPS_SERVICE, 'service.version': version },
+		scope: { name: OPS_SERVICE, version }
+	});
 	return { signal: 'metrics', contentType: 'application/x-protobuf', bytes, service: OPS_SERVICE, producedAt: now };
 }
+
+/** The ops host's own counters (`host.metrics()`, already an ExportMetricsServiceRequest). */
+export const opsHostMetricsBatch = (bytes: Uint8Array, now: number): TelemetryBatch => ({
+	signal: 'metrics',
+	contentType: 'application/x-protobuf',
+	bytes,
+	service: OPS_SERVICE,
+	producedAt: now
+});

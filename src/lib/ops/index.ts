@@ -2,7 +2,7 @@
  * Ops module entry point (ADR 0080, 0110, 0120). Only `src/lib/server/boot.ts`
  * and `src/hooks.server.ts` may import this file.
  *
- * `createOps(host)` assembles the ops System from its features:
+ * `createOps(host)` assembles the ops host (`system.ts`) from its features:
  *   - health (telemetry fan-out and sinks, watchdog, conditions, remediator)
  *   - backups (destinations, plans, runs, uploads, drills, secrets)
  * Failures inside ops never take granary down: `start()` rejects, the caller
@@ -14,7 +14,8 @@ import type { Database } from 'bun:sqlite';
 import { OpsBackendError, type CreateOps, type OpsBackend, type OpsModule, type OpsStatus, type TelemetryBatch } from './contract';
 import type { BackupsFeature, OpsContext, OpsFeature, SecretReader } from './feature';
 import { openOpsDb } from './db/open';
-import { createOpsSystem, type OpsSystem } from './system';
+import { createOpsActors, type OpsActors } from './system';
+import { opsName } from './schemas/events';
 import { createHealthFeature } from './features/health';
 import { composeBackend, unavailableBackend } from './backend/index';
 import { backupsFeature } from './features/backups';
@@ -57,7 +58,7 @@ export const createOps: CreateOps = (host) => {
 	const features: OpsFeature<unknown>[] = [health, ...(backups ? [backups] : [])];
 
 	let db: Database | null = null;
-	let ops: OpsSystem | null = null;
+	let ops: OpsActors | null = null;
 	let backend: OpsBackend = unavailableBackend('ops not started yet');
 	let sink: { write(b: TelemetryBatch): void; active?(): boolean } | null = null;
 	let started = false;
@@ -92,41 +93,31 @@ export const createOps: CreateOps = (host) => {
 					return false;
 				}
 			};
-			ops = createOpsSystem({
+			ops = createOpsActors({
+				charts: features.flatMap((f) => f.charts),
 				io: Object.assign({}, ...features.map((f) => f.io)),
 				log: host.log,
 				exportTraces: (b) => health.runtime()?.fanout.write(b),
 				wantsTraces: fanoutWants
 			});
-			const sys = ops;
+			const actors = ops;
 			const ctx: OpsContext = {
 				host,
 				db,
-				system: sys.system,
+				actors,
 				now,
 				secrets,
 				redactor,
 				post(target, event, data) {
+					const name = opsName(target);
 					try {
-						sys.post(target, event, data);
+						if (!actors.send(name, event, data as never)) host.log.warn(`ops: ${event} to ${name} dropped: no such actor`);
 					} catch (e) {
-						host.log.warn(`ops: could not post ${event} to ${target.family}/${target.name}`, e instanceof Error ? e.message : e);
+						host.log.warn(`ops: could not send ${event} to ${name}`, e instanceof Error ? e.message : e);
 					}
-				},
-				spawn: (definition, address, binding) => sys.spawn(definition, address, binding),
-				excludeFromTraces: (d) => sys.excludeFromTraces(d),
-				addresses: () => sys.known()
+				}
 			};
-			for (const f of features)
-				for (const [family, l] of Object.entries(f.loaders ?? {}))
-					sys.system.setLoader(
-						family,
-						(address) => {
-							sys.note(address);
-							return l.load(ctx, address);
-						},
-						l.options
-					);
+			for (const f of features) for (const [family, spawner] of Object.entries(f.spawners ?? {})) actors.setSpawner(family, (name) => spawner(ctx, name));
 			// Health must start; any other feature that fails is left out (ADR 0120).
 			for (const f of features) {
 				if (failed.has(f.name)) continue;
@@ -144,6 +135,15 @@ export const createOps: CreateOps = (host) => {
 				}
 			}
 			const backupsOk = !!backups && !failed.has(backups.name);
+			// Unfinished work of the features that run (crash recovery): spawned from their rows.
+			for (const f of features) {
+				if (failed.has(f.name)) continue;
+				try {
+					f.resume?.(ctx);
+				} catch (e) {
+					host.log.error(`ops: resuming the ${f.name} feature failed`, e);
+				}
+			}
 			// Seed sinks whose token secret the backups feature just seeded (ADR 0150).
 			if (backupsOk) {
 				try {
@@ -171,7 +171,7 @@ export const createOps: CreateOps = (host) => {
 					host.log.error(`ops: stopping ${f.name} failed`, e);
 				}
 			}
-			ops?.close();
+			await ops?.close();
 			try {
 				db?.close();
 			} catch (e) {

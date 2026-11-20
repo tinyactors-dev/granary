@@ -1,16 +1,17 @@
 /**
  * Shared state of the backups feature (ADR 0111): the I/O processors,
- * loaders and backend all reach ops.sqlite, keys, the Worker and the System
- * through this object. It exists from `createBackupsFeature()`; `ctx` and the
- * chart definitions are bound in `start()`.
+ * spawners and backend all reach ops.sqlite, keys, the Worker and the ops
+ * host through this object. It exists from `createBackupsFeature()`; `ctx` is
+ * bound in `start()`.
  */
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Definition, System } from '@tinyactors/node-legacy';
+import type { Value } from '@tinyactors/node';
 import type { OpsContext } from '../feature';
 import type { HostDatabase } from '../schemas/host';
 import type { Destination } from '../schemas/destinations';
-import { OPS_FAMILY, drillAddress, planAddress, retentionAddress, type OpsAddress } from '../schemas/events';
+import { OPS_FAMILY, drillAddress, opsName, planAddress, retentionAddress, type OpsAddress } from '../schemas/events';
+import type { OpsActors } from '../system';
 import type { BackupPlan } from '../schemas/plans';
 import { MAX_STRETCHED_INTERVAL_MS } from '../schemas/plans';
 
@@ -39,21 +40,11 @@ export const DEFAULT_BACKUPS_OPTIONS: BackupsOptions = {
 	makeRoomTimeoutMs: 10 * 60_000
 };
 
-export interface Definitions {
-	config: Definition<any>;
-	plan: Definition<any>;
-	run: Definition<any>;
-	upload: Definition<any>;
-	retention: Definition<any>;
-	drill: Definition<any>;
-}
-
 export class BackupsRuntime {
 	ctx: OpsContext | null = null;
 	repo: BackupsRepo | null = null;
 	secrets: SecretStore | null = null;
 	keys: MasterKeys | null = null;
-	defs: Definitions | null = null;
 	readonly worker = new SnapshotWorker();
 	readonly options: BackupsOptions;
 
@@ -69,8 +60,8 @@ export class BackupsRuntime {
 		if (!this.repo) throw new Error('backups feature not started');
 		return this.repo;
 	}
-	get system(): System {
-		return this.c.system;
+	get actors(): OpsActors {
+		return this.c.actors;
 	}
 	/** The host's logger for ops (`service.name=granary-ops`, ADR 0234). */
 	get log() {
@@ -210,45 +201,34 @@ export class BackupsRuntime {
 
 	// ---- reconcile: long-lived actors follow the config rows (ADR 0082, 0111) ----
 
-	#resident(a: OpsAddress) {
-		return this.system.findActor(a);
-	}
-
-	#put(def: Definition<any>, address: OpsAddress, binding: object, replace: boolean, out: { spawned: string[]; replaced: string[] }) {
-		const name = `${address.family}/${address.name}`;
+	/**
+	 * Make sure `address` runs with `params`: spawn it when it is not there, or,
+	 * when `replace`, terminate it and spawn it afresh (its mail is re-sent by
+	 * its peers; schedules are re-derived from the rows).
+	 */
+	#put(address: OpsAddress, params: Record<string, unknown>, replace: boolean, out: { spawned: string[]; replaced: string[] }) {
+		const name = opsName(address);
 		this.remember(address.family, address.name);
-		const incumbent = this.#resident(address);
-		if (!incumbent) {
-			this.c.spawn(def, address, binding);
+		if (!this.actors.find(name)) {
+			this.actors.spawn(name, params as Record<string, Value>);
 			out.spawned.push(name);
 			return;
 		}
 		if (!replace) return;
-		try {
-			incumbent.prepareReplacement(def, { binding }).activate();
-		} catch {
-			// busy (inside a macrostep) or failed activation: destroy + spawn; its mail is re-sent by its peers.
-			try {
-				incumbent.destroy();
-			} catch {
-				/* already gone */
-			}
-			this.c.spawn(def, address, binding);
-		}
+		this.actors.replace(name, params as Record<string, Value>);
 		out.replaced.push(name);
 	}
 
 	reconcile(area: string | null, id: string | null): { spawned: string[]; replaced: string[]; destroyed: string[] } {
-		const defs = this.defs!;
 		const out = { spawned: [] as string[], replaced: [] as string[], destroyed: [] as string[] };
 		const all = area === null || area === 'budgets';
 		const plans = this.r.plans();
 		const dests = this.r.destinations().filter((d) => d.enabled);
 		const touches = (a: string, x: string) => all || (area === a && id === x) || (area === 'plan' && a === 'drill');
-		for (const p of plans) this.#put(defs.plan, planAddress(p.id), this.planBinding(p), touches('plan', p.id), out);
+		for (const p of plans) this.#put(planAddress(p.id), this.planBinding(p), touches('plan', p.id), out);
 		for (const d of dests) {
-			this.#put(defs.retention, retentionAddress(d.id), this.retentionBinding(d.id), touches('destination', d.id), out);
-			this.#put(defs.drill, drillAddress(d.id), this.drillBinding(d.id), touches('destination', d.id) || touches('drill', d.id), out);
+			this.#put(retentionAddress(d.id), this.retentionBinding(d.id), touches('destination', d.id), out);
+			this.#put(drillAddress(d.id), this.drillBinding(d.id), touches('destination', d.id) || touches('drill', d.id), out);
 		}
 		// Stale long-lived actors (deleted/disabled rows).
 		const want = new Set([...plans.map((p) => `${OPS_FAMILY.plan}/${p.id}`), ...dests.flatMap((d) => [`${OPS_FAMILY.retention}/${d.id}`, `${OPS_FAMILY.drill}/${d.id}`])]);
@@ -256,10 +236,10 @@ export class BackupsRuntime {
 			for (const name of [...names]) {
 				const key = `${family}/${name}`;
 				if (want.has(key)) continue;
-				const a = this.system.findActor({ family, name });
+				const a = this.actors.find(key);
 				if (a) {
 					try {
-						a.destroy();
+						a.terminate();
 					} catch {
 						/* gone */
 					}

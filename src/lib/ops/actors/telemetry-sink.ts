@@ -15,14 +15,16 @@
  * In every state `telemetry.batch` appends to a bounded byte buffer; on
  * overflow the oldest batches are dropped and counted (telemetry is lossy
  * by design, never persisted). `sink.probe` from the remediator
- * (`reset-sink-circuit`) closes an open circuit early. Spans of this family
- * are never exported (loop breaking, ADR 0093).
+ * (`reset-sink-circuit`) closes an open circuit early. The ops host's trace
+ * rule drops every step of this chart (loop breaking, ADR 0093).
+ *
+ * All of the sink's state is the one variable `d` (`TelemetrySinkData`),
+ * changed in place by the chart's helpers.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
+import { chart, scxml } from '../../charts';
 import { OPS_FAMILY, SEND_ID } from '../schemas/events';
-import { OTLP_EXPORT_EVENT, OTLP_IO_TYPE, type OtlpExportRequest, type QueuedBatch } from '../io/otlp';
+import { OTLP_EXPORT_EVENT, OTLP_IO_TYPE, type QueuedBatch } from '../io/otlp';
 
-export const SINK_REVISION = 'v1';
 export const FLUSH_AT_BYTES = 512 * 1024;
 export const OPEN_AFTER_FAILURES = 5;
 export const PROBE_AFTER_MS = 60_000;
@@ -63,9 +65,6 @@ export interface TelemetrySinkData {
 	timeScale: number;
 }
 
-/** Scaled delay; tests never go below 200 ms so a down sink doesn't spin. */
-const scaled = (ms: number, scale: number) => (scale >= 1 ? ms : Math.max(200, Math.round(ms * scale)));
-
 export const initialSinkData = (sinkId: string, flushIntervalMs: number, maxBufferBytes: number, timeScale = 1): TelemetrySinkData => ({
 	sinkId,
 	flushIntervalMs,
@@ -85,163 +84,142 @@ export const initialSinkData = (sinkId: string, flushIntervalMs: number, maxBuff
 	timeScale
 });
 
-type Ctx = EvaluationContext<TelemetrySinkData>;
 const DAY = 86_400_000;
 
-function drop(d: TelemetrySinkData, b: QueuedBatch, now: number) {
-	d.dropped.batches++;
-	d.dropped.bytes += b.bytes.length;
-	d.dropLog.push({ at: now, bytes: b.bytes.length });
-	while (d.dropLog.length && d.dropLog[0]!.at < now - DAY) d.dropLog.shift();
-	if (d.dropLog.length > 10_000) d.dropLog.splice(0, d.dropLog.length - 10_000);
-}
+/** The chart's helpers: self-contained (constants inlined, named in comments). */
+const helpers = {
+	/** Append to the bounded buffer, dropping (and counting) the oldest batches on overflow. */
+	enqueue: (d: TelemetrySinkData, batches: QueuedBatch[], front: boolean) => {
+		const now = Date.now();
+		if (front) d.queue.unshift(...batches);
+		else d.queue.push(...batches);
+		d.queuedBytes = d.queue.reduce((n, b) => n + b.bytes.length, 0);
+		while (d.queuedBytes > d.maxBufferBytes && d.queue.length) {
+			const old = d.queue.shift()!;
+			d.queuedBytes -= old.bytes.length;
+			d.dropped.batches++;
+			d.dropped.bytes += old.bytes.length;
+			d.dropLog.push({ at: now, bytes: old.bytes.length });
+			while (d.dropLog.length && d.dropLog[0]!.at < now - 86_400_000) d.dropLog.shift(); // DAY
+			if (d.dropLog.length > 10_000) d.dropLog.splice(0, d.dropLog.length - 10_000);
+		}
+	},
+	/** FLUSH_AT_BYTES = 512 KiB. */
+	full: (d: TelemetrySinkData) => d.queuedBytes >= 512 * 1024,
+	/** The export request: the queue moves in flight. */
+	takeQueue: (d: TelemetrySinkData) => {
+		d.inflight = d.queue;
+		d.queue = [];
+		d.queuedBytes = 0;
+		return { sinkId: d.sinkId, batches: d.inflight };
+	},
+	onSent: (d: TelemetrySinkData, e: { batches: number; bytes: number }) => {
+		d.sent.batches += e.batches;
+		d.sent.bytes += e.bytes;
+		d.inflight = [];
+		d.failures = 0;
+		d.retryAfterMs = null;
+		d.lastSuccessAt = Date.now();
+		d.openedAt = null;
+	},
+	/** The batches in flight go back to the front of the queue (`enqueue(d, inflight, true)`). */
+	onFailed: (d: TelemetrySinkData, e: { retryAfterMs: number | null; message: string } | null) => {
+		const now = Date.now();
+		const back = d.inflight;
+		d.inflight = [];
+		d.queue.unshift(...back);
+		d.queuedBytes = d.queue.reduce((n, b) => n + b.bytes.length, 0);
+		while (d.queuedBytes > d.maxBufferBytes && d.queue.length) {
+			const old = d.queue.shift()!;
+			d.queuedBytes -= old.bytes.length;
+			d.dropped.batches++;
+			d.dropped.bytes += old.bytes.length;
+			d.dropLog.push({ at: now, bytes: old.bytes.length });
+		}
+		d.failures++;
+		if (e) {
+			d.retryAfterMs = e.retryAfterMs;
+			d.lastError = e.message;
+			d.lastFailureAt = now;
+		} else d.lastError = 'otlp processor failed';
+	},
+	/** MAX_BACKOFF_MS = 60 s; tests (timeScale < 1) never go below 200 ms so a down sink doesn't spin. */
+	backoffDelay: (d: TelemetrySinkData) => {
+		const ms = Math.min(60_000, d.retryAfterMs ?? Math.min(60_000, 1000 * 2 ** Math.min(6, d.failures)));
+		return d.timeScale >= 1 ? ms : Math.max(200, Math.round(ms * d.timeScale));
+	},
+	/** PROBE_AFTER_MS = 60 s, scaled as `backoffDelay`. */
+	probeDelay: (d: TelemetrySinkData) => (d.timeScale >= 1 ? 60_000 : Math.max(200, Math.round(60_000 * d.timeScale)))
+};
 
-/** Append to the bounded buffer, dropping the oldest batches on overflow. */
-function enqueue(d: TelemetrySinkData, batches: QueuedBatch[], front = false) {
-	const now = Date.now();
-	if (front) d.queue.unshift(...batches);
-	else d.queue.push(...batches);
-	d.queuedBytes = d.queue.reduce((n, b) => n + b.bytes.length, 0);
-	while (d.queuedBytes > d.maxBufferBytes && d.queue.length) {
-		const old = d.queue.shift()!;
-		d.queuedBytes -= old.bytes.length;
-		drop(d, old, now);
-	}
-}
+const S = SINK_STATES;
+const push = scxml`<script>enqueue(d, [_event.data], false)</script>`;
+const exportQueue = scxml`<send type="${OTLP_IO_TYPE}" event="${OTLP_EXPORT_EVENT}"><content expr="takeQueue(d)"/></send>`;
+const batchIn = (whenFull: boolean) =>
+	whenFull
+		? scxml`<transition event="telemetry.batch" type="internal">${push}<if cond="full(d)"><raise event="sink.full"/></if></transition>`
+		: scxml`<transition event="telemetry.batch" type="internal">${push}</transition>`;
+const sent = scxml`
+	<transition event="sink.sent" cond="d.queue.length > 0" target="${S.waiting}"><script>onSent(d, _event.data)</script></transition>
+	<transition event="sink.sent" target="${S.idle}"><script>onSent(d, _event.data)</script></transition>`;
 
-const pushBatch = ({ data, event }: Ctx) => enqueue(data, [event!.data as QueuedBatch]);
-const full = ({ data }: Ctx) => data.queuedBytes >= FLUSH_AT_BYTES;
-const hasQueue = ({ data }: Ctx) => data.queue.length > 0;
-
-function takeQueue({ data }: Ctx): OtlpExportRequest {
-	data.inflight = data.queue;
-	data.queue = [];
-	data.queuedBytes = 0;
-	return { sinkId: data.sinkId, batches: data.inflight };
-}
-
-function onSent({ data, event }: Ctx) {
-	const d = event!.data as { batches: number; bytes: number };
-	data.sent.batches += d.batches;
-	data.sent.bytes += d.bytes;
-	data.inflight = [];
-	data.failures = 0;
-	data.retryAfterMs = null;
-	data.lastSuccessAt = Date.now();
-	data.openedAt = null;
-}
-
-function onFailed({ data, event }: Ctx) {
-	const d = event!.data as { status: number | null; retryAfterMs: number | null; message: string };
-	enqueue(data, data.inflight, true);
-	data.inflight = [];
-	data.failures++;
-	data.retryAfterMs = d.retryAfterMs;
-	data.lastError = d.message;
-	data.lastFailureAt = Date.now();
-}
-
-const backoffDelay = ({ data }: Ctx) =>
-	scaled(Math.min(MAX_BACKOFF_MS, data.retryAfterMs ?? Math.min(MAX_BACKOFF_MS, 1000 * 2 ** Math.min(6, data.failures))), data.timeScale ?? 1);
-
-export function telemetrySinkChart(): DefinitionBuilder<TelemetrySinkData> {
-	const S = SINK_STATES;
-	return statechart<TelemetrySinkData>({ family: OPS_FAMILY.sink, revision: SINK_REVISION, name: 'telemetry-sink' })
-		.data('sinkId', 'unset')
-		.data('flushIntervalMs', 2000)
-		.data('timeScale', 1)
-		.data('maxBufferBytes', 8 * 1024 * 1024)
-		.data('queue', [])
-		.data('queuedBytes', 0)
-		.data('inflight', [])
-		.data('failures', 0)
-		.data('retryAfterMs', null)
-		.data('sent', { batches: 0, bytes: 0 })
-		.data('dropped', { batches: 0, bytes: 0 })
-		.data('dropLog', [])
-		.data('lastError', null)
-		.data('lastSuccessAt', null)
-		.data('lastFailureAt', null)
-		.data('openedAt', null)
-		.initial(S.idle)
-		.state(S.idle, (s) =>
-			s
-				.on('telemetry.batch', (t) => t.when(full).target(S.sending).script(pushBatch))
-				.on('telemetry.batch', (t) => t.target(S.waiting).script(pushBatch))
-				.on('sink.flush')
-				.on('sink.probe')
-		)
-		.state(S.waiting, (s) =>
-			s
-				.entry((a) => a.send('sink.flush', (b) => b.id(SEND_ID.flush).after(({ data }: Ctx) => data.flushIntervalMs)))
-				.exit((a) => a.cancel(SEND_ID.flush))
-				.on('telemetry.batch', (t) => t.when(full).target(S.sending).script(pushBatch))
-				.on('telemetry.batch', (t) => t.internal().script(pushBatch))
-				.on('sink.flush', (t) => t.target(S.sending))
-				.on('sink.probe')
-		)
-		.state(S.sending, (s) =>
-			s
-				.entry((a) => a.send(OTLP_EXPORT_EVENT, (b) => b.via(OTLP_IO_TYPE).data(takeQueue)))
-				.on('telemetry.batch', (t) => t.internal().script(pushBatch))
-				.on('sink.sent', (t) => t.when(hasQueue).target(S.waiting).script(onSent))
-				.on('sink.sent', (t) => t.target(S.idle).script(onSent))
-				.on('sink.failed', (t) => t.when(({ data }: Ctx) => data.failures + 1 >= OPEN_AFTER_FAILURES).target(S.open).script(onFailed))
-				.on('sink.failed', (t) => t.target(S.backoff).script(onFailed))
-				.on('error.communication', (t) => t.target(S.backoff).script((ctx: Ctx) => {
-					enqueue(ctx.data, ctx.data.inflight, true);
-					ctx.data.inflight = [];
-					ctx.data.failures++;
-					ctx.data.lastError = 'otlp processor failed';
-				}))
-				.on('sink.probe')
-		)
-		.state(S.backoff, (s) =>
-			s
-				.entry((a) => a.send('sink.flush', (b) => b.id(SEND_ID.retry).after(backoffDelay)))
-				.exit((a) => a.cancel(SEND_ID.retry))
-				.on('telemetry.batch', (t) => t.internal().script(pushBatch))
-				.on('sink.flush', (t) => t.target(S.sending))
-				.on('sink.probe', (t) => t.target(S.sending))
-		)
-		.state(S.open, (s) =>
-			s
-				.entry((a) =>
-					a
-						.script(({ data }: Ctx) => {
-							data.openedAt ??= Date.now();
-						})
-						.send('sink.probe', (b) => b.id(SEND_ID.probe).after(({ data }: Ctx) => scaled(PROBE_AFTER_MS, data.timeScale ?? 1)))
-				)
-				.exit((a) => a.cancel(SEND_ID.probe))
-				.on('telemetry.batch', (t) => t.internal().script(pushBatch))
-				.on('sink.probe', (t) => t.target(S.halfOpen))
-				.on('sink.flush')
-		)
-		.state(S.halfOpen, (s) =>
-			s
-				.entry((a) => a.send(OTLP_EXPORT_EVENT, (b) => b.via(OTLP_IO_TYPE).data(takeQueue)))
-				.on('telemetry.batch', (t) => t.internal().script(pushBatch))
-				.on('sink.sent', (t) => t.when(hasQueue).target(S.waiting).script(onSent))
-				.on('sink.sent', (t) => t.target(S.idle).script(onSent))
-				.on('sink.failed', (t) => t.target(S.open).script(onFailed))
-				.on('error.communication', (t) => t.target(S.open).script((ctx: Ctx) => {
-					enqueue(ctx.data, ctx.data.inflight, true);
-					ctx.data.inflight = [];
-					ctx.data.failures++;
-				}))
-				.on('sink.probe')
-				.on('sink.flush')
-		);
-}
+export const telemetrySinkChart = chart({
+	name: OPS_FAMILY.sink,
+	initial: S.idle,
+	helpers,
+	data: { d: initialSinkData('unset', 2000, 8 * 1024 * 1024) },
+	body: scxml`
+<state id="${S.idle}">
+	<transition event="telemetry.batch" target="${S.waiting}">${push}<if cond="full(d)"><raise event="sink.full"/></if></transition>
+</state>
+<state id="${S.waiting}">
+	<onentry><send event="sink.flush" id="${SEND_ID.flush}" delayexpr="d.flushIntervalMs + 'ms'"/></onentry>
+	<onexit><cancel sendid="${SEND_ID.flush}"/></onexit>
+	${batchIn(true)}
+	<transition event="sink.flush" target="${S.sending}"/>
+	<transition event="sink.full" target="${S.sending}"/>
+</state>
+<state id="${S.sending}">
+	<onentry>${exportQueue}</onentry>
+	${batchIn(false)}
+	${sent}
+	<transition event="sink.failed" cond="${`d.failures + 1 >= ${OPEN_AFTER_FAILURES}`}" target="${S.open}"><script>onFailed(d, _event.data)</script></transition>
+	<transition event="sink.failed" target="${S.backoff}"><script>onFailed(d, _event.data)</script></transition>
+	<transition event="error.communication" target="${S.backoff}"><script>onFailed(d, null)</script></transition>
+</state>
+<state id="${S.backoff}">
+	<onentry><send event="sink.flush" id="${SEND_ID.retry}" delayexpr="backoffDelay(d) + 'ms'"/></onentry>
+	<onexit><cancel sendid="${SEND_ID.retry}"/></onexit>
+	${batchIn(false)}
+	<transition event="sink.flush" target="${S.sending}"/>
+	<transition event="sink.probe" target="${S.sending}"/>
+</state>
+<state id="${S.open}">
+	<onentry>
+		<script>if (d.openedAt === null) d.openedAt = Date.now();</script>
+		<send event="sink.probe" id="${SEND_ID.probe}" delayexpr="probeDelay(d) + 'ms'"/>
+	</onentry>
+	<onexit><cancel sendid="${SEND_ID.probe}"/></onexit>
+	${batchIn(false)}
+	<transition event="sink.probe" target="${S.halfOpen}"/>
+</state>
+<state id="${S.halfOpen}">
+	<onentry>${exportQueue}</onentry>
+	${batchIn(false)}
+	${sent}
+	<transition event="sink.failed" target="${S.open}"><script>onFailed(d, _event.data)</script></transition>
+	<transition event="error.communication" target="${S.open}"><script>onFailed(d, null)</script></transition>
+</state>`
+});
 
 /** Dropped bytes/batches in the last 24 h (for status and stats). */
 export function droppedLast24h(d: TelemetrySinkData, now = Date.now()): { batches: number; bytes: number } {
 	let batches = 0;
 	let bytes = 0;
-	for (const e of d.dropLog) if (e.at >= now - DAY) {
-		batches++;
-		bytes += e.bytes;
-	}
+	for (const e of d.dropLog)
+		if (e.at >= now - DAY) {
+			batches++;
+			bytes += e.bytes;
+		}
 	return { batches, bytes };
 }

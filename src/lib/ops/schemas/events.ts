@@ -40,7 +40,17 @@ export const retentionAddress = (destinationId: string): OpsAddress => ({ family
 export const drillAddress = (destinationId: string): OpsAddress => ({ family: OPS_FAMILY.drill, name: destinationId });
 export const sinkAddress = (sinkId: string): OpsAddress => ({ family: OPS_FAMILY.sink, name: sinkId });
 export const conditionAddress = (id: string): OpsAddress => ({ family: OPS_FAMILY.condition, name: id });
-export const opsTargetUri = (a: OpsAddress) => `#_actor_${a.family}/${a.name}`;
+/** The ops host's system id (`tinyactors://granary-ops/...`). */
+export const OPS_SYSTEM = 'granary-ops';
+/** An ops actor's name on the ops host: `<family>/<name>`; its chart is the family. */
+export const opsName = (a: OpsAddress) => `${a.family}/${a.name}`;
+/** The address of `opsName` text, or null when it names no ops family. */
+export function parseOpsName(name: string): OpsAddress | null {
+	const i = name.indexOf('/');
+	if (i <= 0) return null;
+	const family = name.slice(0, i);
+	return (Object.values(OPS_FAMILY) as string[]).includes(family) ? { family: family as OpsFamily, name: name.slice(i + 1) } : null;
+}
 export function parseUploadName(name: string): { runId: string; destinationId: string } | null {
 	const i = name.indexOf('.');
 	return i > 0 ? { runId: name.slice(0, i), destinationId: name.slice(i + 1) } : null;
@@ -57,7 +67,13 @@ export const OPS_IO = {
 	/** Health: one watchdog measurement pass (ADR 0123). */
 	sample: 'sample',
 	/** Health: persist condition rows + ops events (ADR 0123). */
-	journal: 'journal'
+	journal: 'journal',
+	/**
+	 * Chart-to-chart sends by actor name (`<send type="ops-route" targetexpr="'upload/' + ...">`):
+	 * finds the actor, spawns a virtual one from its row when it is not there, and
+	 * forwards with the sender as origin (`system.ts`).
+	 */
+	route: 'ops-route'
 } as const;
 
 /** Delayed-send ids (cancellable). */

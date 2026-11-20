@@ -3,9 +3,10 @@
  * ops.sqlite and its effects on the ops System (spawning run/upload mail,
  * reconciling long-lived actors). Charts stay pure; every persisted
  * transition is an explicit, traced request. Write-before-effect: rows are
- * committed before the mail that depends on them is posted.
+ * committed before the mail that depends on them is sent (by name, spawning
+ * a virtual run or upload from its row: `OpsContext.post`).
  *
- *   config.reconcile       → spawn/replace/destroy plan, retention, drill actors → config.reconciled
+ *   config.reconcile       → spawn/replace/terminate plan, retention, drill actors → config.reconciled
  *   plan.dispatch          → insert backup_runs (one per database) → plan.dispatched; run.start → backup-run/<id>
  *   plan.refresh-interval  → egress-aware effective interval → plan.interval
  *   run.uploads            → run state uploading; insert uploads rows; upload.start → upload/<run>.<dest>
@@ -14,7 +15,8 @@
  *   upload.record-retry    → uploads: retry-wait, next_attempt_at, last_error
  *   upload.record-failed   → uploads: failed, last_error
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
+import type { IOProcessor, Send, Value } from '@tinyactors/node';
+import { answerOnce } from './answer';
 import { rm } from 'node:fs/promises';
 import { artifactKey } from '../schemas/destinations';
 import { parseOpsEventData, planAddress, runAddress, uploadAddress } from '../schemas/events';
@@ -23,9 +25,11 @@ import { newId } from '../backups/repo';
 
 export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 	return {
-		send(request: IORequest, context: EffectContext) {
-			const reply = (event: string, data: unknown) => context.post(request.source, event, data);
-			const post = (target: { family: string; name: string }, event: string, data: unknown) => context.post(target, event, data);
+		receive(request: Send) {
+			const reply = answerOnce(request);
+			/** More than one answer to the sender (`run.uploads`). */
+			const tell = (event: string, data: unknown) => request.sender.send(event, data as Value);
+			const post = rt.post.bind(rt);
 			const r = rt.r;
 			switch (request.event) {
 				case 'config.reconcile': {
@@ -76,8 +80,8 @@ export function backupLedgerProcessor(rt: BackupsRuntime): IOProcessor {
 					for (const dest of d.destinationIds) {
 						const u = r.uploadRow(d.runId, dest)!;
 						const m = r.uploadManifest(u);
-						if (u.state === 'done') reply('upload.done', { runId: d.runId, destinationId: dest, manifestKey: `${u.artifact_key}.manifest.json`, sealedBytes: m?.sealed.bytes ?? u.uploaded_bytes });
-						else if (u.state === 'failed') reply('upload.failed', { runId: d.runId, destinationId: dest, attempts: u.attempts, lastError: r.uploadSummary(u).lastError ?? { code: 'other', retryable: false, status: null, providerCode: null, message: 'failed', retryAfterMs: null } });
+						if (u.state === 'done') tell('upload.done', { runId: d.runId, destinationId: dest, manifestKey: `${u.artifact_key}.manifest.json`, sealedBytes: m?.sealed.bytes ?? u.uploaded_bytes });
+						else if (u.state === 'failed') tell('upload.failed', { runId: d.runId, destinationId: dest, attempts: u.attempts, lastError: r.uploadSummary(u).lastError ?? { code: 'other', retryable: false, status: null, providerCode: null, message: 'failed', retryAfterMs: null } });
 						else {
 							const destination = r.destination(dest);
 							const key = u.artifact_key ?? artifactKey(destination && destination.settings.kind !== 'local-dir' ? destination.settings.prefix : '', d.snapshot.database, d.runId, run.started_at);

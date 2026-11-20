@@ -6,7 +6,8 @@ import type { Banner, Condition, OpsActorSummary, OpsBackendHealth, OpsEvent, Op
 import { OpsBackendError } from '../contract';
 import type { ListEventsInput, TestSinkInput } from '../schemas/api';
 import type { OpsContext } from '../feature';
-import { conditionAddress, OPS_FAMILY } from '../schemas/events';
+import { StaleError } from '@tinyactors/node';
+import { conditionAddress, opsName, parseOpsName } from '../schemas/events';
 import { toConditionDto } from '../health/journal';
 import { computeBanner } from '../health/status';
 import { secretRefOf, testSinkConnection } from '../io/otlp';
@@ -63,12 +64,10 @@ export class HealthBackend implements OpsBackendHealth {
 		const c = rt.journal.getCondition(id);
 		if (!c) throw new OpsBackendError('not-found', `no condition ${id}`);
 		if (c.state !== 'attention') throw new OpsBackendError('conflict', `condition ${id} is ${c.state}, not attention`);
-		try {
-			await this.ctx.system.send(conditionAddress(id), 'condition.acknowledge', { by: actor }, { timeout: 10_000 });
-			await this.ctx.system.flush();
-		} catch (e) {
-			throw new OpsBackendError('unavailable', `could not acknowledge ${id}: ${e instanceof Error ? e.message : String(e)}`);
-		}
+		if (!this.ctx.actors.send(opsName(conditionAddress(id)), 'condition.acknowledge', { by: actor }))
+			throw new OpsBackendError('unavailable', `could not acknowledge ${id}: its actor is not running`);
+		// The condition journals its new state when it takes the event.
+		for (const until = Date.now() + 10_000; Date.now() < until && rt.journal.getCondition(id)?.state === 'attention'; ) await Bun.sleep(20);
 		const after = rt.journal.getCondition(id) ?? c;
 		return toConditionDto(after, rt.timeScale);
 	}
@@ -160,7 +159,7 @@ export class HealthBackend implements OpsBackendHealth {
 		const rt = this.rt();
 		const sink = rt.repo.get(sinkId);
 		if (!sink) throw new OpsBackendError('not-found', `no sink ${sinkId}`);
-		const state = rt.sinkStates().find((s) => s.sinkId === sinkId);
+		const state = (await rt.sinkStates()).find((s) => s.sinkId === sinkId);
 		const d = state?.data ?? null;
 		const now = this.ctx.now();
 		const dropped = d ? droppedLast24h(d, now) : { batches: 0, bytes: 0 };
@@ -216,50 +215,25 @@ export class HealthBackend implements OpsBackendHealth {
 	}
 
 	async listOpsActors(): Promise<OpsActorSummary[]> {
-		const system = this.ctx.system;
+		const ops = this.ctx.actors;
+		const names = ops.names();
 		const out: OpsActorSummary[] = [];
-		const seen = new Set<string>();
-		// Addresses by runtime ID, from what the ops System spawned or loaded (ADR 0150).
-		const byId = new Map<string, string>();
-		for (const a of this.ctx.addresses?.() ?? []) {
-			const actor = system.findActor(a);
-			if (actor) byId.set(`${actor.slot}:${actor.generation}`, a.name);
-		}
-		for (const i of system.actors()) {
-			const family = i.definition.family;
-			const k = `${i.actor.slot}:${i.actor.generation}`;
-			const name = byId.get(k) ?? nameOf(family, i.data);
-			if (seen.has(k)) continue;
-			seen.add(k);
-			out.push({ address: { family, name: name ?? `#${i.actor.slot}` }, runtimeId: k, activeStates: [...i.activeStates], scheduling: i.scheduling });
+		for (const actor of await ops.host.actors()) {
+			try {
+				const [state, info] = await Promise.all([actor.state(), actor.get()]);
+				const name = names.get(String(actor.id));
+				const address = (name && parseOpsName(name)) || { family: info.chart, name: `#${actor.id}` };
+				out.push({ address, runtimeId: String(actor.id), activeStates: activeStates(state.value), mailbox: info.mailbox });
+			} catch (e) {
+				if (!(e instanceof StaleError)) throw e; // ended meanwhile
+			}
 		}
 		return out.sort((a, b) => a.address.family.localeCompare(b.address.family) || a.address.name.localeCompare(b.address.name) || a.runtimeId.localeCompare(b.runtimeId));
 	}
 }
 
-/** Names of ops actors from their data (the inspection carries no address). */
-function nameOf(family: string, data: unknown): string | null {
-	const d = (data ?? {}) as Record<string, unknown>;
-	switch (family) {
-		case OPS_FAMILY.sink:
-			return typeof d.sinkId === 'string' ? d.sinkId : null;
-		case OPS_FAMILY.condition:
-			return typeof d.id === 'string' ? d.id : null;
-		case OPS_FAMILY.watchdog:
-		case OPS_FAMILY.remediator:
-		case OPS_FAMILY.config:
-			return 'main';
-		case OPS_FAMILY.upload:
-			return typeof d.runId === 'string' && typeof d.destinationId === 'string' ? `${d.runId}.${d.destinationId}` : null;
-		case OPS_FAMILY.run:
-			return typeof d.runId === 'string' ? d.runId : null;
-		case OPS_FAMILY.plan:
-			return typeof d.planId === 'string' ? d.planId : null;
-		case OPS_FAMILY.retention:
-		case OPS_FAMILY.drill:
-			return typeof d.destinationId === 'string' ? d.destinationId : null;
-		default:
-			for (const k of ['name', 'id']) if (typeof d[k] === 'string') return d[k] as string;
-			return null;
-	}
+/** The atomic states of a state value (`'idle'`, or `{ parent: child }` for compound states). */
+function activeStates(value: string | { readonly [state: string]: unknown }): string[] {
+	if (typeof value === 'string') return [value];
+	return Object.values(value).flatMap((v) => activeStates(v as string | { readonly [state: string]: unknown }));
 }

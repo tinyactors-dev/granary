@@ -15,7 +15,7 @@ export const ConditionKind = Type.Union([
 	Type.Literal('retention-floor-exceeds-cap'), // .<destinationId>
 	Type.Literal('telemetry-sink-down'), // .<sinkId>
 	Type.Literal('outbox-dead'),
-	Type.Literal('actors-quarantined'),
+	Type.Literal('actor-faults'), // actors that ended on a fault since the previous sample
 	Type.Literal('outbox-pending-old'),
 	Type.Literal('webhooks-silent'),
 	Type.Literal('catchup-stale'),

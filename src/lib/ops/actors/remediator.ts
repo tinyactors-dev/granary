@@ -4,16 +4,15 @@
  *   idle ──remediate──▶ working
  *   working (entry: <send type="remediate"> remediate.run {head of queue})
  *     ──remediated | remediation.failed (from the processor)──▶
- *         forward to condition/<id>, then working (next) | idle
+ *         forward to condition/<id> (by name, through ops-route), then working (next) | idle
  *   remediate while working → queued (deduplicated by condition + action)
  *
  * Every action is idempotent and re-derivable from current facts, so a
  * crash mid-remediation just re-evaluates on the next watchdog sample.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
-import { OPS_FAMILY, conditionAddress, opsTargetUri, type OpsEventData } from '../schemas/events';
+import { chart, scxml } from '../../charts';
+import { OPS_FAMILY, OPS_IO, type OpsEventData } from '../schemas/events';
 
-export const REMEDIATOR_REVISION = 'v1';
 export const REMEDIATE_IO_TYPE = 'remediate';
 export const REMEDIATE_RUN_EVENT = 'remediate.run';
 
@@ -22,74 +21,54 @@ type Request = OpsEventData<'remediate'>;
 export interface RemediatorData {
 	queue: Request[];
 	current: Request | null;
-	/** Last result per condition, for listings. */
 	done: number;
 	failed: number;
 }
 
-type Ctx = EvaluationContext<RemediatorData>;
+const helpers = {
+	/** Queue a request unless the same condition + action is current or queued. */
+	enqueued: (queue: Request[], current: Request | null, r: Request) => {
+		const dup = (x: Request | null) => !!x && x.conditionId === r.conditionId && x.action === r.action;
+		return dup(current) || queue.some(dup) ? queue : [...queue, r];
+	}
+};
 
-function enqueue({ data, event }: Ctx) {
-	const r = event!.data as Request;
-	const dup = (x: Request | null) => !!x && x.conditionId === r.conditionId && x.action === r.action;
-	if (dup(data.current) || data.queue.some(dup)) return;
-	data.queue.push(r);
-}
+const enqueue = scxml`<assign location="queue" expr="enqueued(queue, current, _event.data)"/>`;
 
-function take({ data }: Ctx): Request {
-	data.current = data.queue.shift() ?? null;
-	return data.current!;
-}
+/** Forward the processor's answer to the condition, then the next request or rest. */
+const finish = (event: 'remediated' | 'remediation.failed', counter: 'done' | 'failed') => scxml`
+	<transition event="${event}" cond="queue.length > 0" target="working">
+		<send type="${OPS_IO.route}" event="${event}" targetexpr="${`'${OPS_FAMILY.condition}/' + _event.data.conditionId`}"><content expr="_event.data"/></send>
+		<assign location="${counter}" expr="${counter} + 1"/>
+		<assign location="current" expr="null"/>
+	</transition>
+	<transition event="${event}" target="idle">
+		<send type="${OPS_IO.route}" event="${event}" targetexpr="${`'${OPS_FAMILY.condition}/' + _event.data.conditionId`}"><content expr="_event.data"/></send>
+		<assign location="${counter}" expr="${counter} + 1"/>
+		<assign location="current" expr="null"/>
+	</transition>`;
 
-const replyTarget = (ctx: Ctx) => opsTargetUri(conditionAddress((ctx.event!.data as { conditionId: string }).conditionId));
-
-function finish(ctx: Ctx) {
-	if (ctx.event!.name === 'remediation.failed') ctx.data.failed++;
-	else ctx.data.done++;
-	ctx.data.current = null;
-}
-
-export function remediatorChart(): DefinitionBuilder<RemediatorData> {
-	return statechart<RemediatorData>({ family: OPS_FAMILY.remediator, revision: REMEDIATOR_REVISION, name: 'remediator' })
-		.data('queue', [])
-		.data('current', null)
-		.data('done', 0)
-		.data('failed', 0)
-		.initial('idle')
-		.state('idle', (s) => s.on('remediate', (t) => t.target('working').script(enqueue)))
-		.state('working', (s) =>
-			s
-				.entry((a) => a.send(REMEDIATE_RUN_EVENT, (b) => b.via(REMEDIATE_IO_TYPE).data(take)))
-				.on('remediate', (t) => t.internal().script(enqueue))
-				.on('remediated', (t) =>
-					t
-						.when(({ data }: Ctx) => data.queue.length > 0)
-						.target('working')
-						.send('remediated', (b) => b.to(replyTarget).data(({ event }: Ctx) => event!.data))
-						.script(finish)
-				)
-				.on('remediated', (t) =>
-					t
-						.target('idle')
-						.send('remediated', (b) => b.to(replyTarget).data(({ event }: Ctx) => event!.data))
-						.script(finish)
-				)
-				.on('remediation.failed', (t) =>
-					t
-						.when(({ data }: Ctx) => data.queue.length > 0)
-						.target('working')
-						.send('remediation.failed', (b) => b.to(replyTarget).data(({ event }: Ctx) => event!.data))
-						.script(finish)
-				)
-				.on('remediation.failed', (t) =>
-					t
-						.target('idle')
-						.send('remediation.failed', (b) => b.to(replyTarget).data(({ event }: Ctx) => event!.data))
-						.script(finish)
-				)
-				.on('error.communication', (t) => t.target('idle').script(({ data }: Ctx) => {
-					data.current = null;
-					data.failed++;
-				}))
-		);
-}
+export const remediatorChart = chart({
+	name: OPS_FAMILY.remediator,
+	initial: 'idle',
+	helpers,
+	data: { queue: [], current: null, done: 0, failed: 0 } satisfies RemediatorData,
+	body: scxml`
+<state id="idle">
+	<transition event="remediate" target="working">${enqueue}</transition>
+</state>
+<state id="working">
+	<onentry>
+		<assign location="current" expr="queue[0] ?? null"/>
+		<assign location="queue" expr="queue.slice(1)"/>
+		<send type="${REMEDIATE_IO_TYPE}" event="${REMEDIATE_RUN_EVENT}"><content expr="current"/></send>
+	</onentry>
+	<transition event="remediate">${enqueue}</transition>
+	${finish('remediated', 'done')}
+	${finish('remediation.failed', 'failed')}
+	<transition event="error.communication" target="idle">
+		<assign location="current" expr="null"/>
+		<assign location="failed" expr="failed + 1"/>
+	</transition>
+</state>`
+});

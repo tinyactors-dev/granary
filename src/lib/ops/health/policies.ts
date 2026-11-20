@@ -4,6 +4,9 @@
  * (`graceMs`), how long to wait after a remediation before judging it
  * (`settleMs`), and the plain-language texts for the morning.
  *
+ * Each `title` is self-contained (no outer names): the condition chart
+ * embeds it.
+ *
  * Nothing here pages anyone. `attention` only means "show it on the next
  * visit".
  */
@@ -100,13 +103,13 @@ export const POLICIES: Record<ConditionKind, ConditionPolicy> = {
 		title: (_s, f) => `${String(f.dead ?? 'Some')} GitHub action(s) gave up`,
 		explain: () => 'The outbox relay retried these GitHub calls 6 times and gave up. Retry them from /effects once GitHub or the token is fine.'
 	},
-	'actors-quarantined': {
+	'actor-faults': {
 		ladder: [],
 		graceMs: 0,
 		settleMs: 0,
 		confirm: false,
-		title: (_s, f) => `${String(f.quarantined ?? 'Some')} actor(s) quarantined`,
-		explain: () => 'An actor faulted and was quarantined. Inspect it on /actors.'
+		title: (_s, f) => `${String(f.faults ?? 'Some')} actor(s) ended on a fault since the last check`,
+		explain: () => 'An actor ended on a fault (an error it could not handle). Look for its error in the logs and its trace on /admin/traces.'
 	},
 	'outbox-pending-old': {
 		ladder: [],

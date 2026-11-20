@@ -20,9 +20,9 @@ import type { SecretRedactor } from './redactor';
 import type { Database } from 'bun:sqlite';
 
 export const OPS_SERVICE = 'granary-ops';
-/** tinyactors lifecycle spans are always kept when sampling (ADR 0099). */
-const LIFECYCLE = new Set(['spawned', 'loaded', 'unloaded', 'finished', 'destroyed']);
-/** A span's tinyactors kind: `tinyactors.span.kind` (renamed spans, ADR 0155), else parsed from `scxml.<kind> …`. */
+/** tinyactors lifecycle spans are always kept when sampling (ADR 0099); `loaded`/`unloaded` are the legacy tracer's. */
+const LIFECYCLE = new Set(['spawned', 'finished', 'destroyed', 'terminated', 'hibernated', 'woken', 'loaded', 'unloaded']);
+/** A span's tinyactors kind: `tinyactors.span.kind` (native in 0.4.0), else parsed from `scxml.<kind> …` (granary's legacy tracer). */
 const kindOf = (s: SpanFacts): string | null => {
 	const k = s.attr(SPAN_KIND_ATTR);
 	return typeof k === 'string' ? k : (parseTinyactorsName(s.name)?.kind ?? null);

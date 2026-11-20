@@ -1,136 +1,185 @@
 /**
- * The ops tinyactors System (ADR 0081, 0093, 0120): separate from granary's,
- * in the same process. Owns the hooks (done/fault/dead letters), the trace
- * sink (`service.name=granary-ops`, `detail: 'summary'`) and loop breaking:
- * spans of excluded definitions (the telemetry-sink family) are removed
- * before ops traces reach the fan-out.
+ * The ops tinyactors host (ADR 0081, 0093, 0120): separate from granary's,
+ * in the same process, system `granary-ops`.
+ *
+ * - **Names.** Every ops actor is spawned under `<family>/<name>` (its chart
+ *   is the family) through `spawn`/`replace`, which keep the name → actor
+ *   map that `find` reads: a terminated actor's name still resolves in the
+ *   host until its next turn, so the map, not `host.actor(name)`, says which
+ *   actor holds a name.
+ * - **Virtual actors** (conditions, backup runs, uploads) have no loader in
+ *   0.4.0: `ensure(name)` finds the actor or spawns it with the params its
+ *   feature's spawner reads from ops.sqlite (null: the row is terminal or
+ *   gone). Charts reach such actors through the `ops-route` I/O processor,
+ *   which runs `ensure` and forwards with the sender as origin.
+ * - **Telemetry.** Traces export with `detail: 'summary'` and no values; a
+ *   trace rule drops every step of the `telemetry-sink` chart, including
+ *   steps its processor's answers trigger, so shipping telemetry never makes
+ *   telemetry (loop breaking, ADR 0093). `metrics()` is the host's counters.
+ * - **Faults.** `onError` logs and counts actors that ended on a fault;
+ *   `onHandlerError` logs what a processor threw.
  */
-import { createSystem, type Actor, type ActorAddress, type Definition, type IOProcessor, type System } from '@tinyactors/node-legacy';
+import { compileCharts, Host, StaleError, type Actor, type IOProcessor, type Send, type Source, type Value } from '@tinyactors/node';
 import type { OpsLogger, TelemetryBatch } from './contract';
-import { filterSpans, rewriteSpans, type SpanFacts, type SpanEdit } from './telemetry/otlp-wire';
-import { familySpanName, parseTinyactorsName, SPAN_KIND_ATTR, SPAN_NAME_ATTR } from './telemetry/span-name';
+import { OPS_IO, OPS_SYSTEM, parseOpsName } from './schemas/events';
 import { OPS_SERVICE } from './telemetry/fanout';
 
-export interface OpsSystem {
-	system: System;
-	/** Remember a named actor's address (spawned or loaded). */
-	note(address: ActorAddress): void;
-	/** Addresses known to be (or have been) resident. */
-	known(): ActorAddress[];
-	spawn<Data extends object>(definition: Definition<Data>, address: ActorAddress, binding?: Partial<Data>): Actor<Data>;
-	post(target: ActorAddress, event: string, data?: unknown): void;
-	/** Never export spans of this definition (loop breaking, ADR 0093). */
-	excludeFromTraces(definition: Definition<object> | Definition<never>): void;
-	stats: { deadLetters: number; faults: number };
-	close(): void;
+/** Params of a virtual actor read from its row, or null when it must not exist. */
+export type Spawner = (name: string) => Record<string, Value> | null;
+
+export interface OpsActors {
+	readonly host: Host;
+	/** Actors of this host that ended on a fault since it started. */
+	readonly stats: { faults: number };
+	/** Spawn `<family>/<name>` of chart `family`. */
+	spawn(name: string, params?: Record<string, Value>): Actor;
+	/** Terminate the actor holding `name` (if any) and spawn a fresh one with `params`. */
+	replace(name: string, params?: Record<string, Value>): Actor;
+	/** The live actor holding `name`. */
+	find(name: string): Actor | undefined;
+	/** `find`, else spawn a virtual actor from its family's spawner; undefined when there is none to spawn. */
+	ensure(name: string): Actor | undefined;
+	/** `ensure` + send; false (and a debug log) when no actor holds or may hold the name. */
+	send(name: string, event: string, data?: Value, options?: { origin?: Send['origin']; traceparent?: string }): boolean;
+	/** Names of the live actors, by `String(actor.id)`. */
+	names(): Map<string, string>;
+	/** Register the spawner of a virtual family. */
+	setSpawner(family: string, spawner: Spawner): void;
+	close(): Promise<void>;
 }
 
-const key = (a: ActorAddress) => `${a.family}/${a.name}`;
+/** The `ops-route` processor: chart-to-chart sends by name, through `ensure` (missing-actors.md, "The application routes it"). */
+function routeProcessor(ops: () => OpsActors, log: OpsLogger): IOProcessor {
+	return {
+		receive(send) {
+			const target = typeof send.target === 'string' ? send.target : String(send.target ?? '');
+			if (!ops().send(target, send.event, send.data as Value, { origin: send.origin, traceparent: send.traceparent }))
+				log.debug?.(`ops: ${send.event} to ${target} dropped: no such actor`);
+		}
+	};
+}
 
-export function createOpsSystem(opts: {
+export function createOpsActors(opts: {
+	charts: Source[];
 	io: Record<string, IOProcessor>;
 	log: OpsLogger;
 	/** Where ops' own traces go (the fan-out). */
 	exportTraces: (batch: TelemetryBatch) => void;
 	/** Whether anyone wants ops traces right now (skips work when not). */
 	wantsTraces: () => boolean;
-}): OpsSystem {
-	const stats = { deadLetters: 0, faults: 0 };
-	const addresses = new Map<string, ActorAddress>();
-	const excluded = new Set<number>();
-	/** scxml session id → address, for naming spans (ADR 0155). */
-	const sessions = new Map<string, ActorAddress>();
-	const remember = (actor: Actor<object> | Actor<never> | undefined, address: ActorAddress) => {
-		try {
-			if (actor && !actor.destroyed) sessions.set(String(system.inspect(actor).sessionID), address);
-		} catch {
-			/* gone already */
-		}
+	/** Flush interval of the trace encoder, ms. */
+	flushMs?: number;
+}): OpsActors {
+	const stats = { faults: 0 };
+	const byName = new Map<string, Actor>();
+	const nameById = new Map<string, string>();
+	const spawners = new Map<string, Spawner>();
+	const forget = (actor: Actor) => {
+		const name = nameById.get(String(actor.id));
+		nameById.delete(String(actor.id));
+		if (name !== undefined && byName.get(name)?.equals(actor)) byName.delete(name);
+		return name;
 	};
-	const addressOf = (session: string): ActorAddress | undefined => {
-		const hit = sessions.get(session);
-		if (hit) return hit;
-		for (const a of addresses.values()) remember(system.findActor(a) as Actor<object> | undefined, a); // loaded/respawned actors
-		if (sessions.size > 10_000) sessions.clear();
-		return sessions.get(session);
-	};
-	/** `scxml.macrostep x` → `<family> macrostep x`, plus actor and tinyactors attributes. */
-	const nameSpan = (span: SpanFacts): SpanEdit | null => {
-		const p = parseTinyactorsName(span.name);
-		if (!p) return null;
-		const session = span.attr('scxml.session_id');
-		const address = session === undefined ? undefined : addressOf(String(session));
-		const attributes: Record<string, string> = { [SPAN_NAME_ATTR]: span.name, [SPAN_KIND_ATTR]: p.kind };
-		if (address) {
-			attributes['granary.actor.family'] = address.family;
-			attributes['granary.actor.name'] = address.name;
-			attributes['granary.actor.address'] = key(address);
-		}
-		return { name: familySpanName(span.name, address?.family), attributes };
-	};
-	const system = createSystem({
-		io: opts.io,
-		fault(record) {
-			stats.faults++;
-			opts.log.error(`ops: actor faulted in ${record.operation}: ${record.code} ${record.message}`);
-			// Free it so the next mail loads a fresh actor from the database.
-			queueMicrotask(() => {
-				try {
-					if (!system.closed && system.exists(record.actor)) system.destroy(record.actor);
-				} catch {
-					/* gone */
-				}
-			});
+
+	const compiled = compileCharts(opts.charts, { warningsAsErrors: true });
+	let ops: OpsActors;
+	const host = new Host(compiled, {
+		system: OPS_SYSTEM,
+		ioProcessors: { ...opts.io, [OPS_IO.route]: routeProcessor(() => ops, opts.log) },
+		config: {
+			system: { ticksPerSecond: 1000 },
+			telemetry: { flushInterval: opts.flushMs ?? 1000, values: false, logs: false, resource: { 'service.name': OPS_SERVICE } }
 		},
-		deadLetter(record) {
-			stats.deadLetters++;
-			if (record.reason === 'destroyed' || record.reason === 'done') return; // replies to finished actors are expected
-			const target = 'family' in record.target ? key(record.target) : `#${record.target.slot}`;
-			opts.log.warn(`ops: dead letter ${record.event} → ${target} (${record.reason})`);
+		telemetry: (signal, bytes) => {
+			if (signal !== 'traces' || !bytes.byteLength || !opts.wantsTraces()) return;
+			opts.exportTraces({ signal: 'traces', contentType: 'application/x-protobuf', bytes, service: OPS_SERVICE, producedAt: Date.now() });
+		},
+		onDone: (actor) => void forget(actor),
+		onError: (actor, error) => {
+			stats.faults++;
+			const name = forget(actor);
+			opts.log.error(`ops: actor ${name ?? String(actor)} ended on a fault: ${error.message}`);
+		},
+		onHandlerError: (error, effect) => {
+			const what = effect && 'event' in effect ? ` handling ${(effect as Send).event}` : '';
+			opts.log.error(`ops: an I/O processor failed${what}`, error);
 		}
 	});
+	compiled.close();
+	void host
+		.traceConfigure({ detail: 'summary', values: false, rules: [{ chart: 'telemetry-sink', sample: 'drop' }] })
+		.catch((e) => opts.log.warn('ops: could not configure tracing', e instanceof Error ? e.message : e));
 
-	system.setTraceSink(
-		(traces) => {
-			if (!opts.wantsTraces()) return;
-			try {
-				const r = excluded.size ? filterSpans(traces, (s) => !excluded.has(Number(s.attr('scxml.definition') ?? -1))) : { bytes: traces };
-				if (!r.bytes) return;
-				const named = rewriteSpans(r.bytes, nameSpan).bytes;
-				opts.exportTraces({ signal: 'traces', contentType: 'application/x-protobuf', bytes: named, service: OPS_SERVICE, producedAt: Date.now() });
-			} catch (e) {
-				opts.log.warn('ops: could not filter an ops trace batch; dropped', e instanceof Error ? e.message : e);
-			}
-		},
-		{ resource: { 'service.name': OPS_SERVICE }, detail: 'summary', values: false, logs: false }
-	);
+	const chartOf = (name: string) => {
+		const a = parseOpsName(name);
+		if (!a) throw new Error(`ops: ${name} is not an ops actor name (<family>/<name>)`);
+		return a.family;
+	};
 
-	return {
-		system,
+	ops = {
+		host,
 		stats,
-		note(address) {
-			addresses.set(key(address), address);
-			remember(system.findActor(address) as Actor<object> | undefined, address);
-		},
-		known: () => [...addresses.values()],
-		spawn(definition, address, binding) {
-			const actor = system.spawn(definition, { address, ...(binding ? { binding } : {}) });
-			addresses.set(key(address), address);
-			remember(actor as Actor<object>, address);
+		spawn(name, params) {
+			const actor = host.spawn(chartOf(name), { name, ...(params ? { params } : {}) });
+			byName.set(name, actor);
+			nameById.set(String(actor.id), name);
 			return actor;
 		},
-		post(target, event, data) {
-			system.post(target, event, data);
+		replace(name, params) {
+			const old = ops.find(name);
+			if (old) {
+				forget(old);
+				try {
+					old.terminate();
+				} catch (e) {
+					if (!(e instanceof StaleError)) throw e;
+				}
+			}
+			return ops.spawn(name, params);
 		},
-		excludeFromTraces(definition) {
-			excluded.add(Number(definition.id));
-		},
-		close() {
+		find(name) {
+			const actor = byName.get(name);
+			if (!actor) return undefined;
 			try {
-				system.close();
+				return host.actor(actor);
 			} catch (e) {
-				opts.log.error('ops: closing the ops system failed', e);
+				if (!(e instanceof StaleError)) throw e;
+				forget(actor);
+				return undefined;
+			}
+		},
+		ensure(name) {
+			const found = ops.find(name);
+			if (found) return found;
+			const a = parseOpsName(name);
+			const spawner = a && spawners.get(a.family);
+			if (!spawner) return undefined;
+			const params = spawner(a.name);
+			return params ? ops.spawn(name, params) : undefined;
+		},
+		send(name, event, data, options) {
+			const actor = ops.ensure(name);
+			if (!actor) return false;
+			try {
+				actor.send(event, data, options);
+				return true;
+			} catch (e) {
+				if (!(e instanceof StaleError)) throw e;
+				forget(actor);
+				return false;
+			}
+		},
+		names: () => new Map(nameById),
+		setSpawner(family, spawner) {
+			spawners.set(family, spawner);
+		},
+		async close() {
+			try {
+				await host[Symbol.asyncDispose]();
+			} catch (e) {
+				opts.log.error('ops: closing the ops host failed', e);
 			}
 		}
 	};
+	return ops;
 }

@@ -9,9 +9,11 @@
  *   pruning (entry: retention.pass via object-store; list → plan → delete until converged)
  *     retention.make-room → queued
  *     ──retention.pass-done──▶ reply retention.room-made to the upload; next queued pass | idle
+ *
+ * The reply goes by name through `ops-route`: the upload may not be resident.
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
-import { OPS_FAMILY, OPS_IO, SEND_ID, opsTargetUri, uploadAddress } from '../schemas/events';
+import { chart, scxml } from '../../charts';
+import { OPS_FAMILY, OPS_IO, SEND_ID } from '../schemas/events';
 
 interface Waiter {
 	runId: string;
@@ -28,83 +30,53 @@ export interface RetentionData {
 	lastPass: { at: number; deleted: number; converged: boolean; floorExceedsCap: boolean } | null;
 }
 
-export const RETENTION_REVISION = 'v1';
 export const RETENTION_STATES = { idle: 'idle', pruning: 'pruning' } as const;
 
-type Ctx = EvaluationContext<RetentionData>;
-const ev = <T>(c: Ctx) => c.event!.data as T;
+const S = RETENTION_STATES;
 
-export function retentionChart(): DefinitionBuilder<RetentionData> {
-	const S = RETENTION_STATES;
-	return statechart<RetentionData>({ family: OPS_FAMILY.retention, revision: RETENTION_REVISION, name: 'retention' })
-		.data('destinationId', 'dest')
-		.data('dailyMs', 86_400_000)
-		.data('mode', 'daily')
-		.data('current', null)
-		.data('waiters', [])
-		.data('lastPass', null)
-		.initial(S.idle)
-		.state(S.idle, (s) =>
-			s
-				.entry((a) => a.send('retention.tick', (b) => b.id(SEND_ID.tick).after(({ data }: Ctx) => data.dailyMs)))
-				.exit((a) => a.cancel(SEND_ID.tick))
-				.on('retention.tick', (t) => t.target(S.pruning).assign('mode', literal('daily')).assign('current', literal(null)))
-				.on('retention.make-room', (t) => t.target(S.pruning).assign('mode', literal('make-room')).assign('current', (c: Ctx) => ev<Waiter>(c)))
-				.on('config.updated')
-		)
-		.state(S.pruning, (s) =>
-			s
-				.entry((a) =>
-					a.send('retention.pass', (b) =>
-						b.via(OPS_IO.objectStore).data(({ data }: Ctx) => ({
-							destinationId: data.destinationId,
-							mode: data.mode,
-							database: data.current?.database ?? null,
-							estimatedBytes: data.current?.estimatedBytes ?? 0,
-							runId: data.current?.runId ?? null
-						}))
-					)
-				)
-				.on('retention.make-room', (t) => t.assign('waiters', (c: Ctx) => [...c.data.waiters, ev<Waiter>(c)]))
-				.on('retention.tick')
-				.on('config.updated')
-				.on('retention.pass-done', (t) =>
-					t
-						.assign('lastPass', (c: Ctx) => {
-							const d = ev<{ deleted: number; converged: boolean; floorExceedsCap?: boolean }>(c);
-							return { at: Date.now(), deleted: d.deleted, converged: d.converged, floorExceedsCap: !!d.floorExceedsCap };
-						})
-						.choose(
-							({ data }: Ctx) => data.current !== null,
-							(x) =>
-								x.send('retention.room-made', (b) =>
-									b
-										.to(({ data }: Ctx) => opsTargetUri(uploadAddress(data.current!.runId, data.destinationId)))
-										.data((c: Ctx) => ({ runId: c.data.current!.runId, deletedObjects: ev<{ deleted: number }>(c).deleted, freedBytes: ev<{ freedBytes: number }>(c).freedBytes }))
-								)
-						)
-						.raise('retention.next')
-				)
-				.on('error.communication', (t) =>
-					t
-						.choose(
-							({ data }: Ctx) => data.current !== null,
-							(x) =>
-								x.send('retention.room-made', (b) =>
-									b.to(({ data }: Ctx) => opsTargetUri(uploadAddress(data.current!.runId, data.destinationId))).data(({ data }: Ctx) => ({ runId: data.current!.runId, deletedObjects: 0, freedBytes: 0 }))
-								)
-						)
-						.raise('retention.next')
-				)
-				// Internal: continue with the next queued upload, or rest.
-				.on('retention.next', (t) =>
-					t
-						.when(({ data }: Ctx) => data.waiters.length > 0)
-						.target(S.pruning)
-						.assign('mode', literal('make-room'))
-						.assign('current', ({ data }: Ctx) => data.waiters[0]!)
-						.assign('waiters', ({ data }: Ctx) => data.waiters.slice(1))
-				)
-				.on('retention.next', (t) => t.target(S.idle).assign('current', literal(null)))
-		);
-}
+/** `retention.room-made` to the upload waiting for this pass, if any. */
+const roomMade = (content: string) =>
+	scxml`<if cond="current !== null"><send type="${OPS_IO.route}" event="retention.room-made" targetexpr="${`'${OPS_FAMILY.upload}/' + current.runId + '.' + destinationId`}"><content expr="${content}"/></send></if>`;
+
+export const retentionChart = chart({
+	name: OPS_FAMILY.retention,
+	initial: S.idle,
+	data: { destinationId: 'dest', dailyMs: 86_400_000, mode: 'daily', current: null, waiters: [], lastPass: null } satisfies RetentionData,
+	body: scxml`
+<state id="${S.idle}">
+	<onentry><send event="retention.tick" id="${SEND_ID.tick}" delayexpr="dailyMs + 'ms'"/></onentry>
+	<onexit><cancel sendid="${SEND_ID.tick}"/></onexit>
+	<transition event="retention.tick" target="${S.pruning}">
+		<assign location="mode" expr="'daily'"/>
+		<assign location="current" expr="null"/>
+	</transition>
+	<transition event="retention.make-room" target="${S.pruning}">
+		<assign location="mode" expr="'make-room'"/>
+		<assign location="current" expr="_event.data"/>
+	</transition>
+</state>
+<state id="${S.pruning}">
+	<onentry>
+		<send type="${OPS_IO.objectStore}" event="retention.pass">
+			<content expr="${"({ destinationId: destinationId, mode: mode, database: current?.database ?? null, estimatedBytes: current?.estimatedBytes ?? 0, runId: current?.runId ?? null })"}"/>
+		</send>
+	</onentry>
+	<transition event="retention.make-room"><assign location="waiters" expr="[...waiters, _event.data]"/></transition>
+	<transition event="retention.pass-done">
+		<assign location="lastPass" expr="({ at: Date.now(), deleted: _event.data.deleted, converged: _event.data.converged, floorExceedsCap: !!_event.data.floorExceedsCap })"/>
+		${roomMade('({ runId: current.runId, deletedObjects: _event.data.deleted, freedBytes: _event.data.freedBytes })')}
+		<raise event="retention.next"/>
+	</transition>
+	<transition event="error.communication">
+		${roomMade('({ runId: current.runId, deletedObjects: 0, freedBytes: 0 })')}
+		<raise event="retention.next"/>
+	</transition>
+	<!-- Internal: continue with the next queued upload, or rest. -->
+	<transition event="retention.next" cond="waiters.length > 0" target="${S.pruning}">
+		<assign location="mode" expr="'make-room'"/>
+		<assign location="current" expr="waiters[0]"/>
+		<assign location="waiters" expr="waiters.slice(1)"/>
+	</transition>
+	<transition event="retention.next" target="${S.idle}"><assign location="current" expr="null"/></transition>
+</state>`
+});

@@ -12,7 +12,7 @@
  *   checking (entry: drill.check via snapshot) ──drill.checked──▶ next
  *   next: more databases → fetching, else armed (lastDrillAt = now)
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
+import { chart, scxml } from '../../charts';
 import { OPS_FAMILY, OPS_IO, SEND_ID } from '../schemas/events';
 import type { BackupManifest } from '../schemas/manifest';
 
@@ -31,101 +31,94 @@ export interface RestoreDrillData {
 	lastResult: string | null;
 }
 
-export const RESTORE_DRILL_REVISION = 'v1';
 export const RESTORE_DRILL_STATES = { armed: 'armed', fetching: 'fetching', checking: 'checking' } as const;
 
-type Ctx = EvaluationContext<RestoreDrillData>;
-const ev = <T>(c: Ctx) => c.event!.data as T;
+const S = RESTORE_DRILL_STATES;
 
-const newDrillId = () => `drill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+const helpers = {
+	dueIn: (lastDrillAt: number | null, intervalMs: number) => Math.max(0, (lastDrillAt ?? Date.now()) + intervalMs - Date.now()),
+	newDrillId: () => `drill-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`
+};
 
-export function restoreDrillChart(): DefinitionBuilder<RestoreDrillData> {
-	const S = RESTORE_DRILL_STATES;
-	const start = (t: any) =>
-		t
-			.when(({ data }: Ctx) => data.databases.length > 0)
-			.target(S.fetching)
-			.assign('queue', ({ data }: Ctx) => data.databases.slice(1))
-			.assign('database', ({ data }: Ctx) => data.databases[0]!);
-	return statechart<RestoreDrillData>({ family: OPS_FAMILY.drill, revision: RESTORE_DRILL_REVISION, name: 'restore-drill' })
-		.data('destinationId', 'dest')
-		.data('intervalMs', 7 * 86_400_000)
-		.data('lastDrillAt', null)
-		.data('databases', [])
-		.data('queue', [])
-		.data('drillId', null)
-		.data('database', null)
-		.data('localPath', null)
-		.data('runId', null)
-		.data('manifest', null)
-		.data('requestedBy', null)
-		.data('lastResult', null)
-		.initial(S.armed)
-		.state(S.armed, (s) =>
-			s
-				.entry((a) =>
-					a.send('drill.tick', (b) => b.id(SEND_ID.tick).after(({ data }: Ctx) => Math.max(0, (data.lastDrillAt ?? Date.now()) + data.intervalMs - Date.now())))
-				)
-				.exit((a) => a.cancel(SEND_ID.tick))
-				.on('drill.tick', start)
-				.on('drill.tick', (t) => t.target(S.armed).assign('lastDrillAt', () => Date.now()))
-				.on('drill.run-now', (t) => start(t).assign('requestedBy', (c: Ctx) => ev<{ requestedBy: string }>(c).requestedBy))
-				.on('config.updated')
-		)
-		.state(S.fetching, (s) =>
-			s
-				.entry((a) =>
-					a
-						.assign('drillId', newDrillId)
-						.assign('manifest', literal(null))
-						.send('drill.fetch', (b) =>
-							b.via(OPS_IO.objectStore).data(({ data }: Ctx) => ({ drillId: data.drillId, destinationId: data.destinationId, database: data.database }))
-						)
-				)
-				.on('drill.fetched', (t) =>
-					t
-						.target(S.checking)
-						.assign('localPath', (c: Ctx) => ev<{ localPath: string }>(c).localPath)
-						.assign('runId', (c: Ctx) => ev<{ runId: string }>(c).runId)
-						.assign('manifest', (c: Ctx) => ev<{ manifest: BackupManifest }>(c).manifest)
-				)
-				.on('drill.checked', (t) => t.assign('lastResult', (c: Ctx) => ev<{ result: string }>(c).result).raise('drill.next'))
-				.on('error.communication', (t) => t.assign('lastResult', literal('download-failed')).raise('drill.next'))
-				.on('drill.next', (t) =>
-					t
-						.when(({ data }: Ctx) => data.queue.length > 0)
-						.target(S.fetching)
-						.assign('database', ({ data }: Ctx) => data.queue[0]!)
-						.assign('queue', ({ data }: Ctx) => data.queue.slice(1))
-				)
-				.on('drill.next', (t) => t.target(S.armed).assign('lastDrillAt', () => Date.now()))
-				.on('drill.run-now')
-				.on('drill.tick')
-		)
-		.state(S.checking, (s) =>
-			s
-				.entry((a) =>
-					a.send('drill.check', (b) =>
-						b.via(OPS_IO.snapshot).data(({ data }: Ctx) => ({
-							drillId: data.drillId,
-							destinationId: data.destinationId,
-							runId: data.runId,
-							localPath: data.localPath,
-							manifest: data.manifest
-						}))
-					)
-				)
-				.on('drill.checked', (t) =>
-					t
-						.when(({ data }: Ctx) => data.queue.length > 0)
-						.target(S.fetching)
-						.assign('lastResult', (c: Ctx) => ev<{ result: string }>(c).result)
-						.assign('database', ({ data }: Ctx) => data.queue[0]!)
-						.assign('queue', ({ data }: Ctx) => data.queue.slice(1))
-				)
-				.on('drill.checked', (t) => t.target(S.armed).assign('lastResult', (c: Ctx) => ev<{ result: string }>(c).result).assign('lastDrillAt', () => Date.now()))
-				.on('error.communication', (t) => t.target(S.armed).assign('lastResult', literal('integrity-failed')).assign('lastDrillAt', () => Date.now()))
-				.on('drill.run-now')
-				.on('drill.tick')
-		);
-}
+/** Start a drill of every database (`drill.tick`, `drill.run-now`). */
+const start = (event: string, extra = '') => scxml`
+	<transition event="${event}" cond="databases.length > 0" target="${S.fetching}">
+		<assign location="queue" expr="databases.slice(1)"/>
+		<assign location="database" expr="databases[0]"/>
+		${extra ? scxml`<assign location="requestedBy" expr="${extra}"/>` : ''}
+	</transition>`;
+
+/** Go on with the next queued database. */
+const next = (event: string, result: string) => scxml`
+	<transition event="${event}" cond="queue.length > 0" target="${S.fetching}">
+		<assign location="lastResult" expr="${result}"/>
+		<assign location="database" expr="queue[0]"/>
+		<assign location="queue" expr="queue.slice(1)"/>
+	</transition>`;
+
+export const restoreDrillChart = chart({
+	name: OPS_FAMILY.drill,
+	initial: S.armed,
+	helpers,
+	data: {
+		destinationId: 'dest',
+		intervalMs: 7 * 86_400_000,
+		lastDrillAt: null,
+		databases: [],
+		queue: [],
+		drillId: null,
+		database: null,
+		localPath: null,
+		runId: null,
+		manifest: null,
+		requestedBy: null,
+		lastResult: null
+	} satisfies RestoreDrillData,
+	body: scxml`
+<state id="${S.armed}">
+	<onentry><send event="drill.tick" id="${SEND_ID.tick}" delayexpr="dueIn(lastDrillAt, intervalMs) + 'ms'"/></onentry>
+	<onexit><cancel sendid="${SEND_ID.tick}"/></onexit>
+	${start('drill.tick')}
+	<transition event="drill.tick" target="${S.armed}"><assign location="lastDrillAt" expr="Date.now()"/></transition>
+	${start('drill.run-now', '_event.data.requestedBy')}
+</state>
+<state id="${S.fetching}">
+	<onentry>
+		<assign location="drillId" expr="newDrillId()"/>
+		<assign location="manifest" expr="null"/>
+		<send type="${OPS_IO.objectStore}" event="drill.fetch"><content expr="({ drillId: drillId, destinationId: destinationId, database: database })"/></send>
+	</onentry>
+	<transition event="drill.fetched" target="${S.checking}">
+		<assign location="localPath" expr="_event.data.localPath"/>
+		<assign location="runId" expr="_event.data.runId"/>
+		<assign location="manifest" expr="_event.data.manifest"/>
+	</transition>
+	<!-- The fetch failed (drill.checked from the object store) or the processor is down: next database. -->
+	${next('drill.checked', '_event.data.result')}
+	<transition event="drill.checked" target="${S.armed}">
+		<assign location="lastResult" expr="_event.data.result"/>
+		<assign location="lastDrillAt" expr="Date.now()"/>
+	</transition>
+	${next('error.communication', "'download-failed'")}
+	<transition event="error.communication" target="${S.armed}">
+		<assign location="lastResult" expr="'download-failed'"/>
+		<assign location="lastDrillAt" expr="Date.now()"/>
+	</transition>
+</state>
+<state id="${S.checking}">
+	<onentry>
+		<send type="${OPS_IO.snapshot}" event="drill.check">
+			<content expr="({ drillId: drillId, destinationId: destinationId, runId: runId, localPath: localPath, manifest: manifest })"/>
+		</send>
+	</onentry>
+	${next('drill.checked', '_event.data.result')}
+	<transition event="drill.checked" target="${S.armed}">
+		<assign location="lastResult" expr="_event.data.result"/>
+		<assign location="lastDrillAt" expr="Date.now()"/>
+	</transition>
+	<transition event="error.communication" target="${S.armed}">
+		<assign location="lastResult" expr="'integrity-failed'"/>
+		<assign location="lastDrillAt" expr="Date.now()"/>
+	</transition>
+</state>`
+});

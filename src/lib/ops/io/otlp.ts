@@ -6,7 +6,8 @@
  *
  * Also exports `testSinkConnection` for the OpsBackend's test connection.
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
+import type { IOProcessor, Send } from '@tinyactors/node';
+import { answerOnce } from './answer';
 import type { OpsLogger, TestConnectionResult, TestStep } from '../contract';
 import type { Redactor, SecretReader } from '../feature';
 import { EXE_AUTH_HEADER, type SinkAuth, type TelemetrySignal } from '../schemas/sinks';
@@ -148,6 +149,8 @@ export interface OtlpDeps {
 	now: () => number;
 	/** Bytes actually delivered to a sink (volume accounting, ADR 0107). */
 	onDelivered(sinkId: string, bytes: number): void;
+	/** Aborted when ops stops. */
+	signal: AbortSignal;
 }
 
 async function post(url: string, body: Uint8Array, contentType: string, headers: Record<string, string>, signal: AbortSignal) {
@@ -172,15 +175,8 @@ export function otlpProcessor(deps: OtlpDeps): IOProcessor {
 		deps.log.warn(`ops telemetry: sink ${sinkId}: ${msg}`);
 	};
 
-	async function run(request: IORequest, ctx: EffectContext): Promise<void> {
+	async function run(request: Send, reply: ReturnType<typeof answerOnce>): Promise<void> {
 		const data = request.data as OtlpExportRequest;
-		const reply = (event: string, payload: unknown) => {
-			try {
-				ctx.post(request.source, event, payload);
-			} catch {
-				/* the sink actor is gone (deleted/disabled) */
-			}
-		};
 		const fail = (status: number | null, message: string, retryAfter: number | null = null) => {
 			const safe = deps.redactor.redact(message).slice(0, 500);
 			logFailure(data.sinkId, safe);
@@ -203,7 +199,7 @@ export function otlpProcessor(deps: OtlpDeps): IOProcessor {
 			const url = `${sink.endpoint}/v1/${b.signal}`;
 			let res: Response;
 			try {
-				res = await post(url, b.body, b.contentType, headers, ctx.signal);
+				res = await post(url, b.body, b.contentType, headers, deps.signal);
 			} catch (e) {
 				if (ref) deps.secrets().recordUse(ref, false);
 				return fail(null, `POST ${url}: ${e instanceof Error ? e.message : String(e)}`);
@@ -222,9 +218,14 @@ export function otlpProcessor(deps: OtlpDeps): IOProcessor {
 	}
 
 	return {
-		send(request, ctx) {
-			// Never reject: failures are replies, not error.communication.
-			return run(request, ctx).catch((e) => deps.log.error('ops telemetry: otlp processor crashed', e));
+		receive(request) {
+			// Never reject: failures are replies, not error.communication. A sink
+			// actor that is gone (deleted/disabled) drops the answer.
+			const reply = answerOnce(request);
+			return run(request, reply).catch((e) => {
+				deps.log.error('ops telemetry: otlp processor crashed', e);
+				reply('sink.failed', { status: null, retryAfterMs: null, message: 'otlp processor crashed' });
+			});
 		}
 	};
 }

@@ -10,7 +10,8 @@
 import { Database } from 'bun:sqlite';
 import { readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { IOProcessor } from '@tinyactors/node-legacy';
+import type { IOProcessor } from '@tinyactors/node';
+import { answerOnce } from './answer';
 import type { OpsContext, RemediationHandler } from '../feature';
 import type { RemediationAction } from '../schemas/conditions';
 import { sinkAddress, type OpsEventData } from '../schemas/events';
@@ -114,15 +115,9 @@ export function remediateProcessor(deps: {
 	onEvent: (e: { at: number; kind: 'handled' | 'info'; conditionId: string; message: string }) => void;
 }): IOProcessor {
 	return {
-		async send(request, effect) {
+		async receive(request) {
 			const r = request.data as OpsEventData<'remediate'>;
-			const reply = (event: string, data: unknown) => {
-				try {
-					effect.post(request.source, event, data);
-				} catch {
-					/* remediator gone (shutdown) */
-				}
-			};
+			const reply = answerOnce(request);
 			const handler = deps.handlers()[r.action];
 			const ctx = deps.ctx();
 			const subject = parseConditionName(r.conditionId)?.subject ?? null;

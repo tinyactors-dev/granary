@@ -1,6 +1,7 @@
 /**
  * `upload/<runId>.<destinationId>` — one sealed artifact to one destination
- * (ADR 0082, 0095, 0096, 0098, 0111). Virtual: rebuilt from its `uploads` row.
+ * (ADR 0082, 0095, 0096, 0098, 0111). Virtual: spawned with params read from
+ * its `uploads` row (at boot, or by `ops-route` when `upload.start` comes).
  *
  *   restore ──(row state)──▶ idle | making-room | committing | verifying | retry-wait
  *   idle ──upload.start──▶ making-room
@@ -15,10 +16,11 @@
  *   store.error ──▶ failed
  *   done   → upload.done → backup-run/<runId> (local-dir: retention.tick to keep one copy)
  *   failed → upload.record-failed via backup-ledger; upload.failed → backup-run/<runId>
+ *
+ * Sends to `backup-run/*` and `retention/*` go by name through `ops-route`.
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
-import { OPS_FAMILY, OPS_IO, SEND_ID, opsTargetUri, retentionAddress, runAddress } from '../schemas/events';
-import { manifestKeyOf } from '../schemas/destinations';
+import { chart, scxml } from '../../charts';
+import { OPS_FAMILY, OPS_IO, SEND_ID } from '../schemas/events';
 import type { BackupManifest } from '../schemas/manifest';
 import type { StoreError } from '../schemas/runs';
 import type { RawSnapshot } from '../backups/repo';
@@ -42,7 +44,6 @@ export interface UploadData {
 	estimatedBytes: number;
 }
 
-export const UPLOAD_REVISION = 'v1';
 export const ROOM_SEND_ID = 'room';
 export const MAX_RETRY_DELAY_MS = 30 * 60_000;
 export const UPLOAD_STATES = {
@@ -57,180 +58,129 @@ export const UPLOAD_STATES = {
 	failed: 'failed'
 } as const;
 
-type Ctx = EvaluationContext<UploadData>;
-const ev = <T>(c: Ctx) => c.event!.data as T;
+const S = UPLOAD_STATES;
 
-const canRetry = (c: Ctx) => {
-	const e = ev<{ error: StoreError }>(c).error;
-	return e.retryable && c.data.attempts < c.data.maxAttempts;
+const helpers = {
+	canRetry: (e: StoreError, attempts: number, maxAttempts: number) => e.retryable && attempts < maxAttempts,
+	/** When the next attempt is due: the store's Retry-After, else exponential backoff (MAX_RETRY_DELAY_MS = 30 min). */
+	nextAttempt: (e: StoreError, attempts: number, retryBaseMs: number) =>
+		Date.now() + (e.retryAfterMs ?? Math.min(30 * 60_000, retryBaseMs * 2 ** Math.max(0, attempts - 1))),
+	retryDelay: (nextAttemptAt: number | null, attempts: number, retryBaseMs: number) =>
+		nextAttemptAt !== null ? Math.max(0, nextAttemptAt - Date.now()) : Math.min(30 * 60_000, retryBaseMs * 2 ** Math.max(0, attempts - 1)),
+	/** `manifestKeyOf` (schemas/destinations): the manifest sits next to its artifact. */
+	manifestKey: (artifactKey: string) => `${artifactKey}.manifest.json`
 };
-const retryDelay = ({ data }: Ctx) => {
-	if (data.nextAttemptAt !== null) return Math.max(0, data.nextAttemptAt - Date.now());
-	return Math.min(MAX_RETRY_DELAY_MS, data.retryBaseMs * 2 ** Math.max(0, data.attempts - 1));
-};
-const runUri = ({ data }: Ctx) => opsTargetUri(runAddress(data.runId));
-const retentionUri = ({ data }: Ctx) => opsTargetUri(retentionAddress(data.destinationId));
 
-export function uploadChart(): DefinitionBuilder<UploadData> {
-	const S = UPLOAD_STATES;
-	/** store.error handling shared by uploading/committing/verifying. */
-	const onStoreError = (s: any) =>
-		s
-			.on('store.error', (t: any) =>
-				t
-					.when(canRetry)
-					.target(S.retryWait)
-					.assign('lastError', (c: Ctx) => ev<{ error: StoreError }>(c).error)
-					// Integrity failures (manifest withdrawn / object incomplete) restart from a full upload.
-					.assign('manifest', (c: Ctx) => (ev<{ error: StoreError }>(c).error.code === 'integrity' ? null : c.data.manifest))
-					.assign('nextAttemptAt', (c: Ctx) => {
-						const e = ev<{ error: StoreError }>(c).error;
-						const delay = e.retryAfterMs ?? Math.min(MAX_RETRY_DELAY_MS, c.data.retryBaseMs * 2 ** Math.max(0, c.data.attempts - 1));
-						return Date.now() + delay;
-					})
-			)
-			.on('store.error', (t: any) => t.target(S.failed).assign('lastError', (c: Ctx) => ev<{ error: StoreError }>(c).error))
-			.on('error.communication', (t: any) =>
-				t.target(S.failed).assign('lastError', literal({ code: 'other', retryable: false, status: null, providerCode: null, message: 'object-store processor unavailable', retryAfterMs: null }))
-			);
-	return (
-		statechart<UploadData>({ family: OPS_FAMILY.upload, revision: UPLOAD_REVISION, name: 'upload' })
-			.data('runId', 'run')
-			.data('destinationId', 'dest')
-			.data('database', 'db')
-			.data('local', false)
-			.data('phase', 'pending')
-			.data('snapshot', null)
-			.data('artifactKey', null)
-			.data('manifest', null)
-			.data('attempts', 0)
-			.data('maxAttempts', 6)
-			.data('retryBaseMs', 30_000)
-			.data('makeRoomTimeoutMs', 600_000)
-			.data('nextAttemptAt', null)
-			.data('lastError', null)
-			.data('estimatedBytes', 0)
-			.initial(S.restore)
-			.state(S.restore, (s) =>
-				s
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'retry-wait' && data.snapshot !== null).target(S.retryWait))
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'verifying' && data.manifest !== null).target(S.verifying))
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'committing' && data.manifest !== null).target(S.committing))
-					.always((t) => t.when(({ data }: Ctx) => (data.phase === 'making-room' || data.phase === 'uploading') && data.snapshot !== null).target(S.makingRoom))
-					.always((t) => t.target(S.idle))
-			)
-			.state(S.idle, (s) =>
-				s.on('upload.start', (t) =>
-					t
-						.target(S.makingRoom)
-						.assign('snapshot', (c: Ctx) => ev<{ snapshot: RawSnapshot }>(c).snapshot)
-						.assign('artifactKey', (c: Ctx) => ev<{ artifactKey?: string }>(c).artifactKey ?? c.data.artifactKey)
-						.assign('estimatedBytes', (c: Ctx) => c.data.estimatedBytes || ev<{ snapshot: RawSnapshot }>(c).snapshot.rawBytes)
-				)
-			)
-			.state(S.makingRoom, (s) =>
-				s
-					.entry((a) =>
-						a
-							.send('retention.make-room', (b) =>
-								b.to(retentionUri).data(({ data }: Ctx) => ({ destinationId: data.destinationId, database: data.database, estimatedBytes: data.estimatedBytes, runId: data.runId }))
-							)
-							.send('upload.room-timeout', (b) => b.id(ROOM_SEND_ID).after(({ data }: Ctx) => data.makeRoomTimeoutMs))
-					)
-					.exit((a) => a.cancel(ROOM_SEND_ID))
-					.on('retention.room-made', (t) => t.target(S.uploading))
-					.on('upload.room-timeout', (t) => t.target(S.uploading))
-					.on('upload.start')
-			)
-			.state(S.uploading, (s) =>
-				onStoreError(
-					s
-						.entry((a) =>
-							a
-								.assign('attempts', ({ data }: Ctx) => data.attempts + 1)
-								.assign('nextAttemptAt', literal(null))
-								.send('store.put-artifact', (b) =>
-									b.via(OPS_IO.objectStore).data(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, snapshot: data.snapshot, artifactKey: data.artifactKey }))
-								)
-						)
-						.on('store.artifact-stored', (t) => t.target(S.committing).assign('manifest', (c: Ctx) => ev<{ manifest: BackupManifest }>(c).manifest))
-						.on('upload.start')
-				)
-			)
-			.state(S.committing, (s) =>
-				onStoreError(
-					s
-						.entry((a) =>
-							a
-								.assign('nextAttemptAt', literal(null))
-								.send('store.put-manifest', (b) =>
-									b.via(OPS_IO.objectStore).data(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, manifest: data.manifest }))
-								)
-						)
-						.on('store.manifest-committed', (t) => t.target(S.verifying))
-						.on('upload.start')
-				)
-			)
-			.state(S.verifying, (s) =>
-				onStoreError(
-					s
-						.entry((a) =>
-							a.send('store.verify', (b) =>
-								b.via(OPS_IO.objectStore).data(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, manifest: data.manifest }))
-							)
-						)
-						.on('store.verified', (t) => t.target(S.done))
-						.on('upload.start')
-				)
-			)
-			.state(S.retryWait, (s) =>
-				s
-					.entry((a) =>
-						a
-							.send('upload.record-retry', (b) =>
-								b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({
-									runId: data.runId,
-									destinationId: data.destinationId,
-									attempts: data.attempts,
-									nextAttemptAt: data.nextAttemptAt ?? Date.now(),
-									lastError: data.lastError
-								}))
-							)
-							.send('upload.retry', (b) => b.id(SEND_ID.retry).after(retryDelay))
-					)
-					.exit((a) => a.cancel(SEND_ID.retry))
-					.on('upload.retry', (t) => t.when(({ data }: Ctx) => data.manifest !== null).target(S.committing).assign('attempts', ({ data }: Ctx) => data.attempts + 1))
-					.on('upload.retry', (t) => t.target(S.uploading))
-					.on('upload.start')
-			)
-			.final(S.done, (s) =>
-				s
-					.entry((a) =>
-						a
-							.send('upload.done', (b) =>
-								b.to(runUri).data(({ data }: Ctx) => ({
-									runId: data.runId,
-									destinationId: data.destinationId,
-									manifestKey: manifestKeyOf(data.manifest!.artifactKey),
-									sealedBytes: data.manifest!.sealed.bytes
-								}))
-							)
-							.choose(({ data }: Ctx) => data.local, (x) => x.send('retention.tick', (b) => b.to(retentionUri)))
-					)
-					.doneData((d) => d.content(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, state: 'done' })))
-			)
-			.final(S.failed, (s) =>
-				s
-					.entry((a) =>
-						a
-							.send('upload.record-failed', (b) =>
-								b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, attempts: data.attempts, lastError: data.lastError }))
-							)
-							.send('upload.failed', (b) =>
-								b.to(runUri).data(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, attempts: data.attempts, lastError: data.lastError }))
-							)
-					)
-					.doneData((d) => d.content(({ data }: Ctx) => ({ runId: data.runId, destinationId: data.destinationId, state: 'failed' })))
-			)
-	);
-}
+const PROCESSOR_DOWN: StoreError = { code: 'other', retryable: false, status: null, providerCode: null, message: 'object-store processor unavailable', retryAfterMs: null };
+
+/** store.error handling shared by uploading/committing/verifying. */
+const onStoreError = scxml`
+	<transition event="store.error" cond="canRetry(_event.data.error, attempts, maxAttempts)" target="${S.retryWait}">
+		<assign location="lastError" expr="_event.data.error"/>
+		<!-- Integrity failures (manifest withdrawn / object incomplete) restart from a full upload. -->
+		<assign location="manifest" expr="${"_event.data.error.code === 'integrity' ? null : manifest"}"/>
+		<assign location="nextAttemptAt" expr="nextAttempt(_event.data.error, attempts, retryBaseMs)"/>
+	</transition>
+	<transition event="store.error" target="${S.failed}"><assign location="lastError" expr="_event.data.error"/></transition>
+	<transition event="error.communication" target="${S.failed}"><assign location="lastError" expr="${JSON.stringify(PROCESSOR_DOWN)}"/></transition>`;
+
+const toRun = (event: string, content: string) =>
+	scxml`<send type="${OPS_IO.route}" event="${event}" targetexpr="${`'${OPS_FAMILY.run}/' + runId`}"><content expr="${content}"/></send>`;
+const toRetention = (event: string, content: string | null) =>
+	scxml`<send type="${OPS_IO.route}" event="${event}" targetexpr="${`'${OPS_FAMILY.retention}/' + destinationId`}">${content ? scxml`<content expr="${content}"/>` : ''}</send>`;
+
+export const uploadChart = chart({
+	name: OPS_FAMILY.upload,
+	initial: S.restore,
+	helpers,
+	data: {
+		runId: 'run',
+		destinationId: 'dest',
+		database: 'db',
+		local: false,
+		phase: 'pending',
+		snapshot: null,
+		artifactKey: null,
+		manifest: null,
+		attempts: 0,
+		maxAttempts: 6,
+		retryBaseMs: 30_000,
+		makeRoomTimeoutMs: 600_000,
+		nextAttemptAt: null,
+		lastError: null,
+		estimatedBytes: 0
+	} satisfies UploadData,
+	body: scxml`
+<state id="${S.restore}">
+	<transition cond="${"phase === 'retry-wait' && snapshot !== null"}" target="${S.retryWait}"/>
+	<transition cond="${"phase === 'verifying' && manifest !== null"}" target="${S.verifying}"/>
+	<transition cond="${"phase === 'committing' && manifest !== null"}" target="${S.committing}"/>
+	<transition cond="${"(phase === 'making-room' || phase === 'uploading') && snapshot !== null"}" target="${S.makingRoom}"/>
+	<transition target="${S.idle}"/>
+</state>
+<state id="${S.idle}">
+	<transition event="upload.start" target="${S.makingRoom}">
+		<assign location="snapshot" expr="_event.data.snapshot"/>
+		<assign location="artifactKey" expr="_event.data.artifactKey ?? artifactKey"/>
+		<assign location="estimatedBytes" expr="${'estimatedBytes || _event.data.snapshot.rawBytes'}"/>
+	</transition>
+</state>
+<state id="${S.makingRoom}">
+	<onentry>
+		${toRetention('retention.make-room', '({ destinationId: destinationId, database: database, estimatedBytes: estimatedBytes, runId: runId })')}
+		<send event="upload.room-timeout" id="${ROOM_SEND_ID}" delayexpr="makeRoomTimeoutMs + 'ms'"/>
+	</onentry>
+	<onexit><cancel sendid="${ROOM_SEND_ID}"/></onexit>
+	<transition event="retention.room-made" target="${S.uploading}"/>
+	<transition event="upload.room-timeout" target="${S.uploading}"/>
+</state>
+<state id="${S.uploading}">
+	<onentry>
+		<assign location="attempts" expr="attempts + 1"/>
+		<assign location="nextAttemptAt" expr="null"/>
+		<send type="${OPS_IO.objectStore}" event="store.put-artifact"><content expr="({ runId: runId, destinationId: destinationId, snapshot: snapshot, artifactKey: artifactKey })"/></send>
+	</onentry>
+	<transition event="store.artifact-stored" target="${S.committing}"><assign location="manifest" expr="_event.data.manifest"/></transition>
+	${onStoreError}
+</state>
+<state id="${S.committing}">
+	<onentry>
+		<assign location="nextAttemptAt" expr="null"/>
+		<send type="${OPS_IO.objectStore}" event="store.put-manifest"><content expr="({ runId: runId, destinationId: destinationId, manifest: manifest })"/></send>
+	</onentry>
+	<transition event="store.manifest-committed" target="${S.verifying}"/>
+	${onStoreError}
+</state>
+<state id="${S.verifying}">
+	<onentry>
+		<send type="${OPS_IO.objectStore}" event="store.verify"><content expr="({ runId: runId, destinationId: destinationId, manifest: manifest })"/></send>
+	</onentry>
+	<transition event="store.verified" target="${S.done}"/>
+	${onStoreError}
+</state>
+<state id="${S.retryWait}">
+	<onentry>
+		<send type="${OPS_IO.ledger}" event="upload.record-retry">
+			<content expr="({ runId: runId, destinationId: destinationId, attempts: attempts, nextAttemptAt: nextAttemptAt ?? Date.now(), lastError: lastError })"/>
+		</send>
+		<send event="upload.retry" id="${SEND_ID.retry}" delayexpr="retryDelay(nextAttemptAt, attempts, retryBaseMs) + 'ms'"/>
+	</onentry>
+	<onexit><cancel sendid="${SEND_ID.retry}"/></onexit>
+	<transition event="upload.retry" cond="manifest !== null" target="${S.committing}"><assign location="attempts" expr="attempts + 1"/></transition>
+	<transition event="upload.retry" target="${S.uploading}"/>
+</state>
+<final id="${S.done}">
+	<onentry>
+		${toRun('upload.done', '({ runId: runId, destinationId: destinationId, manifestKey: manifestKey(manifest.artifactKey), sealedBytes: manifest.sealed.bytes })')}
+		<if cond="local">${toRetention('retention.tick', null)}</if>
+	</onentry>
+	<donedata><content expr="({ runId: runId, destinationId: destinationId, state: 'done' })"/></donedata>
+</final>
+<final id="${S.failed}">
+	<onentry>
+		<send type="${OPS_IO.ledger}" event="upload.record-failed"><content expr="({ runId: runId, destinationId: destinationId, attempts: attempts, lastError: lastError })"/></send>
+		${toRun('upload.failed', '({ runId: runId, destinationId: destinationId, attempts: attempts, lastError: lastError })')}
+	</onentry>
+	<donedata><content expr="({ runId: runId, destinationId: destinationId, state: 'failed' })"/></donedata>
+</final>`
+});

@@ -17,9 +17,8 @@ export const HostHealthSnapshot = Type.Object({
 	at: Timestamp,
 	outbox: Type.Object({ pending: Type.Integer({ minimum: 0 }), inflight: Type.Integer({ minimum: 0 }), dead: Type.Integer({ minimum: 0 }), oldestPendingAgeMs: AgeOrNull }),
 	inbox: Type.Object({ pending: Type.Integer({ minimum: 0 }), oldestPendingAgeMs: AgeOrNull }),
-	/** Monotonic counters since process start. */
-	deadLettersTotal: Type.Integer({ minimum: 0 }),
-	quarantinedActors: Type.Integer({ minimum: 0 }),
+	/** Actors of granary's host that ended on a fault (`onError`): monotonic since process start. */
+	actorFaultsTotal: Type.Integer({ minimum: 0 }),
 	relayLastSuccessAt: Type.Union([Timestamp, Type.Null()]),
 	lastWebhookAt: Type.Union([Timestamp, Type.Null()]),
 	process: Type.Object({ eventLoopLagP99Ms: Type.Number({ minimum: 0 }), rssBytes: Bytes }),

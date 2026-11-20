@@ -2,9 +2,9 @@
  * `journal` I/O processor (ADR 0101, 0123): persists a condition's state
  * (and the ops event its transition produced) for `condition/<id>`, then
  * exports the event as an OTLP log line. Writes are synchronous (bun:sqlite)
- * and run at the end of the pump turn, never inside core.
+ * and run in the host's turn, after the step, never inside core.
  */
-import type { IOProcessor } from '@tinyactors/node-legacy';
+import type { IOProcessor } from '@tinyactors/node';
 import type { JournalConditionRequest } from '../actors/condition';
 import type { Journal } from '../health/journal';
 import type { OpsEvent } from '../schemas/conditions';
@@ -12,7 +12,7 @@ import type { OpsLogger } from '../contract';
 
 export function journalProcessor(deps: { journal: Journal; onEvent: (e: OpsEvent) => void; log: OpsLogger }): IOProcessor {
 	return {
-		send(request) {
+		receive(request) {
 			const r = request.data as JournalConditionRequest;
 			try {
 				const event = deps.journal.writeCondition(

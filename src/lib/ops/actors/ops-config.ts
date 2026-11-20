@@ -6,10 +6,10 @@
  *   reconciling ──config.reconciled──▶ idle
  *
  * OpsBackend posts `config.changed {area, id}` after its DB commit; the ledger
- * re-reads rows and spawns/replaces/destroys the long-lived actors
- * (backup-plan, retention, restore-drill), which get fresh bindings.
+ * re-reads rows and spawns/replaces/terminates the long-lived actors
+ * (backup-plan, retention, restore-drill), which get fresh params.
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
+import { chart, scxml } from '../../charts';
 import { OPS_FAMILY, OPS_IO } from '../schemas/events';
 
 export interface OpsConfigData {
@@ -19,40 +19,35 @@ export interface OpsConfigData {
 	reconciles: number;
 }
 
-export const OPS_CONFIG_REVISION = 'v1';
 export const OPS_CONFIG_STATES = { idle: 'idle', reconciling: 'reconciling' } as const;
 
-type Ctx = EvaluationContext<OpsConfigData>;
-const ev = <T>(c: Ctx) => c.event!.data as T;
+const S = OPS_CONFIG_STATES;
 
-export function opsConfigChart(): DefinitionBuilder<OpsConfigData> {
-	const S = OPS_CONFIG_STATES;
-	return statechart<OpsConfigData>({ family: OPS_FAMILY.config, revision: OPS_CONFIG_REVISION, name: 'ops-config' })
-		.data('area', null)
-		.data('id', null)
-		.data('dirty', false)
-		.data('reconciles', 0)
-		.initial(S.idle)
-		.state(S.idle, (s) =>
-			s.on('config.changed', (t) =>
-				t
-					.target(S.reconciling)
-					.assign('area', (c: Ctx) => ev<{ area: string }>(c).area)
-					.assign('id', (c: Ctx) => ev<{ id: string }>(c).id)
-			)
-		)
-		.state(S.reconciling, (s) =>
-			s
-				.entry((a) =>
-					a
-						.assign('dirty', literal(false))
-						.assign('reconciles', ({ data }: Ctx) => data.reconciles + 1)
-						.send('config.reconcile', (b) => b.via(OPS_IO.ledger).data(({ data }: Ctx) => ({ area: data.area, id: data.id })))
-				)
-				// A change while reconciling: remember it, reconcile everything once more.
-				.on('config.changed', (t) => t.assign('dirty', literal(true)).assign('area', literal(null)).assign('id', literal(null)))
-				.on('config.reconciled', (t) => t.when(({ data }: Ctx) => data.dirty).target(S.reconciling))
-				.on('config.reconciled', (t) => t.target(S.idle))
-				.on('error.communication', (t) => t.target(S.idle))
-		);
-}
+export const opsConfigChart = chart({
+	name: OPS_FAMILY.config,
+	initial: S.idle,
+	data: { area: null, id: null, dirty: false, reconciles: 0 } satisfies OpsConfigData,
+	body: scxml`
+<state id="${S.idle}">
+	<transition event="config.changed" target="${S.reconciling}">
+		<assign location="area" expr="_event.data.area"/>
+		<assign location="id" expr="_event.data.id"/>
+	</transition>
+</state>
+<state id="${S.reconciling}">
+	<onentry>
+		<assign location="dirty" expr="false"/>
+		<assign location="reconciles" expr="reconciles + 1"/>
+		<send type="${OPS_IO.ledger}" event="config.reconcile"><content expr="({ area: area, id: id })"/></send>
+	</onentry>
+	<!-- A change while reconciling: remember it, reconcile everything once more. -->
+	<transition event="config.changed">
+		<assign location="dirty" expr="true"/>
+		<assign location="area" expr="null"/>
+		<assign location="id" expr="null"/>
+	</transition>
+	<transition event="config.reconciled" cond="dirty" target="${S.reconciling}"/>
+	<transition event="config.reconciled" target="${S.idle}"/>
+	<transition event="error" target="${S.idle}"/>
+</state>`
+});

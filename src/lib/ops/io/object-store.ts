@@ -1,7 +1,7 @@
 /**
  * `object-store` I/O processor (ADR 0082, 0084, 0095, 0096, 0098, 0111).
  * The only code that talks to destinations. Every reply goes to
- * `request.source`; failures are classified `store.error {code, retryable}`.
+ * the sender (`send.answer`); failures are classified `store.error {code, retryable}`.
  *
  *   store.put-artifact  seal (zstd → AES-256-GCM) straight into a multipart
  *                       upload; record manifest in `uploads` (state
@@ -15,7 +15,8 @@
  *   drill.fetch         newest committed backup of a database → download,
  *                       decrypt, verify hashes → drill.fetched | drill.checked
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
+import type { IOProcessor, Send } from '@tinyactors/node';
+import { answerOnce } from './answer';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseOpsEventData } from '../schemas/events';
@@ -34,19 +35,20 @@ const CONTENT_MANIFEST = 'application/json';
 
 export function objectStoreProcessor(rt: BackupsRuntime): IOProcessor {
 	return {
-		send(request: IORequest, context: EffectContext) {
-			const reply = (event: string, data: unknown) => context.post(request.source, event, data);
+		// Async: the view stays valid and answers when the work is done.
+		receive(request: Send) {
+			const reply = answerOnce(request);
 			switch (request.event) {
 				case 'store.put-artifact':
-					return void putArtifact(rt, request, reply);
+					return putArtifact(rt, request, reply);
 				case 'store.put-manifest':
-					return void putManifest(rt, request, reply);
+					return putManifest(rt, request, reply);
 				case 'store.verify':
-					return void verify(rt, request, reply);
+					return verify(rt, request, reply);
 				case 'retention.pass':
-					return void retentionPass(rt, request, reply);
+					return retentionPass(rt, request, reply);
 				case 'drill.fetch':
-					return void drillFetch(rt, request, reply);
+					return drillFetch(rt, request, reply);
 				default:
 					throw new Error(`object-store processor: unknown request ${request.event}`);
 			}
@@ -60,7 +62,7 @@ function asStoreError(e: unknown, op: string): StoreError {
 	return toStoreFailure(e, op).error;
 }
 
-async function putArtifact(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function putArtifact(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('store.put-artifact', request.data);
 	let dest: Destination | null = null;
 	let sent = 0;
@@ -108,7 +110,7 @@ async function putArtifact(rt: BackupsRuntime, request: IORequest, reply: (e: st
 	}
 }
 
-async function putManifest(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function putManifest(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('store.put-manifest', request.data);
 	const key = manifestKeyOf(d.manifest.artifactKey);
 	let dest: Destination | null = null;
@@ -132,7 +134,7 @@ async function putManifest(rt: BackupsRuntime, request: IORequest, reply: (e: st
 	}
 }
 
-async function verify(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function verify(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('store.verify', request.data);
 	const key = manifestKeyOf(d.manifest.artifactKey);
 	try {
@@ -155,7 +157,7 @@ async function verify(rt: BackupsRuntime, request: IORequest, reply: (e: string,
 	}
 }
 
-async function retentionPass(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function retentionPass(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('retention.pass', request.data);
 	let deleted = 0;
 	let freedBytes = 0;
@@ -200,7 +202,7 @@ async function retentionPass(rt: BackupsRuntime, request: IORequest, reply: (e: 
 	}
 }
 
-async function drillFetch(rt: BackupsRuntime, request: IORequest, reply: (e: string, d: unknown) => void) {
+async function drillFetch(rt: BackupsRuntime, request: Send, reply: (e: string, d: unknown) => void) {
 	const d = parseOpsEventData('drill.fetch', request.data);
 	rt.r.insertDrill({ id: d.drillId, destinationId: d.destinationId, database: d.database });
 	const checked = (result: string, detail: string) => {

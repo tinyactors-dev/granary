@@ -3,10 +3,10 @@
  * sinks, the watchdog, conditions and the remediator, ops metrics/logs, and
  * the `OpsBackendHealth` half of the OpsBackend.
  */
-import type { Actor, Definition, LoadResult } from '@tinyactors/node-legacy';
+import { StaleError } from '@tinyactors/node';
 import type { OpsContext, HealthFeature, RemediationHandler } from '../feature';
 import type { OpsBackendHealth } from '../contract';
-import { OPS_FAMILY, REMEDIATOR_ADDRESS, WATCHDOG_ADDRESS, sinkAddress } from '../schemas/events';
+import { OPS_FAMILY, REMEDIATOR_ADDRESS, WATCHDOG_ADDRESS, conditionAddress, opsName, sinkAddress } from '../schemas/events';
 import type { ConditionState, RemediationAction } from '../schemas/conditions';
 import type { TelemetrySinkConfig } from '../schemas/sinks';
 import { OTLP_IO_TYPE, otlpProcessor } from '../io/otlp';
@@ -14,13 +14,13 @@ import { remediateProcessor, builtinRemediations } from '../io/remediate';
 import { journalProcessor } from '../io/journal';
 import { sampleProcessor } from '../io/sample';
 import { telemetrySinkChart, initialSinkData, droppedLast24h, type TelemetrySinkData } from '../actors/telemetry-sink';
-import { conditionChart, JOURNAL_IO_TYPE, type ConditionData } from '../actors/condition';
+import { conditionChart, initialConditionData, JOURNAL_IO_TYPE, type ConditionData } from '../actors/condition';
 import { remediatorChart, REMEDIATE_IO_TYPE, type RemediatorData } from '../actors/remediator';
 import { watchdogChart, SAMPLE_IO_TYPE, DEFAULT_WATCHDOG_INTERVAL_MS, type WatchdogData } from '../actors/watchdog';
 import { SecretRedactor } from '../telemetry/redactor';
 import { TelemetryFanout } from '../telemetry/fanout';
 import { SinksRepo } from '../telemetry/sinks-repo';
-import { opsLogBatch, opsMetricsBatch, type MetricPointInput } from '../telemetry/signals-out';
+import { opsHostMetricsBatch, opsLogBatch, opsMetricsBatch, type MetricPointInput } from '../telemetry/signals-out';
 import { Journal, parseConditionName } from '../health/journal';
 import type { Measurements, SinkState } from '../health/signals';
 import { computeStatus } from '../health/status';
@@ -39,9 +39,11 @@ export interface HealthRuntime {
 	fanout: TelemetryFanout;
 	redactor: SecretRedactor;
 	timeScale: number;
-	defs: { sink: Definition<TelemetrySinkData> };
 	lastMeasurements: () => Measurements | null;
-	sinkStates(): (SinkState & { droppedLast24h: number; enabled: boolean; data: TelemetrySinkData | null })[];
+	/** Every sink with its actor's state, read now from the actors. */
+	sinkStates(): Promise<SinkStateRow[]>;
+	/** `sinkStates()` as last read (by the watchdog's pass, a stats call or a status call): for the synchronous status. */
+	lastSinkStates(): SinkStateRow[];
 	reconcileSinks(): void;
 	/**
 	 * Re-run the sink seeds and reconcile (ADR 0150): the seed sink's token
@@ -53,6 +55,8 @@ export interface HealthRuntime {
 	sampleNow(): void;
 	status(): ReturnType<typeof computeStatus>;
 }
+
+export type SinkStateRow = SinkState & { droppedLast24h: number; enabled: boolean; data: TelemetrySinkData | null };
 
 export interface CreateHealthOptions {
 	/** Remediations contributed by other features (composed in index.ts). */
@@ -68,6 +72,10 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 	let fanoutRef: TelemetryFanout | null = null;
 	let last: Measurements | null = null;
 	const timers: ReturnType<typeof setInterval>[] = [];
+	/** Aborted at stop: in-flight OTLP posts. */
+	const stopping = new AbortController();
+	/** Faults counted at the previous watchdog pass. */
+	let previousFaultsTotal = 0;
 	const need = <T>(v: T | null, what: string): T => {
 		if (v === null) throw new Error(`health feature not started (${what})`);
 		return v;
@@ -95,7 +103,8 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			redactor,
 			log: { info: (m, ...r) => ctxRef?.host.log.info(m, ...r), warn: (m, ...r) => ctxRef?.host.log.warn(m, ...r), error: (m, ...r) => ctxRef?.host.log.error(m, ...r) },
 			now: () => ctxRef?.now() ?? Date.now(),
-			onDelivered: (sinkId, bytes) => fanoutRef?.onDelivered(sinkId, bytes)
+			onDelivered: (sinkId, bytes) => fanoutRef?.onDelivered(sinkId, bytes),
+			signal: stopping.signal
 		} as Parameters<typeof otlpProcessor>[0]),
 		[REMEDIATE_IO_TYPE]: remediateProcessor({
 			ctx: () => need(ctxRef, 'ctx'),
@@ -115,26 +124,28 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			}
 		} as Parameters<typeof journalProcessor>[0]),
 		[SAMPLE_IO_TYPE]: sampleProcessor({
-			sampler: () => {
+			sampler: async () => {
 				const ctx = need(ctxRef, 'ctx');
 				const j = need(journalRef, 'journal');
+				const sinks = (await rt?.sinkStates()) ?? [];
 				return {
 					host: ctx.host,
 					db: ctx.db,
 					now: ctx.now,
-					sinks: () => rt?.sinkStates() ?? [],
-					firstSeenAt: Number(j.kvGet('health:firstSeenAt') ?? ctx.now())
+					sinks: () => sinks,
+					firstSeenAt: Number(j.kvGet('health:firstSeenAt') ?? ctx.now()),
+					opsFaultsTotal: ctx.actors.stats.faults,
+					previousFaultsTotal
 				};
 			},
 			get journal() {
 				return need(journalRef, 'journal');
 			},
-			resident: (id) => {
-				const ctx = ctxRef;
-				return !!ctx && !!ctx.system.findActor({ family: OPS_FAMILY.condition, name: id });
-			},
+			resident: (id) => !!ctxRef?.actors.find(opsName(conditionAddress(id))),
+			post: (id, event, data) => need(ctxRef, 'ctx').post(conditionAddress(id), event, data),
 			onMeasured: (m) => {
 				last = m;
+				previousFaultsTotal = m.faultsTotal;
 			},
 			get log() {
 				return need(ctxRef, 'ctx').host.log;
@@ -142,36 +153,40 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 		} as Parameters<typeof sampleProcessor>[0])
 	};
 
-	let conditionDef: Definition<ConditionData> | null = null;
-
 	const feature: HealthFeature & { runtime(): HealthRuntime | null } = {
 		name: 'health',
 		io,
+		charts: [telemetrySinkChart, conditionChart, watchdogChart, remediatorChart],
 		remediations: builtins,
-		loaders: {
-			[OPS_FAMILY.condition]: {
-				load(ctx, address): LoadResult {
-					const parsed = parseConditionName(address.name);
-					if (!parsed || !conditionDef) return 'not-found';
-					const stored = need(journalRef, 'journal').getCondition(address.name);
-					const binding: Partial<ConditionData> = {
-						id: address.name,
-						kind: parsed.kind,
-						subject: parsed.subject,
-						resumeState: stored?.state ?? 'ok',
-						since: stored?.since ?? null,
-						step: stored?.step ?? 0,
-						tried: stored?.tried ?? [],
-						lastRemediation: stored?.lastRemediation ?? null,
-						facts: stored?.facts ?? {},
-						acknowledgedBy: stored?.acknowledgedBy ?? null,
-						lastSampleAt: stored?.updatedAt ?? ctx.now(),
-						lastActionAt: stored?.lastRemediation?.at ?? null,
-						timeScale: rt?.timeScale ?? 1
-					};
-					return { spawn: conditionDef as unknown as Definition<object>, binding };
-				}
+		spawners: {
+			// A condition resumes from its row (ok when it has none).
+			[OPS_FAMILY.condition]: (ctx, id) => {
+				const parsed = parseConditionName(id);
+				if (!parsed) return null;
+				const stored = need(journalRef, 'journal').getCondition(id);
+				const d: ConditionData = {
+					...initialConditionData(),
+					id,
+					kind: parsed.kind,
+					subject: parsed.subject,
+					resumeState: stored?.state ?? 'ok',
+					since: stored?.since ?? null,
+					step: stored?.step ?? 0,
+					tried: stored?.tried ?? [],
+					lastRemediation: stored?.lastRemediation ?? null,
+					facts: stored?.facts ?? {},
+					acknowledgedBy: stored?.acknowledgedBy ?? null,
+					lastSampleAt: stored?.updatedAt ?? ctx.now(),
+					lastActionAt: stored?.lastRemediation?.at ?? null,
+					timeScale: rt?.timeScale ?? 1
+				};
+				return { d: d as never };
 			}
+		},
+
+		resume(ctx) {
+			// Conditions that are not ok are resident from boot, as 0.1.0's loader made them on the first sample.
+			for (const id of need(journalRef, 'journal').nonOkIds()) ctx.actors.ensure(opsName(conditionAddress(id)));
 		},
 
 		async start(ctx) {
@@ -188,7 +203,9 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 				now: ctx.now,
 				post: (sinkId, batch) => {
 					try {
-						ctx.system.post(sinkAddress(sinkId), 'telemetry.batch', batch);
+						const actor = ctx.actors.find(opsName(sinkAddress(sinkId)));
+						if (!actor) return false;
+						actor.send('telemetry.batch', batch as never);
 						return true;
 					} catch {
 						return false;
@@ -196,31 +213,56 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 				}
 			}));
 
-			const sinkDef = ctx.system.define(telemetrySinkChart());
-			conditionDef = ctx.system.define(conditionChart());
-			const watchdogDef = ctx.system.define(watchdogChart());
-			const remediatorDef = ctx.system.define(remediatorChart());
-			ctx.excludeFromTraces?.(sinkDef as unknown as Definition<object>);
-
-			const sinkActors = new Map<string, Actor<TelemetrySinkData>>();
+			/** Sinks with a running actor. */
+			const sinkIds = new Set<string>();
 			const reconcileSinks = () => {
 				const sinks = repo.list();
 				const enabled = new Map(sinks.filter((s) => s.enabled).map((s) => [s.id, s]));
-				for (const [id, actor] of sinkActors) {
+				for (const id of sinkIds) {
 					if (enabled.has(id)) continue;
 					try {
-						if (ctx.system.exists(actor)) actor.destroy();
-					} catch {
-						/* gone */
+						ctx.actors.find(opsName(sinkAddress(id)))?.terminate();
+					} catch (e) {
+						if (!(e instanceof StaleError)) throw e;
 					}
-					sinkActors.delete(id);
+					sinkIds.delete(id);
 				}
 				for (const s of enabled.values()) {
-					const existing = sinkActors.get(s.id);
-					if (existing && !existing.destroyed) continue;
-					sinkActors.set(s.id, ctx.spawn(sinkDef, sinkAddress(s.id), initialSinkData(s.id, s.flushIntervalMs, s.maxBufferBytes, sinkTimeScale)));
+					sinkIds.add(s.id);
+					if (ctx.actors.find(opsName(sinkAddress(s.id)))) continue;
+					ctx.actors.spawn(opsName(sinkAddress(s.id)), { d: initialSinkData(s.id, s.flushIntervalMs, s.maxBufferBytes, sinkTimeScale) as never });
 				}
 				fanout.setSinks([...enabled.values()]);
+			};
+			let lastSinks: SinkStateRow[] = [];
+			const sinkStates = async (): Promise<SinkStateRow[]> => {
+				const rows: SinkStateRow[] = [];
+				for (const s of repo.list() as TelemetrySinkConfig[]) {
+					const actor = ctx.actors.find(opsName(sinkAddress(s.id)));
+					let data: TelemetrySinkData | null = null;
+					let state = s.enabled ? 'idle' : 'disabled';
+					if (actor) {
+						try {
+							const [context, st] = await Promise.all([actor.context(), actor.state()]);
+							data = context.variables.d as TelemetrySinkData;
+							state = typeof st.value === 'string' ? st.value : (Object.keys(st.value)[0] ?? state);
+						} catch (e) {
+							if (!(e instanceof StaleError)) throw e;
+						}
+					}
+					rows.push({
+						sinkId: s.id,
+						state,
+						enabled: s.enabled,
+						openedAt: data?.openedAt ?? null,
+						lastError: data?.lastError ?? null,
+						lastSuccessAt: data?.lastSuccessAt ?? null,
+						droppedLast24h: data ? droppedLast24h(data, ctx.now()).batches : 0,
+						data
+					});
+				}
+				lastSinks = rows;
+				return rows;
 			};
 
 			const seeded = seedSinks({ repo, env: ctx.host.env, db: ctx.db, now: ctx.now(), log: ctx.host.log });
@@ -235,33 +277,13 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 				fanout,
 				redactor,
 				timeScale: Number.isFinite(timeScale) && timeScale > 0 ? timeScale : 1,
-				defs: { sink: sinkDef },
 				lastMeasurements: () => last,
-				sinkStates: () =>
-					repo.list().map((s: TelemetrySinkConfig) => {
-						const actor = sinkActors.get(s.id);
-						let data: TelemetrySinkData | null = null;
-						let state = s.enabled ? 'idle' : 'disabled';
-						if (actor && !actor.destroyed) {
-							try {
-								const i = actor.inspect();
-								data = i.data as TelemetrySinkData;
-								state = i.activeStates[0] ?? state;
-							} catch {
-								/* gone */
-							}
-						}
-						return {
-							sinkId: s.id,
-							state,
-							enabled: s.enabled,
-							openedAt: data?.openedAt ?? null,
-							lastError: data?.lastError ?? null,
-							lastSuccessAt: data?.lastSuccessAt ?? null,
-							droppedLast24h: data ? droppedLast24h(data, ctx.now()).batches : 0,
-							data
-						};
-					}),
+				sinkStates,
+				lastSinkStates: () => {
+					// Refresh for the next caller; this one gets the last read.
+					void sinkStates().catch(() => undefined);
+					return lastSinks;
+				},
 				reconcileSinks,
 				reseedSinks: () => {
 					for (const m of seedSinks({ repo, env: ctx.host.env, db: ctx.db, now: ctx.now(), log: ctx.host.log })) ctx.host.log.info(`ops telemetry: ${m}`);
@@ -275,17 +297,19 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 						now: ctx.now(),
 						databases: ctx.host.databases.map((d) => d.id),
 						masterKeyMissing: !ctx.host.devMode && !masterKeyConfigured(ctx.host.env, ctx.host.dataDir),
-						sinks: rt!.sinkStates()
+						sinks: rt!.lastSinkStates()
 					})
 			};
-			ctx.spawn<RemediatorData>(remediatorDef, REMEDIATOR_ADDRESS, {});
-			ctx.spawn<WatchdogData>(watchdogDef, WATCHDOG_ADDRESS, { intervalMs: interval, firstTickMs: Math.min(5_000, interval) });
-			const metrics = setInterval(() => emitMetrics(), METRICS_INTERVAL_MS);
+			void sinkStates().catch(() => undefined);
+			ctx.actors.spawn(opsName(REMEDIATOR_ADDRESS));
+			ctx.actors.spawn(opsName(WATCHDOG_ADDRESS), { intervalMs: interval, firstTickMs: Math.min(5_000, interval) } satisfies Partial<WatchdogData>);
+			const metrics = setInterval(() => void emitMetrics(), METRICS_INTERVAL_MS);
 			metrics.unref?.();
 			timers.push(metrics);
 		},
 
 		async stop() {
+			stopping.abort();
 			for (const t of timers) clearInterval(t);
 			timers.length = 0;
 			fanoutRef?.stop();
@@ -301,7 +325,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 	};
 
 	const startedAt = Date.now();
-	function emitMetrics() {
+	async function emitMetrics() {
 		const r = rt;
 		if (!r || !r.fanout.active()) return;
 		const now = r.ctx.now();
@@ -324,12 +348,13 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			if (value === null || value === undefined) return;
 			p.push({ name, unit, kind: 'gauge', value, attributes });
 		};
+		const sinks = await r.sinkStates().catch(() => r.lastSinkStates());
 		const status = r.status();
 		g('ops_sleep_ok', status.sleepOk ? 1 : 0);
 		g('ops_attention_items', status.attentionCount);
 		for (const c of r.journal.listConditions()) g('ops_condition_state', STATE_VALUE[c.state], { id: c.id, kind: c.kind });
 		for (const b of status.backups) g('ops_backup_age_seconds', b.lastVerifiedAt ? Math.round((now - b.lastVerifiedAt) / 1000) : null, { destination: b.destinationId, database: b.database }, 's');
-		for (const s of r.sinkStates()) {
+		for (const s of sinks) {
 			if (!s.data) continue;
 			g('ops_telemetry_sent_bytes', s.data.sent.bytes, { sink: s.sinkId }, 'By');
 			g('ops_telemetry_dropped_bytes', s.data.dropped.bytes, { sink: s.sinkId }, 'By');
@@ -354,8 +379,7 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 			g('granary_outbox_pending', m.host.outbox.pending);
 			g('granary_outbox_dead', m.host.outbox.dead);
 			g('granary_inbox_pending', m.host.inbox.pending);
-			g('granary_dead_letters', m.host.deadLettersTotal);
-			g('granary_quarantined_actors', m.host.quarantinedActors);
+			g('granary_actor_faults_total', m.host.actorFaultsTotal);
 			g('granary_event_loop_lag_p99', m.host.process.eventLoopLagP99Ms, undefined, 'ms');
 			g('granary_rss_bytes', m.host.process.rssBytes, undefined, 'By');
 			const cu = m.host.catchup;
@@ -366,8 +390,10 @@ export function createHealthFeature(options: CreateHealthOptions): HealthFeature
 				g('granary_catchup_failing', cu.lastError ? 1 : 0);
 			}
 		}
+		g('ops_actor_faults_total', r.ctx.actors.stats.faults);
 		try {
 			r.fanout.write(opsMetricsBatch(p, startedAt, now, version()));
+			r.fanout.write(opsHostMetricsBatch(r.ctx.actors.host.metrics(), now));
 		} catch (e) {
 			r.ctx.host.log.warn('ops telemetry: could not encode metrics', e instanceof Error ? e.message : e);
 		}
