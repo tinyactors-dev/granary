@@ -184,6 +184,9 @@ architecture, and add a new ADR for every new decision.
   the one naming scheme in ADR 0230 (standard ones unprefixed, else
   `GRANARY_*` / `GRANARY_SEED_*` / `GRANARY_DEV_*` / `GRANARY_TEST_*`, fakes
   `FAKE_GITHUB_*` / `FAKE_INFRA_*` / `LOADGEN_*`) and is listed there.
+- **Fakes first:** build every feature through the fake GitHub and the
+  simulations before it touches GitHub or production — the `fakes-first`
+  skill (`.claude/skills/fakes-first/SKILL.md`) has the steps.
 - **Interactive verification in a browser uses `agent-browser`** (installed via
   mise as `npm:agent-browser`; see `agent-browser --help`). Do not install
   Playwright or download Chromium for checking pages or taking screenshots.
