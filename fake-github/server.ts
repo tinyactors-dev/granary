@@ -4,7 +4,8 @@
  * REST (issues, comments), webhooks, OAuth — plus the `/__control` API and
  * a small HTML page at `/`.
  *
- * Env (ADR 0230): FAKE_GITHUB_PORT (4010), FAKE_GITHUB_URL (public base,
+ * Env (ADR 0230): FAKE_GITHUB_PORT (4010), FAKE_GITHUB_HOST (bind address,
+ * default all interfaces; a sandbox binds 127.0.0.1, ADR 0312), FAKE_GITHUB_URL (public base,
  * default http://localhost:$PORT), FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS,
  * FAKE_GITHUB_OTLP_ENDPOINT (traces with service.name=fake-github).
  * Webhooks go only to installed GitHub Apps (their manifest's hook URL and
@@ -1025,6 +1026,7 @@ async function route(req: Request): Promise<Response> {
 
 const server = Bun.serve({
 	port,
+	...(nonEmpty(env.FAKE_GITHUB_HOST) ? { hostname: env.FAKE_GITHUB_HOST } : {}),
 	idleTimeout: 60,
 	async fetch(req) {
 		try {

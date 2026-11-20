@@ -9,6 +9,7 @@ import * as cmd from './commands';
 import { CliError, createContext, requireDataDir } from './context';
 import { init, restore, serve } from './lifecycle';
 import { update } from './update';
+import { sandboxInit, sandboxServe } from './sandbox';
 
 async function main(argv: string[]): Promise<number> {
 	const parsed = parseArgs(argv);
@@ -32,6 +33,12 @@ async function main(argv: string[]): Promise<number> {
 		case 'version':
 		case 'update':
 			break;
+		case 'sandbox init':
+			requireDataDir(ctx, { allowMissing: true, allowUninitialised: true });
+			break;
+		case 'sandbox serve':
+			requireDataDir(ctx, { allowUninitialised: true });
+			break;
 		default:
 			requireDataDir(ctx);
 	}
@@ -40,6 +47,10 @@ async function main(argv: string[]): Promise<number> {
 			return serve(ctx, parsed);
 		case 'init':
 			return init(ctx, parsed);
+		case 'sandbox init':
+			return sandboxInit(ctx, parsed);
+		case 'sandbox serve':
+			return sandboxServe(ctx, parsed);
 		case 'restore':
 			return restore(ctx, parsed);
 		case 'doctor':

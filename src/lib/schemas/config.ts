@@ -48,6 +48,12 @@ export const RawEnv = Type.Object(
 		GRANARY_LOG_LEVEL: Type.Optional(Type.Union(['debug', 'info', 'warn', 'error', ''].map((l) => Type.Literal(l)))),
 		/** Dev only: `origin=user:pass,…` login hints in the /admin Tools card (ADR 0027). */
 		GRANARY_DEV_LOGIN_HINTS: Type.Optional(Type.String()),
+		/**
+		 * `1`: this instance is a sandbox (ADR 0312): its GitHub must be the fake
+		 * on this machine (loopback URLs, else it refuses to start) and the UI
+		 * says so on every page. Set by `granary sandbox init`.
+		 */
+		GRANARY_SANDBOX: Type.Optional(Flag),
 		/** Dev/tests only: connect to the fake GitHub as a GitHub App automatically (ADR 0230). */
 		GRANARY_DEV_GITHUB_AUTOCONNECT: Type.Optional(Flag),
 		/** UI work without the actor system (ADR 0032). */
@@ -97,6 +103,8 @@ export interface Config {
 	logLevel: 'debug' | 'info' | 'warn' | 'error';
 	/** `GRANARY_DEV=1` */
 	granaryDev: boolean;
+	/** `GRANARY_SANDBOX=1` (ADR 0312): GitHub is the local fake; the UI shows a sandbox banner. */
+	sandbox: boolean;
 	/** `GRANARY_STUB_BACKEND=1`: register `StubBackend` instead of the real one (UI work). */
 	stubBackend: boolean;
 	/** Which simulation URLs were set explicitly (not defaulted), ADR 0290. */
@@ -147,7 +155,17 @@ function parseLoginHints(raw: string | undefined): Record<string, { username: st
 	return out;
 }
 
-const FLAGS = new Set(['GRANARY_DEV', 'GRANARY_STUB_BACKEND', 'GRANARY_DEV_GITHUB_AUTOCONNECT', 'GRANARY_SEED_ADMINS', 'GRANARY_SEED_ALLOWLIST']);
+/** Is this URL on this machine (localhost, 127.0.0.0/8, ::1)? A sandbox only talks to those (ADR 0312). */
+export function isLoopbackUrl(url: string): boolean {
+	try {
+		const h = new URL(url).hostname.replace(/^\[|\]$/g, '');
+		return h === 'localhost' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h);
+	} catch {
+		return false;
+	}
+}
+
+const FLAGS = new Set(['GRANARY_DEV', 'GRANARY_SANDBOX', 'GRANARY_STUB_BACKEND', 'GRANARY_DEV_GITHUB_AUTOCONNECT', 'GRANARY_SEED_ADMINS', 'GRANARY_SEED_ALLOWLIST']);
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
 	// Treat empty strings as unset (except flags/lists) so `FOO=` behaves like no FOO.
@@ -165,6 +183,13 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 	if (problems.length) throw new ConfigError(problems);
 
 	const raw = cleaned as RawEnv;
+	if (raw.GRANARY_SANDBOX === '1') {
+		// ADR 0312: a sandbox never talks to a real GitHub.
+		const sandboxProblems = (['GRANARY_GITHUB_API_URL', 'GRANARY_GITHUB_WEB_URL'] as const)
+			.filter((k) => !raw[k] || !isLoopbackUrl(raw[k]!))
+			.map((k) => `${k}: a sandbox (GRANARY_SANDBOX=1) needs the fake GitHub on this machine, e.g. http://localhost:4010 (got ${JSON.stringify(raw[k] ?? null)})`);
+		if (sandboxProblems.length) throw new ConfigError(sandboxProblems);
+	}
 	const dataDir = resolveDataDir(cleaned);
 	return {
 		dataDir,
@@ -177,6 +202,7 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 		origin: raw.ORIGIN ? trimSlash(raw.ORIGIN) : null,
 		port: Number(raw.PORT ?? 3000),
 		granaryDev: raw.GRANARY_DEV === '1',
+		sandbox: raw.GRANARY_SANDBOX === '1',
 		logLevel: (raw.GRANARY_LOG_LEVEL || 'info') as Config['logLevel'],
 		stubBackend: raw.GRANARY_STUB_BACKEND === '1',
 		simulation: { fakeGithub: raw.FAKE_GITHUB_URL !== undefined, fakeInfra: raw.FAKE_INFRA_URL !== undefined, loadgen: raw.LOADGEN_URL !== undefined },

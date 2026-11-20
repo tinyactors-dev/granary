@@ -1,4 +1,5 @@
 import type { LayoutServerLoad } from './$types';
+import { getConfig } from '$lib/server/config';
 
 /**
  * Shell data for every page (ADR 0050): who is signed in, whether dev mode is
@@ -10,5 +11,7 @@ export const load: LayoutServerLoad = ({ locals }) => ({
 	user: locals.user,
 	devMode: locals.devMode,
 	admin: locals.admin,
-	setupState: locals.setupState
+	setupState: locals.setupState,
+	/** ADR 0312: a sandbox instance (GitHub is the local fake); every page says so. */
+	sandbox: getConfig().sandbox
 });

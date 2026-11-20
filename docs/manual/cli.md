@@ -203,7 +203,7 @@ Print a systemd unit for granary (or for its updater, ADR 0301). It talks to nei
 | Option | Description |
 |---|---|
 | `--data <value>` | Data directory (else GRANARY_DATA_DIR, /var/lib/granary if it exists, $XDG_STATE_HOME/granary, ~/.local/state/granary) |
-| `--unit <value>` | service (granary.service), update-service or update-timer (granary-update.*) (default `service`) |
+| `--unit <value>` | service (granary.service), update-service or update-timer (granary-update.*), or sandbox (granary-sandbox.service, ADR 0312) (default `service`) |
 | `--user <value>` | Service user (default `granary`) |
 | `--bin <value>` | Path to the granary binary |
 | `--channel <value>` | Channel the updater follows: edge (GitHub, every green push), dev or latest (npm) (default `edge`) |
@@ -224,6 +224,26 @@ Install the newest version of a channel, restart, verify, roll back on failure (
 | `--service <value>` | systemd service to restart (default `granary`) |
 | `--timeout <value>` | Seconds to wait for /healthz to report the new version (default `60`) |
 | `--dry-run` | Print what would happen; change nothing |
+
+### `granary sandbox init`
+
+Set up a sandbox: a second granary whose GitHub is the fake GitHub on this machine (ADR 0312). It talks to neither the server nor the database.
+
+| Option | Description |
+|---|---|
+| `--data <value>` | The sandbox data dir (required), e.g. /var/lib/granary-sandbox |
+| `--port <value>` | Port of the sandbox app (127.0.0.1) (default `3100`) |
+| `--github-port <value>` | Port of the fake GitHub (127.0.0.1) (default `4010`) |
+| `--admins <value>` | Admin logins (comma-separated) (default `admin`) |
+| `--json` | Print the raw JSON result |
+
+### `granary sandbox serve`
+
+Run a sandbox: the fake GitHub as a child process, then the app (ADR 0312). It talks to neither the server nor the database.
+
+| Option | Description |
+|---|---|
+| `--data <value>` | The sandbox data dir (required) |
 
 ### `granary version`
 

@@ -64,5 +64,9 @@ backup destination under **Ops → Destinations**.
     rollbacks, login links, key rotation, telemetry
 11. [Appendix: an exe.dev VM](appendix-exe-dev.md): a worked example, with a
     shared observability VM and a custom hostname
+12. [Introductions](introductions.md): people introduce themselves in a
+    GitHub Discussions category; you approve or decline them
+13. [A sandbox next to production](sandbox.md): a throwaway granary on the
+    fake GitHub, on the same machine, to try things out
 
 Source and issues: <https://github.com/tinyactors-dev/granary>.

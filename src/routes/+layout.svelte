@@ -31,6 +31,12 @@
 </script>
 
 <ModeWatcher />
+{#if data.sandbox}
+	<!-- ADR 0312: not one of the page banners (ADR 0291) — a strip on every page, signed in or not. -->
+	<div class="bg-amber-400 px-4 py-1 text-center text-xs font-medium text-amber-950" role="note" data-testid="sandbox-strip">
+		Sandbox — GitHub here is the fake GitHub on this machine. Nothing you do reaches github.com or the real granary.
+	</div>
+{/if}
 <!-- top-center below the sticky header: bottom-right toasts covered form buttons (design audit) -->
 <Toaster richColors closeButton position="top-center" offset="4.5rem" />
 <Tooltip.Provider delayDuration={200}>

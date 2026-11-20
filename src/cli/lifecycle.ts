@@ -48,6 +48,8 @@ async function confirmKey(key: string): Promise<boolean> {
 
 export async function init(ctx: Context, p: Parsed): Promise<number> {
 	await requireOffline(ctx, '`granary init`');
+	if (existsSync(join(ctx.dataDir, DATA_DIR_LAYOUT.sandboxMarker)))
+		throw new CliError(`${ctx.dataDir} is a sandbox data dir (ADR 0312): \`granary sandbox init\` manages it`, EXIT.dataDir);
 	const origin = typeof p.options.origin === 'string' ? p.options.origin.replace(/\/+$/, '') : null;
 	if (origin && !/^https?:\/\/\S+$/.test(origin)) throw new CliError(`--origin must be a URL like https://granary.example.com (got ${origin})`, EXIT.usage);
 	mkdirSync(ctx.dataDir, { recursive: true, mode: 0o700 });
@@ -143,8 +145,11 @@ export function findServerEntry(): string {
 /** Env files Bun would have auto-loaded from the working directory. */
 const AUTO_ENV_FILES = ['.env', '.env.local', '.env.production', '.env.production.local', '.env.development', '.env.development.local'];
 
-export async function serve(ctx: Context, p: Parsed): Promise<number> {
+export async function serve(ctx: Context, p: Parsed, opts: { sandbox?: boolean } = {}): Promise<number> {
 	if (!versionAtLeast(Bun.version, MIN_BUN_VERSION)) throw new CliError(`granary needs Bun ≥ ${MIN_BUN_VERSION} (this is ${Bun.version})`);
+	// ADR 0312: a sandbox's data dir is served only as a sandbox.
+	if (!opts.sandbox && existsSync(join(ctx.dataDir, DATA_DIR_LAYOUT.sandboxMarker)))
+		throw new CliError(`${ctx.dataDir} is a sandbox data dir: run \`granary sandbox serve --data ${ctx.dataDir}\``, EXIT.dataDir);
 	const pid = livePid(ctx);
 	if (pid !== null && pid !== process.pid) throw new CliError(`granary is already running for ${ctx.dataDir} (pid ${pid})`);
 	if (!existsSync(ctx.dataDir)) throw new CliError(`${ctx.dataDir} does not exist; run \`granary init --data ${ctx.dataDir}\` first`);

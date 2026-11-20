@@ -14,6 +14,8 @@ superseded by N`) and the newer ADR says what changed.
   ops.sqlite (0230).
 - **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290). On phones tables stack into cards and the nav is a drawer (0295, 0296).
 - **tinyactors:** granary runs on @tinyactors/node 0.4.0: SCXML charts built in TypeScript, no loaders, no debugger (0300).
+- **Introductions:** people introduce themselves in an Introductions discussion category; admins approve (scoped allowlist entry, closed items reopened, a reply on the discussion) or decline (0310); allowlist entries are scoped to everywhere, an owner or a repository (0311).
+- **Sandbox:** `granary sandbox init|serve` runs a second granary on the fake GitHub next to production, loopback only (0312).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233); every green push to main is released (npm `dev`, and the GitHub prerelease `edge`) and pulled by `granary update` (0301, 0302).
 
 | ADR | Title | State |
@@ -21,7 +23,7 @@ superseded by N`) and the newer ADR says what changed.
 | [0001](0001-record-architecture-decisions.md) | Record architecture decisions | active |
 | [0002](0002-actor-topology.md) | Actor and I/O processor topology | partly superseded (0300) |
 | [0003](0003-sqlite-write-ahead-log.md) | Application-level write-ahead log in SQLite | partly superseded |
-| [0004](0004-policy-decisions.md) | Policy: who may open issues | partly superseded (0260: blocklist first; wording → 0250) |
+| [0004](0004-policy-decisions.md) | Policy: who may open issues | partly superseded (0260: blocklist first; wording → 0250; scopes → 0311) |
 | [0005](0005-processes-ports-and-configuration.md) | Processes, ports and configuration | partly superseded |
 | [0006](0006-fake-github-contract.md) | Fake GitHub contract | partly superseded |
 | [0007](0007-testing-through-traces.md) | Tests run against a running system and assert on traces | active |
@@ -197,3 +199,6 @@ superseded by N`) and the newer ADR says what changed.
 | [0300](0300-tinyactors-0.4.md) | granary runs on @tinyactors/node 0.4.0 | active |
 | [0301](0301-continuous-deployment-from-main.md) | Every push to main is released to `dev`, and hosts pull it | partly superseded (0302) |
 | [0302](0302-edge-channel-from-github-releases.md) | An `edge` channel: every green push as a GitHub release asset | active |
+| [0310](0310-introductions-through-github-discussions.md) | Introductions through GitHub Discussions | active |
+| [0311](0311-allowlist-scopes.md) | Allowlist entries have a scope: everywhere, an owner, or a repository | active |
+| [0312](0312-sandbox-next-to-production.md) | A sandbox next to production: a second granary on the fake GitHub | active |

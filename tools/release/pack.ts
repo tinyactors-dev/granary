@@ -144,6 +144,9 @@ await mkdir(STAGE_DIR, { recursive: true });
 await cp(join(src, 'build'), join(STAGE_DIR, 'build'), { recursive: true });
 await mkdir(join(STAGE_DIR, 'dist'), { recursive: true });
 await cp(join(src, 'dist/cli.js'), join(STAGE_DIR, 'dist/cli.js'));
+// The fake GitHub a sandbox runs (ADR 0312).
+if (!(await Bun.file(join(src, 'dist/fake-github.js')).exists())) die('dist/fake-github.js is missing after `mise run cli`');
+await cp(join(src, 'dist/fake-github.js'), join(STAGE_DIR, 'dist/fake-github.js'));
 const cliHead = (await Bun.file(join(STAGE_DIR, 'dist/cli.js')).text()).slice(0, 40);
 if (!cliHead.startsWith('#!')) die('dist/cli.js has no shebang (expected "#!/usr/bin/env bun")');
 const manual = join(src, 'docs/manual');

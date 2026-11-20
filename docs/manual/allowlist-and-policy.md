@@ -8,7 +8,8 @@ matches:
 
 1. the author is on the **blocklist** (and the block hasn't expired) →
    **closed**, even if they are allowlisted or a maintainer;
-2. the author's login is on the **allowlist** (case-insensitive) → kept open;
+2. the author's login is on the **allowlist** (case-insensitive) for every
+   repository, for the repository's owner, or for that repository → kept open;
 3. the author is an `OWNER`, `MEMBER` or `COLLABORATOR` of the repository →
    kept open (maintainers can't lock themselves out by accident — only by
    blocking themselves on purpose);
@@ -72,6 +73,12 @@ sudo -u granary granary config set messages.closing \
 
 **Policy → Allowlist & blocklist** in the UI: admins add and remove logins, everyone signed in
 can view them. Changes take effect for the next issue.
+
+An entry has a scope: empty means every repository, an owner (`acme`) means
+all of that owner's repositories, `acme/widgets` that repository only. The
+same login can have several entries. Approving an
+[introduction](introductions.md) adds an entry scoped to where the person
+introduced themselves.
 
 For a first install you can seed logins with the environment variable
 `GRANARY_SEED_ALLOWLIST=alice,bob`. It is applied once at startup and never

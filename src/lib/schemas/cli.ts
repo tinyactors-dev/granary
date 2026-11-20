@@ -11,7 +11,9 @@ export const DATA_DIR_LAYOUT = {
 	masterKey: 'master.key',
 	envFile: 'granary.env',
 	adminSocket: 'admin.sock',
-	pidFile: 'granary.pid'
+	pidFile: 'granary.pid',
+	/** Marks a sandbox's data dir (ADR 0312): `granary serve` refuses it, `granary sandbox serve` needs it. */
+	sandboxMarker: 'sandbox.marker'
 } as const;
 
 /** Default data dir of the systemd unit (ADR 0163). */
@@ -93,7 +95,7 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 		description: 'Print a systemd unit for granary (or for its updater, ADR 0301)',
 		options: [
 			DATA,
-			{ name: 'unit', type: 'string', description: 'service (granary.service), update-service or update-timer (granary-update.*)', default: 'service' },
+			{ name: 'unit', type: 'string', description: 'service (granary.service), update-service or update-timer (granary-update.*), or sandbox (granary-sandbox.service, ADR 0312)', default: 'service' },
 			{ name: 'user', type: 'string', description: 'Service user', default: 'granary' },
 			{ name: 'bin', type: 'string', description: 'Path to the granary binary' },
 			{ name: 'channel', type: 'string', description: 'Channel the updater follows: edge (GitHub, every green push), dev or latest (npm)', default: 'edge' },
@@ -116,6 +118,26 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 			{ name: 'timeout', type: 'string', description: 'Seconds to wait for /healthz to report the new version', default: '60' },
 			{ name: 'dry-run', type: 'boolean', description: 'Print what would happen; change nothing' }
 		]
+	},
+	{
+		name: 'sandbox init',
+		args: [],
+		transport: 'none',
+		description: 'Set up a sandbox: a second granary whose GitHub is the fake GitHub on this machine (ADR 0312)',
+		options: [
+			{ name: 'data', type: 'string', description: 'The sandbox data dir (required), e.g. /var/lib/granary-sandbox' },
+			{ name: 'port', type: 'string', description: 'Port of the sandbox app (127.0.0.1)', default: '3100' },
+			{ name: 'github-port', type: 'string', description: 'Port of the fake GitHub (127.0.0.1)', default: '4010' },
+			{ name: 'admins', type: 'string', description: 'Admin logins (comma-separated)', default: 'admin' },
+			JSON_OUT
+		]
+	},
+	{
+		name: 'sandbox serve',
+		args: [],
+		transport: 'none',
+		description: 'Run a sandbox: the fake GitHub as a child process, then the app (ADR 0312)',
+		options: [{ name: 'data', type: 'string', description: 'The sandbox data dir (required)' }]
 	},
 	{ name: 'version', args: [], transport: 'none', description: 'Print granary, Bun and tinyactors versions', options: [DATA, JSON_OUT] }
 ] as const;
