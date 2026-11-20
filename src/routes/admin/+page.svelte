@@ -85,7 +85,7 @@
 	<Card.Root data-testid="admin-capabilities">
 		<Card.Header>
 			<Card.Title>Available here</Card.Title>
-			<Card.Description>{caps.devMode ? 'Development mode: everything is on.' : 'Production: simulation and debugging are off unless configured.'}</Card.Description>
+			<Card.Description>{caps.devMode ? 'Development mode: everything is on.' : 'Production: the simulation services are off unless configured.'}</Card.Description>
 		</Card.Header>
 		<Card.Content>
 			<ul class="space-y-1.5 text-sm">

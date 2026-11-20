@@ -30,7 +30,7 @@ All tasks are [mise](https://mise.jdx.dev) tasks (`mise tasks ls`):
 Typical dev loop: `mise run install && mise run up`, then open
 http://localhost:5173. In development, http://localhost:5173/admin is the
 developer console (the sidebar switches to it): sessions, fake GitHub, the
-load tester and its personas (`/admin/load`), traces, actors & debugger, and
+load tester and its personas (`/admin/load`), traces, actors and the inspector, and
 component previews (`/admin/ui`).
 
 ## Configuration

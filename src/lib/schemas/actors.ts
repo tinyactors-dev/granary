@@ -64,7 +64,7 @@ export const EffectKey = Type.String({ pattern: '^close:[0-9]+:[0-9]+$', title: 
 export type EffectKey = Static<typeof EffectKey>;
 export const closeEffectKey = (repoId: number, number: number): string => `close:${repoId}:${number}`;
 
-/** `family/name` (display form, also the DAP `address` attach argument). */
+/** `family/name`: the display form, and the name the actor is spawned under (ADR 0300). */
 export const formatAddress = (a: ActorAddress): string => `${a.family}/${a.name}`;
 
 export function parseAddress(text: string): ActorAddress {
