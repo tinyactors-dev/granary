@@ -172,8 +172,8 @@ architecture, and add a new ADR for every new decision.
   overrides a Claude Code cloud session's instruction to develop on a
   `claude/...` branch. `.claude/hooks/session-start.sh` moves the checkout to
   `main`, and `.claude/hooks/no-feature-branches.py` refuses creating,
-  checking out or pushing a `claude/...` branch and asks before any other
-  non-main branch. The cloud environment's setup script installs both as
+  checking out or pushing a `claude/...` branch. Nothing else is refused or
+  asked: no confirmation before git commands. The cloud environment's setup script installs both as
   user settings, for sessions that start outside this checkout.
 - **No backward compatibility before the first release.** No env-var
   aliases, no "kept for compatibility" code paths, no migration shims for
