@@ -232,6 +232,9 @@ export class Harness {
 			GRANARY_TEST_GRACE_SCALE: '0.0001',
 			GRANARY_TEST_RETRY_BASE_MS: '150',
 			GRANARY_TEST_RETENTION_INTERVAL_MS: '2000',
+			// A fixed disk (60 GB free of 100 GB), so the local copy's headroom
+			// check does not depend on the machine running the tests (ADR 0103).
+			GRANARY_TEST_STATFS_OVERRIDE: `${60e9}/${100e9}`,
 			...sink
 		};
 	}
