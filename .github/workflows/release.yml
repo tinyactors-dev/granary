@@ -1,7 +1,12 @@
-# Release (ADR 0186): triggered by hand, or called by the `main` workflow for
-# the rolling dev build of every push to main (ADR 0301). Every step delegates
-# to the single release script, tools/release/release.ts — the same one used
-# on a laptop.
+# Release (ADR 0186, 0301): every push to main runs the tests and publishes the
+# rolling dev build (`<next patch>-dev.<epoch>.g<sha>`, dist-tag `dev`), which
+# hosts pick up with `granary update`; a manual run releases either channel.
+# One workflow file for both, because npm's trusted publisher names the
+# workflow that runs (a reusable workflow's caller would not match). Every step
+# delegates to the single release script, tools/release/release.ts — the same
+# one used on a laptop.
+#
+#   test      → mise run test against the built app (gates every release)
 #
 #   pack      → one tarball, uploaded as an artifact
 #   verify    → installs that tarball natively on x86-64 and arm64 runners
@@ -25,14 +30,8 @@ on:
         description: "Dry run (pack + verify + npm publish --dry-run)"
         type: boolean
         default: true
-  workflow_call:
-    inputs:
-      channel:
-        type: string
-        default: dev
-      dry_run:
-        type: boolean
-        default: true
+  push:
+    branches: [main]
 
 permissions:
   contents: read
@@ -42,13 +41,30 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  CHANNEL: ${{ inputs.channel }}
+  # A push releases the dev channel for real; a manual run uses its inputs.
+  CHANNEL: ${{ github.event_name == 'push' && 'dev' || inputs.channel }}
+  DRY_RUN: ${{ github.event_name == 'push' && 'false' || format('{0}', inputs.dry_run) }}
   MISE_TRUSTED_CONFIG_PATHS: ${{ github.workspace }}
   MISE_YES: "1"
-  MISE_TASK_RUN_AUTO_INSTALL: "false" # pack only needs `mise run cli` (bun build)
+  MISE_TASK_RUN_AUTO_INSTALL: "false" # the tasks need only bun; skip pitchfork and agent-browser
 
 jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - uses: jdx/mise-action@v4
+        with:
+          install: false
+      - run: bun install --frozen-lockfile
+      - run: mise run test
+
   pack:
+    needs: test
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -117,7 +133,6 @@ jobs:
       - name: publish
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
-          DRY_RUN: ${{ inputs.dry_run }}
         run: |
           args=(publish --channel "$CHANNEL" --provenance)
           if [ "$DRY_RUN" = "false" ]; then args+=(--yes); fi

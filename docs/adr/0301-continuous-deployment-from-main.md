@@ -17,12 +17,16 @@ without doing anything. It costs one workflow, one CLI command and a timer
 on each host that opts in.
 
 ## Decision
-- **Every push to `main`** runs the `main` workflow: the test suite
-  (`mise run test`) against the built app, then the release workflow
-  (called with `workflow_call`) with `channel=dev`, which packs, verifies on
-  amd64 and arm64, and publishes `<next patch>-dev.<epoch>.g<sha>` under the
-  npm dist-tag `dev` through trusted publishing. A newer push supersedes a
-  waiting run. Docs-only pushes are released too: the stream is rolling.
+- **Every push to `main`** runs the release workflow (`release.yml`) for the
+  `dev` channel: the test suite (`mise run test`) against the built app,
+  then pack, verify on amd64 and arm64, and publish
+  `<next patch>-dev.<epoch>.g<sha>` under the npm dist-tag `dev` through
+  trusted publishing. A manual run still releases either channel, and the
+  tests gate it too. It is one workflow file, not a `main` workflow calling
+  `release.yml`: npm's trusted publisher matches the workflow that runs, and
+  a reusable workflow's token names its caller (the first try failed with
+  `ENEEDAUTH`). A newer push supersedes a waiting run. Docs-only pushes are
+  released too: the stream is rolling.
 - **Hosts pull.** `granary update [--channel dev|latest]` reads the
   channel's dist-tag from the registry and the running version from
   `/healthz`; when they differ it installs the new version under
