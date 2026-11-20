@@ -8,7 +8,7 @@
  * server renders as XML (`PreconditionFailed`, `SlowDown`, `NoSuchUpload`,
  * `InvalidPart`, `EntityTooSmall`, `QuotaExceeded`, …).
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import * as blobs from '../blobs';
 import { answer } from '../io/reply';
 

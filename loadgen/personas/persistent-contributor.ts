@@ -6,7 +6,7 @@
  * survives their patience window they are content.
  * Expected: every new issue is closed; their reopens stay open (ADR 0004).
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { persistentBody, persistentTitle, rageQuit, toneName } from '../text';
 import {
 	GH_ACTIONS,

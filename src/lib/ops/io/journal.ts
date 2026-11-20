@@ -4,7 +4,7 @@
  * exports the event as an OTLP log line. Writes are synchronous (bun:sqlite)
  * and run at the end of the pump turn, never inside core.
  */
-import type { IOProcessor } from '@tinyactors/node';
+import type { IOProcessor } from '@tinyactors/node-legacy';
 import type { JournalConditionRequest } from '../actors/condition';
 import type { Journal } from '../health/journal';
 import type { OpsEvent } from '../schemas/conditions';

@@ -13,7 +13,7 @@ import {
 	type DAPMessage,
 	type DebugSession,
 	type System
-} from '@tinyactors/node';
+} from '@tinyactors/node-legacy';
 import type { Socket, TCPSocketListener } from 'bun';
 import { log } from './log';
 

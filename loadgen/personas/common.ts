@@ -8,7 +8,7 @@
  * - personas act through the `github` I/O processor and explain themselves
  *   through the `host` processor (`narrate`).
  */
-import type { ActionBuilder, DefinitionBuilder, StateBuilder } from '@tinyactors/node';
+import type { ActionBuilder, DefinitionBuilder, StateBuilder } from '@tinyactors/node-legacy';
 import type { PersonaKind } from '../schemas';
 import { step, type RandomSource } from '../rng';
 

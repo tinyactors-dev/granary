@@ -4,7 +4,7 @@
  * use tinyactors' `decodeTraces`; protobuf logs and metrics use the small
  * field walker below; JSON (OTLP/JSON) is read structurally.
  */
-import { decodeTraces } from '@tinyactors/node';
+import { decodeTraces } from '@tinyactors/node-legacy';
 
 export type Signal = 'traces' | 'logs' | 'metrics';
 

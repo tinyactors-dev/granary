@@ -14,7 +14,7 @@
  *   upload.record-retry    → uploads: retry-wait, next_attempt_at, last_error
  *   upload.record-failed   → uploads: failed, last_error
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node';
+import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
 import { rm } from 'node:fs/promises';
 import { artifactKey } from '../schemas/destinations';
 import { parseOpsEventData, planAddress, runAddress, uploadAddress } from '../schemas/events';

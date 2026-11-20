@@ -13,7 +13,7 @@
  * All data lives in the `apps/main` actor; this module does HTTP, crypto
  * and webhook fan-out.
  */
-import type { System } from '@tinyactors/node';
+import type { System } from '@tinyactors/node-legacy';
 import {
 	AppAutoInstallRequest,
 	InstallAppRequest,

@@ -4,7 +4,7 @@
  * emoji), never reads or answers anything, then vanishes.
  * Expected: granary closes every issue.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { slopBody, slopTitle } from '../text';
 import {
 	GH_ACTIONS,

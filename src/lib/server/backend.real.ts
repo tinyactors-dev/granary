@@ -10,7 +10,7 @@ import { CLOSING_MESSAGES_SETTING } from '$lib/schemas/message-template';
 import { randomBytes } from 'node:crypto';
 import { LoadgenClient } from './loadgen-client';
 import { FakeInfraClient } from './fake-infra-client';
-import { TinyactorsError, type ActorInspection } from '@tinyactors/node';
+import { TinyactorsError, type ActorInspection } from '@tinyactors/node-legacy';
 import type { TSchema, Static } from '@sinclair/typebox';
 import type {
 	ActorDetail,

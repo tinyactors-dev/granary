@@ -4,7 +4,7 @@
  * `exe-peer`), its size, service and a decoded summary (span names, log
  * bodies, metric names) for assertions. Keeps the newest MAX_BATCHES.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type { Static } from '@sinclair/typebox';
 import type { FakeOtlpBatch } from '../schemas';
 import { answer } from '../io/reply';

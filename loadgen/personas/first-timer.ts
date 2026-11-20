@@ -4,7 +4,7 @@
  * replies politely once after the closure, waits a while and moves on.
  * Expected: closed.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { firstTimerBody, firstTimerTitle, politeReply } from '../text';
 import {
 	GH_ACTIONS,

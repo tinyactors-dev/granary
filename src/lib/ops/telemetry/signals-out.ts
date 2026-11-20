@@ -4,7 +4,7 @@
  * watchdog's latest sample (OTLP/protobuf via tinyactors' `metricsToOTLP`).
  * Both carry `service.name=granary-ops`.
  */
-import { metricsToOTLP, type Metric } from '@tinyactors/node';
+import { metricsToOTLP, type Metric } from '@tinyactors/node-legacy';
 import type { TelemetryBatch } from '../contract';
 import type { OpsEventKind } from '../schemas/conditions';
 import { OPS_SERVICE } from './fanout';

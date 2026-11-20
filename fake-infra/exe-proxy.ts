@@ -9,7 +9,7 @@
  * Each front is its own listener; `PUT /__control/exe-proxy` turns them on/off.
  */
 import type { Server } from 'bun';
-import type { System } from '@tinyactors/node';
+import type { System } from '@tinyactors/node-legacy';
 import { ask } from './io/reply';
 import { CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS, type Credential } from './actors/credentials';
 import { FAULTS_ADDRESS, FAULT_EVENTS, type Fault } from './actors/faults';

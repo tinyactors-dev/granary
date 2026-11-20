@@ -5,7 +5,7 @@
  * (e.g. a deleted sink). A cleared sample is only posted to conditions that
  * already exist, so healthy subjects don't create actors.
  */
-import type { IOProcessor } from '@tinyactors/node';
+import type { IOProcessor } from '@tinyactors/node-legacy';
 import { conditionAddress } from '../schemas/events';
 import type { Journal } from '../health/journal';
 import { measure, type Measurements, type SamplerDeps } from '../health/signals';

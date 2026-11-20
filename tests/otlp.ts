@@ -10,7 +10,7 @@
  * harness bumps the app's epoch before it restarts the app, so session ids
  * (which restart from the same values in a new process) stay distinct.
  */
-import { decodeTraces, type DecodedSpan } from '@tinyactors/node';
+import { decodeTraces, type DecodedSpan } from '@tinyactors/node-legacy';
 
 export interface CollectedSpan extends DecodedSpan {
 	/** `resource.attributes['service.name']` (e.g. `granary`, `fake-github`). */

@@ -10,7 +10,7 @@
  *     retention.make-room → queued
  *     ──retention.pass-done──▶ reply retention.room-made to the upload; next queued pass | idle
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, OPS_IO, SEND_ID, opsTargetUri, uploadAddress } from '../schemas/events';
 
 interface Waiter {

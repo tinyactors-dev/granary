@@ -2,7 +2,7 @@
  * Persona catalogue (ADR 0071): chart builders, descriptions, expected
  * outcomes and how each kind is bound when it arrives. Not an actor.
  */
-import type { DefinitionBuilder } from '@tinyactors/node';
+import type { DefinitionBuilder } from '@tinyactors/node-legacy';
 import type { ExpectedOutcome, PersonaKind } from '../schemas';
 import { deriveSeed, Rng } from '../rng';
 import type { PersonaBinding } from './common';

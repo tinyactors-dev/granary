@@ -6,7 +6,7 @@
  * arriving → drafting → opening → watching → (commenting) → drafting … → done;
  * a closure while watching → wronglyClosed (granary broke its promise).
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type { RandomSource } from '../rng';
 import { followUp } from '../text';
 import {

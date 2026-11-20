@@ -2,7 +2,7 @@
  * fake-infra's tinyactors System (ADR 0130): I/O processors, trace export,
  * singleton actors, bucket actors, reset and the state snapshot.
  */
-import { createSystem, type System } from '@tinyactors/node';
+import { createSystem, type System } from '@tinyactors/node-legacy';
 import { REPLY_IO, rejectAllPending, replyProcessor } from './io/reply';
 import { SETTINGS_ADDRESS, settingsChart, type SettingsData } from './actors/settings';
 import { CREDENTIALS_ADDRESS, credentialsChart, type CredentialsData } from './actors/credentials';

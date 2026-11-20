@@ -5,7 +5,7 @@
  * `newId`/`newRepoId`/`newOwnerId`; the registry uses them only when it
  * creates something. Logins are keyed case-insensitively.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type { FakeRepo, FakeUser } from '../schemas';
 import type { UserType } from '../../src/lib/schemas/github';
 import { answer } from '../io/reply';

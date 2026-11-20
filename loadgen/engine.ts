@@ -4,7 +4,7 @@
  * processors, the fake-GitHub event subscription and per-scenario observers.
  * Used by `server.ts` (HTTP API for the dev portal) and `cli.ts` (headless).
  */
-import { createSystem, type ActorAddress, type ActorID, type IORequest, type System } from '@tinyactors/node';
+import { createSystem, type ActorAddress, type ActorID, type IORequest, type System } from '@tinyactors/node-legacy';
 import type { ChartStructure } from '../src/lib/schemas/api';
 import { toChart } from '../src/lib/server/inspect/chart-structure';
 import { toJsonSafe } from '../src/lib/server/inspect/json-safe';

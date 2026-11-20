@@ -9,7 +9,7 @@
  * SAME body with the SAME delivery id again. A `redeliver` that arrives
  * while sending just waits for the attempt in progress.
  */
-import { statechart, type TransitionBuilder } from '@tinyactors/node';
+import { statechart, type TransitionBuilder } from '@tinyactors/node-legacy';
 import type { FakeDelivery } from '../schemas';
 import { REPLY_EVENT, REPLY_IO } from '../io/reply';
 import { WEBHOOK_IO, WEBHOOK_RESULT, type WebhookPost, type WebhookResult } from '../io/webhook';

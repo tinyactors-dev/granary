@@ -4,7 +4,7 @@
  * the DAP server. Kept on `globalThis` so Vite HMR never creates a second
  * one. Boot order per ADR 0003 (see `startRuntime`).
  */
-import { createSystem, type Actor, type Definition, type LoadResult, type System } from '@tinyactors/node';
+import { createSystem, type Actor, type Definition, type LoadResult, type System } from '@tinyactors/node-legacy';
 import {
 	ALLOWLIST_ADDRESS,
 	EVENTS,

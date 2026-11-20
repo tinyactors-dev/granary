@@ -8,7 +8,7 @@
  * jurisdiction's endpoint (else `NoSuchBucket`). Bucket names are ≥ 3 chars,
  * so `eu` can never be a bucket.
  */
-import type { System } from '@tinyactors/node';
+import type { System } from '@tinyactors/node-legacy';
 import { ask, isFailure } from '../io/reply';
 import * as blobs from '../blobs';
 import { SETTINGS_ADDRESS, SETTINGS_EVENTS, type Settings } from '../actors/settings';

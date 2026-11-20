@@ -5,7 +5,7 @@
  * times, then retires. Fault counts stay ≤ 2 per strike so granary's relay
  * (6 attempts) always recovers.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import {
 	GH_ACTIONS,
 	PERSONA_EVENTS as E,

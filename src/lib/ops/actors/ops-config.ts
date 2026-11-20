@@ -9,7 +9,7 @@
  * re-reads rows and spawns/replaces/destroys the long-lived actors
  * (backup-plan, retention, restore-drill), which get fresh bindings.
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, OPS_IO } from '../schemas/events';
 
 export interface OpsConfigData {

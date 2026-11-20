@@ -8,7 +8,7 @@
  * is consumed (remaining−1) and returned, else null. Exhausted faults stay
  * listed with `remaining: 0`.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type { FakeFault, InjectFaultRequest } from '../schemas';
 import { answer } from '../io/reply';
 

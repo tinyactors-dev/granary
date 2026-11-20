@@ -9,7 +9,7 @@
  * states, and posts `signal.sample` to every `condition/<id>`. Keeping the
  * reads in a processor keeps the chart free of side effects.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, SEND_ID } from '../schemas/events';
 
 export const WATCHDOG_REVISION = 'v1';

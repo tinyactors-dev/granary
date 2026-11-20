@@ -4,7 +4,7 @@
  * over the body bytes, then posts `webhook.result {responseCode, error}`
  * back to the delivery actor. `responseCode` is null when unreachable.
  */
-import type { IOProcessor } from '@tinyactors/node';
+import type { IOProcessor } from '@tinyactors/node-legacy';
 
 export const WEBHOOK_IO = 'webhook';
 export const WEBHOOK_RESULT = 'webhook.result';

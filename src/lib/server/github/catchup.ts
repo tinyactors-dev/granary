@@ -12,7 +12,7 @@
  * attempt was accepted, reply `catchup.redelivered`.
  * Failures reply `catchup.failed {error}`; the actor stays alive.
  */
-import type { ActorAddress, IOProcessor } from '@tinyactors/node';
+import type { ActorAddress, IOProcessor } from '@tinyactors/node-legacy';
 import { Type, type Static } from '@sinclair/typebox';
 import { GITHUB_APP_EVENTS, GITHUB_APP_LIFECYCLE_EVENTS } from '../../schemas/github-app';
 import { parse } from '../../schemas/standard';

@@ -8,7 +8,7 @@
  * `idle` arms a delayed `catchup.tick`: `firstDelayMs` after boot, then
  * `intervalMs`. All GitHub I/O goes through the `github-app` processor.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import {
 	CATCHUP_EVENTS,
 	CATCHUP_FAMILY,

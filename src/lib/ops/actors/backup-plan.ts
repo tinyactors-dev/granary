@@ -14,7 +14,7 @@
  *   paused ──plan.run-now──▶ dispatching
  *   any: run.finished → plan.refresh-interval via backup-ledger (egress stretch)
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, OPS_IO, SEND_ID } from '../schemas/events';
 
 export interface BackupPlanData {

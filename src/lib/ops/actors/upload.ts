@@ -16,7 +16,7 @@
  *   done   → upload.done → backup-run/<runId> (local-dir: retention.tick to keep one copy)
  *   failed → upload.record-failed via backup-ledger; upload.failed → backup-run/<runId>
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, OPS_IO, SEND_ID, opsTargetUri, retentionAddress, runAddress } from '../schemas/events';
 import { manifestKeyOf } from '../schemas/destinations';
 import type { BackupManifest } from '../schemas/manifest';

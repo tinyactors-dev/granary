@@ -18,7 +18,7 @@
  * Final states `allowed | closed | failed | settled` report `IssueDoneData`,
  * which the system `done` hook writes to SQLite.
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import {
 	ALLOWLIST_ADDRESS,
 	CHECK_TIMEOUT_MS,

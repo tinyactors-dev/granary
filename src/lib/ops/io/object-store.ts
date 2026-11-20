@@ -15,7 +15,7 @@
  *   drill.fetch         newest committed backup of a database → download,
  *                       decrypt, verify hashes → drill.fetched | drill.checked
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node';
+import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseOpsEventData } from '../schemas/events';

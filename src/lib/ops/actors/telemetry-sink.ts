@@ -18,7 +18,7 @@
  * (`reset-sink-circuit`) closes an open circuit early. Spans of this family
  * are never exported (loop breaking, ADR 0093).
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, SEND_ID } from '../schemas/events';
 import { OTLP_EXPORT_EVENT, OTLP_IO_TYPE, type OtlpExportRequest, type QueuedBatch } from '../io/otlp';
 

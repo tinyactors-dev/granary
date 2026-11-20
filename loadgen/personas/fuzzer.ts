@@ -3,7 +3,7 @@
  * odd issues judged by the oracle, open/reopen races, and signed raw
  * webhook bodies that granary must answer < 500 — then is exhausted.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { Rng } from '../rng';
 import { fuzzCases, type FuzzCase } from '../fuzz-cases';
 import {

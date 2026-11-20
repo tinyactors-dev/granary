@@ -7,7 +7,7 @@
  * the OpsBackend from their partial backends.
  */
 import type { Database } from 'bun:sqlite';
-import type { IOProcessor, Invoker, LoadResult, LoaderOptions, System, ActorAddress } from '@tinyactors/node';
+import type { IOProcessor, Invoker, LoadResult, LoaderOptions, System, ActorAddress } from '@tinyactors/node-legacy';
 import type { OpsBackendBackups, OpsBackendHealth, OpsHost, TelemetrySink } from './contract';
 import type { RemediationAction } from './schemas/conditions';
 
@@ -38,9 +38,9 @@ export interface OpsContext {
 	 * Spawn a named actor and remember its address for `listOpsActors` and
 	 * trace attribution (additive, ADR 0120). Prefer it over `system.spawn`.
 	 */
-	spawn<Data extends object>(definition: import('@tinyactors/node').Definition<Data>, address: ActorAddress, binding?: Partial<Data>): import('@tinyactors/node').Actor<Data>;
+	spawn<Data extends object>(definition: import('@tinyactors/node-legacy').Definition<Data>, address: ActorAddress, binding?: Partial<Data>): import('@tinyactors/node-legacy').Actor<Data>;
 	/** Never export spans of this definition (telemetry loop breaking, ADR 0093/0120). */
-	excludeFromTraces?(definition: import('@tinyactors/node').Definition<object>): void;
+	excludeFromTraces?(definition: import('@tinyactors/node-legacy').Definition<object>): void;
 	/** Addresses the ops System has spawned or loaded (ADR 0150), for naming actors in listings. */
 	addresses?(): ActorAddress[];
 }

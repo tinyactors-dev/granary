@@ -8,7 +8,7 @@
  * checks the revision matches the running definition, and converts it into
  * a JSON-safe `ChartStructure`, cached per family+revision.
  */
-import type { DefinitionBuilder, DefinitionIdentity } from '@tinyactors/node';
+import type { DefinitionBuilder, DefinitionIdentity } from '@tinyactors/node-legacy';
 import type { ChartStructure } from '../../schemas/api';
 import { toChart } from './chart-structure';
 import { allowlistChart } from '../actors/allowlist';

@@ -2,7 +2,7 @@
  * The fake GitHub's tinyactors System (ADR 0060): I/O processors, trace
  * export, singleton actors, reset and the state snapshot.
  */
-import { createSystem, type System } from '@tinyactors/node';
+import { createSystem, type System } from '@tinyactors/node-legacy';
 import { REPLY_IO, rejectAllPending, replyProcessor } from './io/reply';
 import { WEBHOOK_IO, webhookProcessor, type WebhookConfig } from './io/webhook';
 import { REGISTRY_ADDRESS, registryChart, type RegistryData } from './actors/registry';

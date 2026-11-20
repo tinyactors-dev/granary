@@ -4,7 +4,7 @@
  * Produces GitHub-shaped `Issue` / `IssueComment` objects
  * (`src/lib/schemas/github.ts`).
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type {
 	AuthorAssociation,
 	GitHubUser,

@@ -3,7 +3,7 @@
  * which charts exist — shared by the app inspector (`charts.ts`) and the
  * load generator's persona inspector (ADR 0071).
  */
-import type { ActionSpec, DefinitionSpec, ExpressionSpec, StateSpec, TransitionSpec } from '@tinyactors/node';
+import type { ActionSpec, DefinitionSpec, ExpressionSpec, StateSpec, TransitionSpec } from '@tinyactors/node-legacy';
 import type { ChartSource, ChartState, ChartStructure, ChartTransition } from '../../schemas/api';
 
 export function toChart(

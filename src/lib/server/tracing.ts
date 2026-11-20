@@ -15,7 +15,7 @@
  * in memory for `/admin` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
  */
 import { applyFamilySpanName, spanKindOf } from '../trace/span-name';
-import { decodeTraces, stepSpanID, type ActorInspection, type DecodedSpan, type System } from '@tinyactors/node';
+import { decodeTraces, stepSpanID, type ActorInspection, type DecodedSpan, type System } from '@tinyactors/node-legacy';
 import type { GetRecentSpansInput, ListRecentTracesInput, SpanAttributeValue, SpanSummary, TraceSummary } from '../schemas/dev';
 import { summarizeTraces } from './trace-summary';
 import { SPAN_BUFFER_SIZE } from '../schemas/dev';

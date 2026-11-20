@@ -6,7 +6,7 @@
  */
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Definition, System } from '@tinyactors/node';
+import type { Definition, System } from '@tinyactors/node-legacy';
 import type { OpsContext } from '../feature';
 import type { HostDatabase } from '../schemas/host';
 import type { Destination } from '../schemas/destinations';

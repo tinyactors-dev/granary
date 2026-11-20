@@ -10,7 +10,7 @@
 import { Database } from 'bun:sqlite';
 import { readdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-import type { IOProcessor } from '@tinyactors/node';
+import type { IOProcessor } from '@tinyactors/node-legacy';
 import type { OpsContext, RemediationHandler } from '../feature';
 import type { RemediationAction } from '../schemas/conditions';
 import { sinkAddress, type OpsEventData } from '../schemas/events';

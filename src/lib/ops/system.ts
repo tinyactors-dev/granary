@@ -5,7 +5,7 @@
  * spans of excluded definitions (the telemetry-sink family) are removed
  * before ops traces reach the fan-out.
  */
-import { createSystem, type Actor, type ActorAddress, type Definition, type IOProcessor, type System } from '@tinyactors/node';
+import { createSystem, type Actor, type ActorAddress, type Definition, type IOProcessor, type System } from '@tinyactors/node-legacy';
 import type { OpsLogger, TelemetryBatch } from './contract';
 import { filterSpans, rewriteSpans, type SpanFacts, type SpanEdit } from './telemetry/otlp-wire';
 import { familySpanName, parseTinyactorsName, SPAN_KIND_ATTR, SPAN_NAME_ATTR } from './telemetry/span-name';

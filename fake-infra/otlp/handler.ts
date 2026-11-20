@@ -5,7 +5,7 @@
  * any `otlp-bearer` credential is active (otherwise open, like an Alloy
  * behind a private network).
  */
-import type { System } from '@tinyactors/node';
+import type { System } from '@tinyactors/node-legacy';
 import { ask } from '../io/reply';
 import { COLLECTOR_ADDRESS, COLLECTOR_EVENTS, type OtlpBatch } from '../actors/collector';
 import { CREDENTIALS_ADDRESS, CREDENTIAL_EVENTS, type Credential } from '../actors/credentials';

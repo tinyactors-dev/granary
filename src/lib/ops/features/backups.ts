@@ -9,7 +9,7 @@
  */
 import { readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ActorAddress, LoadResult } from '@tinyactors/node';
+import type { ActorAddress, LoadResult } from '@tinyactors/node-legacy';
 import type { OpsBackendBackups } from '../contract';
 import type { BackupsFeature, OpsContext, SecretReader } from '../feature';
 import { OPS_CONFIG_ADDRESS, OPS_FAMILY, OPS_IO, parseUploadName, runAddress } from '../schemas/events';

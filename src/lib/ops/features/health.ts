@@ -3,7 +3,7 @@
  * sinks, the watchdog, conditions and the remediator, ops metrics/logs, and
  * the `OpsBackendHealth` half of the OpsBackend.
  */
-import type { Actor, Definition, LoadResult } from '@tinyactors/node';
+import type { Actor, Definition, LoadResult } from '@tinyactors/node-legacy';
 import type { OpsContext, HealthFeature, RemediationHandler } from '../feature';
 import type { OpsBackendHealth } from '../contract';
 import { OPS_FAMILY, REMEDIATOR_ADDRESS, WATCHDOG_ADDRESS, sinkAddress } from '../schemas/events';

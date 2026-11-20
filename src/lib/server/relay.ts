@@ -15,7 +15,7 @@
  * or after MAX_EFFECT_ATTEMPTS `dead` + `github.gave-up` to `reply_to`.
  * At most `concurrency` effects run at once.
  */
-import type { System } from '@tinyactors/node';
+import type { System } from '@tinyactors/node-legacy';
 import { EVENTS, MAX_EFFECT_ATTEMPTS, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
 import { commentMarker } from '../schemas/github';
 import { commentWithMarker, renderClosingBody } from './closing-messages';

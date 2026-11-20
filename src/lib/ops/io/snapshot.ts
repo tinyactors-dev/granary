@@ -12,7 +12,7 @@
  *     → Worker: integrity_check + row counts of the restored copy
  *     → compare with the manifest → restore_drills row → reply drill.checked
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node';
+import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
 import { mkdir, readdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseOpsEventData } from '../schemas/events';

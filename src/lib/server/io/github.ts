@@ -12,7 +12,7 @@
  *   later.
  * Throwing fails the send: the actor gets `error.communication`.
  */
-import type { ActorAddress as TaActorAddress, IOProcessor } from '@tinyactors/node';
+import type { ActorAddress as TaActorAddress, IOProcessor } from '@tinyactors/node-legacy';
 import {
 	EVENTS,
 	GITHUB_IO_TYPE,

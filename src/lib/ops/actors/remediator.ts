@@ -10,7 +10,7 @@
  * Every action is idempotent and re-derivable from current facts, so a
  * crash mid-remediation just re-evaluates on the next watchdog sample.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, conditionAddress, opsTargetUri, type OpsEventData } from '../schemas/events';
 
 export const REMEDIATOR_REVISION = 'v1';

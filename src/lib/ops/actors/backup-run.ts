@@ -15,7 +15,7 @@
  *     upload.done / upload.failed → tally; all terminal → finalizing
  *   finalizing (entry: run.finalize via backup-ledger) → succeeded | partial | failed | postponed
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, OPS_IO } from '../schemas/events';
 import type { RawSnapshot } from '../backups/repo';
 

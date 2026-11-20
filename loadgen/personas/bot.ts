@@ -3,7 +3,7 @@
  * floods 5–15 dependabot-style issues in quick succession.
  * Expected: every issue closed (bots are not special, ADR 0004).
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { botBody, botTitle } from '../text';
 import {
 	GH_ACTIONS,

@@ -5,7 +5,7 @@
  * path (for S3: path + query, so sub-resources like `?uploads` can be
  * targeted). Exhausted faults stay listed with `remaining: 0`.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type { InjectFaultRequest } from '../schemas';
 import { answer } from '../io/reply';
 

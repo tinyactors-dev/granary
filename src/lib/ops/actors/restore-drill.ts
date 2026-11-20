@@ -12,7 +12,7 @@
  *   checking (entry: drill.check via snapshot) ──drill.checked──▶ next
  *   next: more databases → fetching, else armed (lastDrillAt = now)
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, OPS_IO, SEND_ID } from '../schemas/events';
 import type { BackupManifest } from '../schemas/manifest';
 

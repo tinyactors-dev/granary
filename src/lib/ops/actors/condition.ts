@@ -19,7 +19,7 @@
  * Each state entry journals the condition row (and an ops event when the
  * transition produced one) through the `journal` I/O processor.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import { OPS_FAMILY, REMEDIATOR_ADDRESS, opsTargetUri, type OpsEventData } from '../schemas/events';
 import type { ConditionKind, ConditionState, OpsEventKind, RemediationAction } from '../schemas/conditions';
 import { policyFor } from '../health/policies';

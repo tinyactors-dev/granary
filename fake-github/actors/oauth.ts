@@ -2,7 +2,7 @@
  * `oauth/main` — the fake OAuth web flow (ADR 0006, ADR 0060): single-use
  * authorization codes (10 min) and the access tokens they are exchanged for.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { answer } from '../io/reply';
 
 export const OAUTH_ADDRESS = { family: 'oauth', name: 'main' } as const;

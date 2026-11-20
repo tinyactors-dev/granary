@@ -11,7 +11,7 @@
  * is exhausted) and `observer.settled` (every issue expected closed is
  * closed or overdue).
  */
-import { statechart, type ActionBuilder } from '@tinyactors/node';
+import { statechart, type ActionBuilder } from '@tinyactors/node-legacy';
 import { HOST_IO } from '../personas/common';
 
 export const SCENARIO_FAMILY = 'scenario';

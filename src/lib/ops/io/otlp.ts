@@ -6,7 +6,7 @@
  *
  * Also exports `testSinkConnection` for the OpsBackend's test connection.
  */
-import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node';
+import type { EffectContext, IOProcessor, IORequest } from '@tinyactors/node-legacy';
 import type { OpsLogger, TestConnectionResult, TestStep } from '../contract';
 import type { Redactor, SecretReader } from '../feature';
 import { EXE_AUTH_HEADER, type SinkAuth, type TelemetrySignal } from '../schemas/sinks';

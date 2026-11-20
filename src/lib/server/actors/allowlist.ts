@@ -9,7 +9,7 @@
  * - `allowlist.replace {logins}` swaps the allowlist;
  * - `blocklist.replace {entries}` swaps the blocklist.
  */
-import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node';
+import { statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
 import {
 	EVENTS,
 	FAMILY,

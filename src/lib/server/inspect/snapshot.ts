@@ -1,7 +1,7 @@
 /**
  * Build an `ActorSnapshot` from a live tinyactors actor (ADR 0056).
  */
-import type { ActorAddress, ActorID, ActorInspection, EventOrigin, InspectedEvent, System } from '@tinyactors/node';
+import type { ActorAddress, ActorID, ActorInspection, EventOrigin, InspectedEvent, System } from '@tinyactors/node-legacy';
 import type { ActorSnapshot, ActorSummary, SnapshotEvent } from '../../schemas/api';
 import { formatAddress } from '../../schemas/actors';
 import { chartFor } from './charts';

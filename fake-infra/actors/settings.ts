@@ -3,7 +3,7 @@
  * skew, and which exe.dev proxy fronts are on. The server asks
  * `settings.get` on every request.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import type { FidelityRequest } from '../schemas';
 import { answer } from '../io/reply';
 

@@ -9,7 +9,7 @@
  * this processor resolves the waiting promise with `result`.
  * `answer(fn)` builds such a transition for a chart.
  */
-import type { ActorTarget, IOProcessor, System, TransitionBuilder } from '@tinyactors/node';
+import type { ActorTarget, IOProcessor, System, TransitionBuilder } from '@tinyactors/node-legacy';
 
 export const REPLY_IO = 'reply';
 export const REPLY_EVENT = 'reply';

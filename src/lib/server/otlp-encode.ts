@@ -7,7 +7,7 @@
  * Not encoded (the decoder does not surface them): trace_state, span flags,
  * dropped counts, link flags, schema URLs.
  */
-import type { DecodedSpan } from '@tinyactors/node';
+import type { DecodedSpan } from '@tinyactors/node-legacy';
 
 class Writer {
 	#chunks: number[] = [];

@@ -77,7 +77,7 @@ run = "pitchfork logs -t granary/app-real granary/rustfs granary/grafana"
 
 [tasks.cli]
 description = "Build the granary CLI into dist/cli.js (ADR 0159)"
-run = "bun build src/cli/main.ts --target bun --external @tinyactors/node --outfile dist/cli.js"
+run = "bun build src/cli/main.ts --target bun --external @tinyactors/node --external @tinyactors/node-legacy --outfile dist/cli.js"
 
 [tasks.build]
 description = "Production build (svelte-adapter-bun) into build/"

@@ -7,7 +7,7 @@
  * this actor for data. Private keys are never stored: a manifest code holds
  * the PEM only until its one conversion.
  */
-import { statechart } from '@tinyactors/node';
+import { statechart } from '@tinyactors/node-legacy';
 import { answer, type ActorFailure } from '../io/reply';
 
 export const APPS_ADDRESS = { family: 'apps', name: 'main' } as const;
