@@ -12,6 +12,9 @@ import {
 	DevOpenIssueInput,
 	DevRedeliverInput,
 	DevReopenIssueInput,
+	DevSetUpDiscussionsInput,
+	DevIntroduceInput,
+	type DevIntroduceResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
 	type DevInfo,
@@ -89,6 +92,22 @@ export const devReopenIssue = command(
 		return result;
 	}
 );
+
+/** Command `{owner, repo}` (ADR 0310): Discussions on + the Introductions category on the fake. */
+export const devSetUpDiscussions = command(standard(DevSetUpDiscussionsInput), async (input): Promise<{ ok: true }> => {
+	requireAdminArea('fakeGithub');
+	await withBackend((b) => b.devSetUpDiscussions(input));
+	await getDevInfo().refresh();
+	return { ok: true };
+});
+
+/** Command `{owner, repo, author, title, body?, category?}` (ADR 0310): post a discussion on the fake as `author`. */
+export const devIntroduce = command(standard(DevIntroduceInput), async (input): Promise<DevIntroduceResult> => {
+	requireAdminArea('fakeGithub');
+	const result = await withBackend((b) => b.devIntroduce(input));
+	await getDevInfo().refresh();
+	return result;
+});
 
 /** Command `{deliveryId}`: the fake resends the delivery with the same id. */
 export const devRedeliver = command(

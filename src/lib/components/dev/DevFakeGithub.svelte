@@ -16,7 +16,8 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import { toast } from 'svelte-sonner';
 	import type { DevInfo } from '$lib/schemas/dev';
-	import { devInjectFault, devOpenIssue, devRedeliver, devReopenIssue, devReset } from '$lib/remote/dev.remote';
+	import { devInjectFault, devIntroduce, devOpenIssue, devRedeliver, devReopenIssue, devReset, devSetUpDiscussions } from '$lib/remote/dev.remote';
+	import HandIcon from '@lucide/svelte/icons/hand';
 	import { DEV_ASSOCIATIONS, describeError, issueHref } from '$lib/components/app/format';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import JsonBlock from '$lib/components/app/JsonBlock.svelte';
@@ -44,6 +45,8 @@
 	const faultMethods = ['*', 'GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
 
 	let redeliverId = $state('');
+	/** Introductions playground (ADR 0310). */
+	let intro = $state({ owner: 'acme', repo: 'widgets', author: 'mallory', title: 'Hi, I would like to help', body: "I'm new here and would like to work on the docs." });
 	let busy = $state<string | null>(null);
 	let resetOpen = $state(false);
 
@@ -234,6 +237,43 @@
 					<p class="text-muted-foreground text-xs">Same delivery id, so granary should deduplicate it.</p>
 				</form>
 			</div>
+			<!-- Introductions playground (ADR 0310) -->
+			<div class="space-y-3 rounded-lg border p-4 xl:col-span-2" data-testid="introduce-form">
+				<h2 class="flex items-center gap-2 text-sm font-semibold"><HandIcon class="size-4" /> Introductions</h2>
+				<p class="text-muted-foreground text-xs">
+					Turn on Discussions and add the Introductions category on the fake (what an admin does on GitHub), then post an introduction as
+					someone granary closed. It appears on <a class="underline" href="/introductions">Introductions</a>. Use <code>.github</code> as the
+					repo for an org-level introduction.
+				</p>
+				<div class="grid gap-3 sm:grid-cols-3">
+					<div class="grid gap-1.5"><Label for="in-owner">Owner</Label><Input id="in-owner" bind:value={intro.owner} /></div>
+					<div class="grid gap-1.5"><Label for="in-repo">Repo</Label><Input id="in-repo" bind:value={intro.repo} /></div>
+					<div class="grid gap-1.5"><Label for="in-author">Author</Label><Input id="in-author" list="fake-users" bind:value={intro.author} /></div>
+				</div>
+				<div class="grid gap-1.5"><Label for="in-title">Title</Label><Input id="in-title" bind:value={intro.title} /></div>
+				<div class="grid gap-1.5"><Label for="in-body">Introduction</Label><Textarea id="in-body" rows={2} bind:value={intro.body} /></div>
+				<div class="flex flex-wrap gap-2">
+					<Button
+						variant="outline"
+						disabled={busy !== null}
+						onclick={() => run('discussions', () => devSetUpDiscussions({ owner: intro.owner, repo: intro.repo }), () => `Discussions on in ${intro.owner}/${intro.repo}, with an Introductions category`)}
+					>
+						{#if busy === 'discussions'}<LoaderCircleIcon class="animate-spin" />{/if} Set up Discussions
+					</Button>
+					<Button
+						disabled={busy !== null}
+						onclick={() =>
+							run(
+								'introduce',
+								() => devIntroduce({ owner: intro.owner, repo: intro.repo, author: intro.author, title: intro.title, body: intro.body }),
+								(r) => `${intro.author} introduced themselves (#${r.number}, ${r.deliveryId ? 'delivered' : 'not delivered: no GitHub App covers the repo'})`
+							)}
+					>
+						{#if busy === 'introduce'}<LoaderCircleIcon class="animate-spin" />{:else}<HandIcon />{/if} Post introduction
+					</Button>
+				</div>
+			</div>
+
 		</div>
 
 		{#if fs}

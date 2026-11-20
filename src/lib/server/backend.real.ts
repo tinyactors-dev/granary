@@ -59,6 +59,9 @@ import type {
 	DevOpenIssueResult,
 	DevRedeliverResult,
 	DevReopenIssueInput,
+	DevSetUpDiscussionsInput,
+	DevIntroduceInput,
+	DevIntroduceResult,
 	DevReopenIssueResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
@@ -100,6 +103,8 @@ import {
 	InjectFaultResponse,
 	RedeliverResponse,
 	ReopenIssueResponse,
+	CreateDiscussionResponse,
+	FakeCategory,
 	parseFakeState
 } from '../../../fake-github/schemas';
 import { BackendError, type Backend } from './backend';
@@ -403,6 +408,11 @@ export class RealBackend implements Backend {
 			.closedItemsOf(r.author, r.scope)
 			.map((i) => ({ kind: i.kind, issueKey: itemKey(i.repoId, i.number), owner: i.owner, repo: i.repo, number: i.number, title: i.title, htmlUrl: i.htmlUrl }));
 		const effect = this.#wal.getOutbox(`approve:${r.repo_id}:${r.number}`);
+		const effectPayload = effect ? parseOutboxPayload(effect.payload) : null;
+		const reopened: IntroductionClosedItem[] =
+			effectPayload && 'effect' in effectPayload
+				? effectPayload.reopen.map((i) => ({ kind: i.kind, issueKey: itemKey(i.repoId, i.number), owner: i.owner, repo: i.repo, number: i.number, title: i.title, htmlUrl: i.htmlUrl }))
+				: [];
 		return {
 			introKey: r.intro_key,
 			owner: r.owner,
@@ -422,6 +432,7 @@ export class RealBackend implements Backend {
 			note: r.note,
 			policy: { allowed: verdict.allowed, reason: verdict.reason },
 			closedItems,
+			reopened,
 			action: effect ? { state: effect.state, attempts: effect.attempts, lastError: effect.last_error, effectKey: effect.effect_key } : null
 		};
 	}
@@ -725,6 +736,26 @@ export class RealBackend implements Backend {
 
 	async devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult> {
 		return this.#control('POST', CONTROL_PATHS.reopen, ReopenIssueResponse, input);
+	}
+
+	async devSetUpDiscussions(input: DevSetUpDiscussionsInput): Promise<void> {
+		await this.#control('POST', CONTROL_PATHS.repos, EnsureRepoResponse, { owner: input.owner, name: input.repo });
+		await this.#control('POST', CONTROL_PATHS.discussionsEnabled, ControlOk, { owner: input.owner, repo: input.repo, enabled: true });
+		await this.#control('POST', CONTROL_PATHS.discussionCategories, FakeCategory, { owner: input.owner, repo: input.repo, name: 'Introductions', emoji: ':wave:' });
+		await this.#control('POST', CONTROL_PATHS.discussionCategories, FakeCategory, { owner: input.owner, repo: input.repo, name: 'General' });
+		await this.#rt.introductions.check(input.owner, input.repo);
+	}
+
+	async devIntroduce(input: DevIntroduceInput): Promise<DevIntroduceResult> {
+		const r = await this.#control('POST', CONTROL_PATHS.discussions, CreateDiscussionResponse, {
+			owner: input.owner,
+			repo: input.repo,
+			author: input.author,
+			category: input.category ?? 'introductions',
+			title: input.title,
+			...(input.body ? { body: input.body } : {})
+		});
+		return { number: r.number, deliveryId: r.deliveryId };
 	}
 
 	async devRedeliver(deliveryId: string): Promise<DevRedeliverResult> {

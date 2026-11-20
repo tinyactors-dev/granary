@@ -58,6 +58,9 @@ import type {
 	DevOpenIssueResult,
 	DevRedeliverResult,
 	DevReopenIssueInput,
+	DevSetUpDiscussionsInput,
+	DevIntroduceInput,
+	DevIntroduceResult,
 	DevReopenIssueResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
@@ -454,6 +457,7 @@ export class StubBackend implements Backend {
 			note: null,
 			policy: { allowed: false, reason: 'not-allowed' },
 			closedItems: [{ kind: 'issue', issueKey: '1001-9', owner: 'acme', repo: 'widgets', number: 9, title: 'Install docs are wrong', htmlUrl: 'https://github.com/acme/widgets/issues/9' }],
+			reopened: [],
 			action: null
 		}
 	];
@@ -473,7 +477,7 @@ export class StubBackend implements Backend {
 	async approveIntroduction(introKey: string, by: string): Promise<IntroductionSummary> {
 		const i = this.introductions.find((x) => x.introKey === introKey);
 		if (!i) throw new BackendError('not-found', `No introduction ${introKey}`);
-		Object.assign(i, { state: 'approved', decidedBy: by, decidedAt: Date.now(), policy: { allowed: true, reason: 'allowlist' }, closedItems: [] });
+		Object.assign(i, { state: 'approved', decidedBy: by, decidedAt: Date.now(), policy: { allowed: true, reason: 'allowlist' }, reopened: i.closedItems, closedItems: [] });
 		return i;
 	}
 
@@ -673,6 +677,12 @@ export class StubBackend implements Backend {
 		}
 		const i = this.addIssue(input.owner, input.repo, input.author, input.association ?? 'NONE', input.title, Date.now());
 		return { kind: input.kind ?? 'issue', number: i.number, deliveryId: i.deliveryId, repoId: i.repoId, issueKey: issueKey(i.repoId, i.number) };
+	}
+
+	async devSetUpDiscussions(_input: DevSetUpDiscussionsInput): Promise<void> {}
+
+	async devIntroduce(_input: DevIntroduceInput): Promise<DevIntroduceResult> {
+		return { number: 1, deliveryId: null };
 	}
 
 	async devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult> {

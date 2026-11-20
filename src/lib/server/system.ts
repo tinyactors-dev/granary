@@ -44,6 +44,8 @@ import { Wal } from './wal';
 /** Inbox rows still `pending` after this long are re-posted by the sweeper. */
 export const SWEEP_AGE_MS = 30_000;
 export const SWEEP_INTERVAL_MS = 30_000;
+/** How often every repository's Discussions setup is checked again (ADR 0310). */
+export const INTRODUCTIONS_RECHECK_MS = 15 * 60_000;
 
 /** Actor names (ADR 0300): `<family>/<name>`, as in traces and the admin UI. */
 export const ALLOWLIST_NAME = formatAddress(ALLOWLIST_ADDRESS);
@@ -282,6 +284,11 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		introductions.checkAll().catch((e) => log.warn('introductions: setup check failed', e));
 	};
 	if (github.mode() === 'app') setTimeout(checkIntroductions, 1000).unref?.();
+	// GitHub sends no webhook when a category is added: look again now and then.
+	const introductionsTimer = setInterval(() => {
+		if (github.mode() === 'app') checkIntroductions();
+	}, INTRODUCTIONS_RECHECK_MS);
+	introductionsTimer.unref?.();
 	github.onModeChange((mode) => {
 		if (mode === 'app') {
 			spawnCatchup();
@@ -360,6 +367,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 			runtime.closed = true;
 			log.info(`shutting down${reason ? ` (${reason})` : ''}`);
 			clearInterval(sweeper);
+			clearInterval(introductionsTimer);
 			await relay!.stop();
 			for (const hook of shutdownHooks) {
 				try {

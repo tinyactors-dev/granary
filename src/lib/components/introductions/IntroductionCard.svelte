@@ -96,8 +96,20 @@
 					{/each}
 				</ul>
 			{/if}
+			{#if intro.reopened.length}
+				<span>Reopened for them:</span>
+				<ul class="ml-4 list-disc" data-testid="introduction-reopened">
+					{#each intro.reopened as item (item.issueKey)}
+						<li><a class="underline-offset-4 hover:underline" href="/issues/{item.issueKey}">{item.owner}/{item.repo}#{item.number}</a> {item.title}</li>
+					{/each}
+				</ul>
+			{/if}
 			{#if intro.decidedBy}
-				<span>{STATE_LABELS[intro.state]} by {intro.decidedBy}{#if intro.decidedAt} · <RelativeTime ms={intro.decidedAt} />{/if}{intro.note ? ` — “${intro.note}”` : ''}</span>
+				<span>
+					{STATE_LABELS[intro.state]} by {intro.decidedBy}
+					{#if intro.decidedAt}<span aria-hidden="true">·</span> <RelativeTime ms={intro.decidedAt} />{/if}
+					{#if intro.note}— “{intro.note}”{/if}
+				</span>
 			{/if}
 			{#if intro.action && intro.action.state !== 'done'}
 				<span class={intro.action.state === 'dead' ? 'text-destructive' : ''}>

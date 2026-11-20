@@ -493,6 +493,8 @@ export interface IntroductionSummary {
 	policy: { allowed: boolean; reason: string };
 	/** What granary closed on them in the scope (an approval reopens these). */
 	closedItems: IntroductionClosedItem[];
+	/** What the approval reopened (from its action). */
+	reopened: IntroductionClosedItem[];
 	/** The approval's GitHub action, once there is one. */
 	action: { state: OutboxState; attempts: number; lastError: string | null; effectKey: string } | null;
 }

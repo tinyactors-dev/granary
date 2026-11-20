@@ -110,6 +110,29 @@ export const DevReopenIssueInput = ReopenIssueRequest;
 export type DevReopenIssueInput = Static<typeof DevReopenIssueInput>;
 export type DevReopenIssueResult = ReopenIssueResponse;
 
+/** ADR 0310: turn Discussions on for a fake repository and add the Introductions category (idempotent). */
+export const DevSetUpDiscussionsInput = Type.Object({ owner: CreateIssueRequest.properties.owner, repo: CreateIssueRequest.properties.repo }, closed);
+export type DevSetUpDiscussionsInput = Static<typeof DevSetUpDiscussionsInput>;
+
+/** ADR 0310: post a discussion as `author` (default category: Introductions). */
+export const DevIntroduceInput = Type.Object(
+	{
+		owner: CreateIssueRequest.properties.owner,
+		repo: CreateIssueRequest.properties.repo,
+		author: CreateIssueRequest.properties.author,
+		title: Type.String({ minLength: 1, maxLength: 256 }),
+		body: Type.Optional(Type.String({ maxLength: 65536 })),
+		category: Type.Optional(Type.String({ minLength: 1, maxLength: 100 }))
+	},
+	closed
+);
+export type DevIntroduceInput = Static<typeof DevIntroduceInput>;
+export interface DevIntroduceResult {
+	number: number;
+	/** Null when no installed GitHub App covers the repo on the fake. */
+	deliveryId: string | null;
+}
+
 export const DevRedeliverInput = Type.Object({ deliveryId: Type.String({ minLength: 1 }) }, closed);
 export type DevRedeliverInput = Static<typeof DevRedeliverInput>;
 export type DevRedeliverResult = RedeliverResponse;

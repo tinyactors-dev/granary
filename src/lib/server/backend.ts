@@ -77,6 +77,9 @@ import type {
 	DevOpenIssueResult,
 	DevRedeliverResult,
 	DevReopenIssueInput,
+	DevSetUpDiscussionsInput,
+	DevIntroduceInput,
+	DevIntroduceResult,
 	DevReopenIssueResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
@@ -191,6 +194,10 @@ export interface Backend {
 	/** Ensures the repo (`POST /__control/repos`) then `POST /__control/issues`. */
 	devOpenIssue(input: DevOpenIssueInput): Promise<DevOpenIssueResult>;
 	devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult>;
+	/** ADR 0310: Discussions on + the Introductions category on a fake repository. */
+	devSetUpDiscussions(input: DevSetUpDiscussionsInput): Promise<void>;
+	/** ADR 0310: post a discussion on the fake (delivers `discussion.created`). */
+	devIntroduce(input: DevIntroduceInput): Promise<DevIntroduceResult>;
 	devRedeliver(deliveryId: string): Promise<DevRedeliverResult>;
 	devInjectFault(input: DevInjectFaultInput): Promise<DevInjectFaultResult>;
 	/** `POST /__control/reset` on the fake GitHub. Does not touch the app's DB. */

@@ -22,7 +22,7 @@ import type { InboxRow } from '../schemas/wal';
 import { installationIdOf } from './github/webhooks';
 import { currentLogContext, log, traceparentFor } from './log';
 import type { Runtime } from './system';
-import { introductionScope, isIntroductionsCategory } from './introductions';
+import { introductionScope, isIntroductionsCategory, orgRepositoryOf } from './introductions';
 import type { Wal } from './wal';
 
 /** Constant-time check of `X-Hub-Signature-256: sha256=<hex hmac>`. */
@@ -267,9 +267,16 @@ export async function handleWebhook(rt: Runtime, request: Request): Promise<Webh
 
 	if (inserted && actionable && payload) rt.postIssueOpened(issueOpenedData(deliveryId, payload), traceparentFor(currentLogContext()));
 	if (inserted && actionable && prPayload) rt.postIssueOpened(pullRequestOpenedData(deliveryId, prPayload), traceparentFor(currentLogContext()));
-	// A discussion shows Discussions are on there: check the repository again (its category may be new).
-	if (inserted && discPayload && (applied || /Introductions category/.test(reason ?? ''))) {
-		rt.introductions.check(discPayload.repository.owner.login, discPayload.repository.name).catch((e) => log.warn('introductions: setup check failed', e));
+	// Introductions' setup (ADR 0310): check a repository (and its owner's org discussions
+	// repository) the first time it is seen, and again on a discussion there (its category may be new).
+	const seen = payload?.repository ?? prPayload?.repository ?? discPayload?.repository;
+	if (inserted && seen && rt.github.mode() === 'app') {
+		const owner = seen.owner.login;
+		const org = orgRepositoryOf(rt.wal.db, owner);
+		const again = discPayload !== null && (applied || /Introductions category/.test(reason ?? ''));
+		const check = (repo: string) => rt.introductions.check(owner, repo).catch((e) => log.warn('introductions: setup check failed', e));
+		if (again || !rt.wal.getDiscussionSetup(seen.full_name)) void check(seen.name);
+		if (org.toLowerCase() !== seen.name.toLowerCase() && !rt.wal.getDiscussionSetup(`${owner}/${org}`)) void check(org);
 	}
 
 	return { status: 202, body: { deliveryId, state, duplicate: !inserted, ...(reason ? { reason } : {}), ...(note ? { note } : {}) } };
