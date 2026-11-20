@@ -20,7 +20,7 @@ import { draftText, PERSONAS, personaBinding } from './personas/index';
 import { GH_ACTIONS, GITHUB_IO, HOST_IO, HOST_REQUESTS, PERSONA_EVENTS, type DraftRequest, type PersonaDone } from './personas/common';
 import type { ChaosRequest } from './personas/chaos-monkey';
 import type { FuzzCase } from './fuzz-cases';
-import { chartView } from './chart-view';
+import { toChart } from '../src/lib/server/inspect/chart-structure';
 import { SCENARIO_EVENTS, SCENARIO_FAMILY, SCENARIO_HOST, scenarioChart, scenarioName, type ScenarioData } from './actors/scenario';
 import {
 	PERSONA_KINDS,
@@ -668,7 +668,7 @@ export function createLoadgen(opts: LoadgenOptions) {
 		let c = charts.get(kind);
 		if (!c) {
 			const file = kind === 'regular' || kind === 'maintainer' || kind === 'member' ? `loadgen/personas/${kind}.ts (shape: trusted.ts)` : `loadgen/personas/${kind}.ts`;
-			c = chartView(PERSONAS[kind].chart, { family: kind, revision: 'v1', sourceFile: file });
+			c = toChart(PERSONAS[kind].chart, file);
 			charts.set(kind, c);
 		}
 		return c;

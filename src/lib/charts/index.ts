@@ -55,6 +55,10 @@ export function helpers(fns: Record<string, Helper>): Raw {
 	const body = Object.entries(fns)
 		.map(([name, fn]) => {
 			if (!/^[A-Za-z_$][\w$]*$/.test(name)) throw new Error(`helpers: ${name} is not an identifier`);
+			// A bundler that renames a function renames its references in the other helpers too, and the
+			// chart would call the names given here: refuse at build time instead of failing in the chart.
+			if (/^[A-Za-z_$][\w$]*$/.test(fn.name) && fn.name !== name && !/^on\d+$/.test(name))
+				throw new Error(`helpers: ${name} is the function ${fn.name} (renamed by a bundler?)`);
 			const source = fn.toString();
 			if (source.includes(']]>')) throw new Error(`helpers: ${name} contains "]]>"`);
 			return `function ${name}(...a) { return (${source}).apply(this, a); }`;

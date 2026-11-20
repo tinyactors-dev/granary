@@ -81,6 +81,8 @@ export function createInfraSystem(options: FakeInfraOptions) {
 
 		async reset() {
 			for (const a of await host.actors()) a.terminate();
+			// A termination takes effect at the host's next turn; until then the names find the old actors.
+			await host.idle();
 			blobs.clear();
 			spawnSingletons();
 		},

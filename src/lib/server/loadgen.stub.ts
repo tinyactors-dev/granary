@@ -4,7 +4,7 @@
  * wall clock) and a population of personas whose statecharts are the real
  * ones from `loadgen/personas`. In-memory; create/start/stop mutate it.
  */
-import { chartView } from '../../../loadgen/chart-view';
+import { toChart } from './inspect/chart-structure';
 import { PERSONAS } from '../../../loadgen/personas/index';
 import { DEFAULT_CONFIG, presetInfos, PRESETS } from '../../../loadgen/plan';
 import { INVARIANTS } from '../../../loadgen/observer';
@@ -486,7 +486,7 @@ export class StubLoadgen {
 		return {
 			summary: p.summary,
 			data: p.data,
-			chart: chartView(spec.chart, { family: kind, revision: 'v1', sourceFile: `loadgen/personas/${kind}.ts` }),
+			chart: toChart(spec.chart, `loadgen/personas/${kind}.ts`),
 			timeline: p.timeline,
 			issues: p.issues,
 			kindInfo: { title: spec.title, description: spec.description, expected: spec.expected }
@@ -499,7 +499,7 @@ export class StubLoadgen {
 			title: PERSONAS[k].title,
 			description: PERSONAS[k].description,
 			expected: PERSONAS[k].expected,
-			chart: chartView(PERSONAS[k].chart, { family: k, revision: 'v1', sourceFile: `loadgen/personas/${k}.ts` })
+			chart: toChart(PERSONAS[k].chart, `loadgen/personas/${k}.ts`)
 		}));
 	}
 
