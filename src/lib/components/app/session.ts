@@ -13,7 +13,7 @@ export interface ShellData {
 	admin: AdminCapabilities;
 }
 
-const NONE = adminCapabilities({ devMode: false, debugger: false, simulation: { fakeGithub: false, fakeInfra: false, loadgen: false } });
+const NONE = adminCapabilities({ devMode: false, simulation: { fakeGithub: false, fakeInfra: false, loadgen: false } });
 
 export function shellData(): ShellData {
 	const data = page.data as Partial<ShellData>;

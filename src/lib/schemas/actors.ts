@@ -23,6 +23,9 @@ export type ActorAddress = Static<typeof ActorAddress>;
 
 export const FAMILY = { issue: 'issue', allowlist: 'allowlist' } as const;
 
+/** The main system's name: actors' addresses are `tinyactors://granary/@<family>%2F<name>` (ADR 0300). */
+export const GRANARY_SYSTEM = 'granary';
+
 /**
  * What an `issue/<key>` actor gates (ADR 0280). GitHub numbers issues and
  * pull requests in one sequence per repository, so `<repoId>-<number>` stays
@@ -69,9 +72,6 @@ export function parseAddress(text: string): ActorAddress {
 	if (i <= 0 || i === text.length - 1) throw new Error(`Invalid actor address: ${text}`);
 	return { family: text.slice(0, i), name: text.slice(i + 1) };
 }
-
-/** SCXML send target URI for an address: `#_actor_<family>/<name>`. */
-export const actorTargetUri = (a: ActorAddress): string => `#_actor_${a.family}/${a.name}`;
 
 // ---------------------------------------------------------------------------
 // Event names

@@ -5,10 +5,9 @@
 	import { Label } from '$lib/components/ui/label/index.js';
 	import RefreshCwIcon from '@lucide/svelte/icons/refresh-cw';
 	import { listActors } from '$lib/remote/actors.remote';
-	import StateBadge from '$lib/components/app/StateBadge.svelte';
 	import ErrorAlert from '$lib/components/app/ErrorAlert.svelte';
 	import TableSkeleton from '$lib/components/app/TableSkeleton.svelte';
-	import { formatBytes, issueHref } from '$lib/components/app/format';
+	import { issueHref } from '$lib/components/app/format';
 	import ActorQuickView from '$lib/components/actors/ActorQuickView.svelte';
 	import { actorHref } from '$lib/components/actors/inspect';
 
@@ -26,7 +25,7 @@
 <div class="flex flex-wrap items-end justify-between gap-3">
 	<div>
 		<h2 id="granary-actors-heading" class="text-lg font-semibold">granary</h2>
-		<p class="text-muted-foreground text-sm">Actors resident in granary's actor system. Click one to inspect it.</p>
+		<p class="text-muted-foreground text-sm">Live actors in granary's actor host. Click one to inspect it.</p>
 	</div>
 	<div class="flex items-center gap-3">
 		<div class="flex items-center gap-2">
@@ -47,12 +46,10 @@
 				<Table.Row class="hover:bg-transparent">
 					<Table.Head>Address</Table.Head>
 					<Table.Head>Active states</Table.Head>
-					<Table.Head>Scheduling</Table.Head>
-					<Table.Head>Residency</Table.Head>
-					<Table.Head class="text-right">Step</Table.Head>
+					<Table.Head class="text-right">Version</Table.Head>
 					<Table.Head class="text-right">Mailbox</Table.Head>
 					<Table.Head class="text-right">Delayed</Table.Head>
-					<Table.Head class="text-right">Memory</Table.Head>
+					<Table.Head class="text-right">Services</Table.Head>
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
@@ -74,21 +71,16 @@
 						<Table.Cell>
 							<div class="flex flex-wrap gap-1">
 								{#each a.activeStates as s (s)}<span class="bg-muted rounded px-1.5 font-mono text-xs leading-5">{s}</span>{/each}
-								{#if a.finalState}<span class="text-muted-foreground text-xs">final: {a.finalState}</span>{/if}
 							</div>
 						</Table.Cell>
-						<Table.Cell><StateBadge state={a.scheduling} /></Table.Cell>
-						<Table.Cell><StateBadge state={a.residency} /></Table.Cell>
-						<Table.Cell class="text-right font-mono text-xs">
-							{a.macrostep}.{a.microstep}{a.macrostepInProgress ? '*' : ''}
-						</Table.Cell>
+						<Table.Cell class="text-muted-foreground text-right font-mono text-xs" title="The host segment of the chart's image">v{a.segment}</Table.Cell>
 						<Table.Cell class="text-right tabular-nums">{a.mailboxDepth}</Table.Cell>
 						<Table.Cell class="text-right tabular-nums">{a.delayedSendCount}</Table.Cell>
-						<Table.Cell class="text-muted-foreground text-right text-xs tabular-nums">{formatBytes(a.allocatedBytes)}</Table.Cell>
+						<Table.Cell class="text-right tabular-nums">{a.invocations}</Table.Cell>
 					</Table.Row>
 				{:else}
 					<Table.Row class="hover:bg-transparent">
-						<Table.Cell colspan={8} class="text-muted-foreground py-10 text-center">No resident actors.</Table.Cell>
+						<Table.Cell colspan={6} class="text-muted-foreground py-10 text-center">No live actors.</Table.Cell>
 					</Table.Row>
 				{/each}
 			</Table.Body>

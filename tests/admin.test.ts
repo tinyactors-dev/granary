@@ -1,7 +1,7 @@
 /**
  * The admin section and the restructured app (ADR 0290, 0291), against the
  * running app in production mode (the default harness: no GRANARY_DEV,
- * FAKE_GITHUB_URL set, LOADGEN_URL and GRANARY_DEBUGGER unset).
+ * FAKE_GITHUB_URL set, LOADGEN_URL unset).
  */
 import { beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { runCli, useHarness } from './harness';
@@ -64,10 +64,6 @@ describe('admin section in production mode', () => {
 		}
 		// FAKE_GITHUB_URL is set explicitly, so the fake GitHub area is on.
 		expect(await (await asAdmin('/admin/github')).text()).not.toContain('data-testid="admin-unavailable"');
-		// The debugger is off without GRANARY_DEBUGGER=1 and says how to reach it.
-		const dbg = await (await asAdmin('/admin/debugger')).text();
-		expect(dbg).toContain('GRANARY_DEBUGGER=1');
-		expect(dbg).toContain('ssh -L');
 		// The actor list and inspector live here.
 		expect(await (await asAdmin('/admin/actors')).text()).toContain('data-testid="ops-actor"');
 	});

@@ -2,7 +2,7 @@
  * The seam between the UI (remote functions) and the actor system (ADR 0032).
  *
  * Remote functions validate input, authorize, and call `getBackend()`.
- * The actor-system implementation (WAL, relay, tinyactors system, fake-GitHub
+ * The actor-system implementation (WAL, relay, tinyactors host, fake-GitHub
  * client) implements `Backend` and registers it with `setBackend()` from
  * `hooks.server.ts` `init`. `StubBackend` (backend.stub.ts) is a fake for UI
  * work, registered only when `GRANARY_STUB_BACKEND=1`.
@@ -12,7 +12,7 @@
  * - Inputs are already validated (TypeBox) and `limit` defaults resolved.
  * - Expected failures throw `BackendError` with a `code`; remote functions map
  *   codes to HTTP statuses (see `backendErrorStatus`). Anything else is a 500.
- * - Dev methods (`dev*`, `getDevInfo`, `getRecentSpans`, `getDapLaunchConfig`)
+ * - Dev methods (`dev*`, `getDevInfo`, `getRecentSpans`)
  *   may throw `BackendError('unavailable')` when not in dev mode; callers
  *   already guard with `requireDev()`.
  */
@@ -65,7 +65,6 @@ import type {
 	SetRepoEnabledInput
 } from '$lib/schemas/github-app';
 import type {
-	DapLaunchConfig,
 	DevInfo,
 	DevTool,
 	DevInjectFaultInput,
@@ -75,8 +74,6 @@ import type {
 	DevRedeliverResult,
 	DevReopenIssueInput,
 	DevReopenIssueResult,
-	DevSendEvent,
-	DevSendEventResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
 	SpanSummary,
@@ -179,17 +176,10 @@ export interface Backend {
 	devInjectFault(input: DevInjectFaultInput): Promise<DevInjectFaultResult>;
 	/** `POST /__control/reset` on the fake GitHub. Does not touch the app's DB. */
 	devReset(): Promise<void>;
-	/**
-	 * `system.send(address, event, data, {until: 'completed', timeout: 5000})`.
-	 * Throws `BackendError('not-found')` when the send dead-letters as not-found,
-	 * `BackendError('invalid')` for other send rejections (message = code).
-	 */
-	devSendEvent(input: DevSendEvent): Promise<DevSendEventResult>;
 	/** From the in-memory ring buffer (last SPAN_BUFFER_SIZE spans), newest first. */
 	getRecentSpans(query: Resolved<GetRecentSpansInput>): Promise<SpanSummary[]>;
 	/** The ring buffer grouped by trace, newest first (ADR 0054). */
 	listRecentTraces(query: Resolved<ListRecentTracesInput>): Promise<TraceSummary[]>;
-	getDapLaunchConfig(address: ActorAddress): Promise<DapLaunchConfig>;
 
 	// -- load generator (ADR 0070–0076), dev only; proxies LOADGEN_URL ----------------
 

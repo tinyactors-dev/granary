@@ -77,7 +77,7 @@ export const reply = (expr: string, event = 'reply'): Raw =>
 	scxml`<send event="${event}" targetexpr="_event.origin"><content expr="${`tryReply(() => (${expr}))`}"/></send>`;
 
 /** One `<data>` per entry, each initialized to the JSON of its value. */
-export const datamodel = (values: Record<string, unknown>): Raw =>
+export const datamodel = (values: object): Raw =>
 	scxml`<datamodel>${Object.entries(values).map(([id, v]) => scxml`<data id="${id}" expr="${lit(v)}"/>`)}</datamodel>`;
 
 export interface ChartSpec {
@@ -88,7 +88,7 @@ export interface ChartSpec {
 	/** Helper functions, embedded as a chart-level script. */
 	helpers?: Record<string, Helper>;
 	/** Variables and their initial values (spawn `params` override them by id). */
-	data?: Record<string, unknown>;
+	data?: object;
 	/** The states, transitions and anything else inside `<scxml>`. */
 	body: Raw;
 }

@@ -36,11 +36,8 @@ export class LoopLag {
 	}
 }
 
-const QUARANTINE_CACHE_MS = 10_000;
-
 export function createHostHealth(rt: Runtime): { health(): HostHealthSnapshot; stop(): void } {
 	const lag = new LoopLag();
-	let quarantined = { at: 0, n: 0 };
 	const db = rt.wal.db;
 	const q = {
 		outbox: db.prepare(`SELECT state, COUNT(*) AS n FROM outbox GROUP BY state`),
@@ -52,19 +49,6 @@ export function createHostHealth(rt: Runtime): { health(): HostHealthSnapshot; s
 		inboxPending: db.prepare(`SELECT COUNT(*) AS n, MIN(received_at) AS t FROM inbox WHERE state = 'pending'`),
 		relayLast: db.prepare(`SELECT MAX(updated_at) AS t FROM outbox WHERE state = 'done'`),
 		lastWebhook: db.prepare(`SELECT MAX(received_at) AS t FROM inbox`)
-	};
-
-	const countQuarantined = (): number => {
-		const now = Date.now();
-		if (now - quarantined.at < QUARANTINE_CACHE_MS) return quarantined.n;
-		let n = 0;
-		try {
-			for (const i of rt.system.actors()) if (i.scheduling === 'quarantined') n++;
-		} catch {
-			/* system closing */
-		}
-		quarantined = { at: now, n };
-		return n;
 	};
 
 	const catchupHealth = (): HostHealthSnapshot['catchup'] => {
@@ -108,8 +92,9 @@ export function createHostHealth(rt: Runtime): { health(): HostHealthSnapshot; s
 				at,
 				outbox,
 				inbox,
-				deadLettersTotal: rt.stats.deadLetters,
-				quarantinedActors: countQuarantined(),
+				// 0.4 has neither dead letters nor quarantine (ADR 0300); the ops port replaces these fields.
+				deadLettersTotal: 0,
+				quarantinedActors: 0,
 				relayLastSuccessAt,
 				lastWebhookAt,
 				process: { eventLoopLagP99Ms: lag.p99(), rssBytes: process.memoryUsage().rss },

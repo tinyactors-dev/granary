@@ -1,8 +1,9 @@
 /**
- * `issue/<repoId>-<number>` — one virtual actor per issue or pull request
+ * `issue/<repoId>-<number>` — one actor per issue or pull request
  * (ADR 0002, ADR 0033, ADR 0280: `issue.opened` data carries `kind`, which
- * the close request passes on to the relay). Spawned by the `issue` family loader with an
- * `IssueActorData` binding built from SQLite; destroyed when it finishes.
+ * the close request passes on to the relay). Spawned before its first event
+ * with `params` built from SQLite (`issueParams`, ADR 0300); it ends when it
+ * finishes, and its `<donedata>` reaches the host's `onDone`.
  *
  *   restore ──(phase closing)──────────────────────────────▶ closing
  *      └────(phase new | settled)──▶ idle
@@ -15,10 +16,10 @@
  *      ──github.closed──▶ closed   ──github.gave-up──▶ failed
  *      issue.opened in closing is ignored (duplicate deliveries).
  *
- * Final states `allowed | closed | failed | settled` report `IssueDoneData`,
- * which the system `done` hook writes to SQLite.
+ * Final states `allowed | closed | failed | settled` report `IssueDoneData`.
  */
-import { literal, statechart, type DefinitionBuilder, type EvaluationContext } from '@tinyactors/node-legacy';
+import { Address, type Source } from '@tinyactors/node';
+import { chart, scxml, lit } from '../../charts';
 import {
 	ALLOWLIST_ADDRESS,
 	CHECK_TIMEOUT_MS,
@@ -26,12 +27,10 @@ import {
 	EVENTS,
 	FAMILY,
 	GITHUB_IO_TYPE,
+	GRANARY_SYSTEM,
 	OUTCOME_REASONS,
-	actorTargetUri,
-	type AllowlistCheckData,
-	type AllowlistVerdictData,
+	formatAddress,
 	type GitHubCloseData,
-	type GitHubGaveUpData,
 	type IssueActorData,
 	type IssueDoneData,
 	type IssueOpenedData,
@@ -39,8 +38,6 @@ import {
 } from '../../schemas/actors';
 
 export type { IssueActorData, IssueDoneData };
-
-export const ISSUE_REVISION = 'v2';
 
 /** State names; tests observe them through traces (ADR 0042). */
 export const ISSUE_STATES = {
@@ -54,21 +51,8 @@ export const ISSUE_STATES = {
 	settled: 'settled'
 } as const;
 
-type Ctx = EvaluationContext<IssueActorData>;
-
-const eventData = <T>(ctx: Ctx): T => ctx.event!.data as T;
-
-function doneData(verdict: IssueOutcome) {
-	return ({ data }: Ctx): IssueDoneData => ({
-		issueKey: data.issueKey,
-		deliveryId: data.deliveryId,
-		verdict,
-		reason: data.reason ?? verdict
-	});
-}
-
-function closeRequest({ data }: Ctx): GitHubCloseData {
-	const i = data.issue!;
+/** The `github.close` request for the issue the actor holds (a chart helper: self-contained). */
+function closeRequest(i: IssueOpenedData, deliveryId: string | null): GitHubCloseData {
 	return {
 		...(i.kind === 'pull_request' ? { kind: 'pull_request' as const } : {}),
 		repoId: i.repoId,
@@ -79,114 +63,98 @@ function closeRequest({ data }: Ctx): GitHubCloseData {
 		association: i.association,
 		title: i.title,
 		htmlUrl: i.htmlUrl,
-		deliveryId: data.deliveryId ?? i.deliveryId
+		deliveryId: deliveryId ?? i.deliveryId
 	};
 }
 
-export function issueChart(): DefinitionBuilder<IssueActorData> {
+/** `<donedata>` of a final state: `IssueDoneData` with `verdict` and the reason so far (default: the verdict). */
+const done = (verdict: IssueOutcome, reason = 'reason') =>
+	scxml`<donedata><content expr="${`({ issueKey, deliveryId, verdict: ${lit(verdict)}, reason: ${reason} ?? ${lit(verdict)} })`}"/></donedata>`;
+
+export function issueChart(): Source {
 	const S = ISSUE_STATES;
-	return (
-		statechart<IssueActorData>({ family: FAMILY.issue, revision: ISSUE_REVISION, name: 'issue' })
-			.data('issueKey', '0-0')
-			.data('phase', 'new')
-			.data('issue', null)
-			.data('deliveryId', null)
-			.data('verdict', null)
-			.data('reason', null)
-			.initial(S.restore)
+	const allowlist = Address.fromName(GRANARY_SYSTEM, formatAddress(ALLOWLIST_ADDRESS)).text;
+	const gaveUp = lit(OUTCOME_REASONS.gaveUp(''));
+	const initial: IssueActorData = { issueKey: '0-0', phase: 'new', issue: null, deliveryId: null, verdict: null, reason: null };
+	return chart({
+		name: FAMILY.issue,
+		initial: S.restore,
+		helpers: { closeRequest },
+		data: initial,
+		body: scxml`
+<!-- Route on the spawn's params.phase. -->
+<state id="${S.restore}">
+	<transition cond="${"phase === 'closing' && issue !== null"}" target="${S.closing}"/>
+	<transition target="${S.idle}"/>
+</state>
 
-			// Route on the loader's binding.phase.
-			.state(S.restore, (s) =>
-				s
-					.always((t) => t.when(({ data }: Ctx) => data.phase === 'closing' && data.issue !== null).target(S.closing))
-					.always((t) => t.target(S.idle))
-			)
+<state id="${S.idle}">
+	<transition event="${EVENTS.issueOpened}" cond="${"phase === 'settled'"}" target="${S.settled}">
+		<assign location="deliveryId" expr="_event.data.deliveryId"/>
+	</transition>
+	<transition event="${EVENTS.issueOpened}" target="${S.checking}">
+		<assign location="issue" expr="_event.data"/>
+		<assign location="deliveryId" expr="_event.data.deliveryId"/>
+	</transition>
+	<!-- A late relay reply for an issue that was already decided. -->
+	<transition event="${EVENTS.githubClosed}" cond="${"phase === 'settled'"}" target="${S.settled}"/>
+	<transition event="${EVENTS.githubGaveUp}" cond="${"phase === 'settled'"}" target="${S.settled}"/>
+</state>
 
-			.state(S.idle, (s) =>
-				s
-					.on(EVENTS.issueOpened, (t) =>
-						t
-							.when(({ data }: Ctx) => data.phase === 'settled')
-							.target(S.settled)
-							.assign('deliveryId', (ctx: Ctx) => eventData<IssueOpenedData>(ctx).deliveryId)
-					)
-					.on(EVENTS.issueOpened, (t) =>
-						t
-							.target(S.checking)
-							.assign('issue', (ctx: Ctx) => eventData<IssueOpenedData>(ctx))
-							.assign('deliveryId', (ctx: Ctx) => eventData<IssueOpenedData>(ctx).deliveryId)
-					)
-					// A late relay reply for an issue that was already decided.
-					.on(EVENTS.githubClosed, (t) => t.when(({ data }: Ctx) => data.phase === 'settled').target(S.settled))
-					.on(EVENTS.githubGaveUp, (t) => t.when(({ data }: Ctx) => data.phase === 'settled').target(S.settled))
-			)
+<state id="${S.checking}">
+	<onentry>
+		<send event="${EVENTS.allowlistCheck}" target="${allowlist}"><content expr="({ login: issue.author, association: issue.association })"/></send>
+		<send id="${CHECK_TIMEOUT_SEND_ID}" event="${EVENTS.checkTimeout}" delay="${`${CHECK_TIMEOUT_MS}ms`}"/>
+	</onentry>
+	<onexit><cancel sendid="${CHECK_TIMEOUT_SEND_ID}"/></onexit>
+	<transition event="${EVENTS.allowlistVerdict}" cond="_event.data.allowed" target="${S.allowed}">
+		<assign location="reason" expr="_event.data.reason"/>
+	</transition>
+	<transition event="${EVENTS.allowlistVerdict}" target="${S.closing}">
+		<assign location="reason" expr="_event.data.reason"/>
+	</transition>
+	<transition event="${EVENTS.checkTimeout}" target="${S.failed}">
+		<assign location="reason" expr="${lit(OUTCOME_REASONS.checkTimeout)}"/>
+	</transition>
+</state>
 
-			.state(S.checking, (s) =>
-				s
-					.entry((a) =>
-						a
-							.send(EVENTS.allowlistCheck, (b) =>
-								b.to(actorTargetUri(ALLOWLIST_ADDRESS)).data(
-									({ data }: Ctx): AllowlistCheckData => ({
-										login: data.issue!.author,
-										association: data.issue!.association
-									})
-								)
-							)
-							.send(EVENTS.checkTimeout, (b) => b.id(CHECK_TIMEOUT_SEND_ID).after(CHECK_TIMEOUT_MS))
-					)
-					.exit((a) => a.cancel(CHECK_TIMEOUT_SEND_ID))
-					.on(EVENTS.allowlistVerdict, (t) =>
-						t
-							.when((ctx: Ctx) => eventData<AllowlistVerdictData>(ctx).allowed)
-							.target(S.allowed)
-							.assign('reason', (ctx: Ctx) => eventData<AllowlistVerdictData>(ctx).reason)
-					)
-					.on(EVENTS.allowlistVerdict, (t) =>
-						t.target(S.closing).assign('reason', (ctx: Ctx) => eventData<AllowlistVerdictData>(ctx).reason)
-					)
-					.on(EVENTS.checkTimeout, (t) => t.target(S.failed).assign('reason', literal(OUTCOME_REASONS.checkTimeout)))
-			)
+<state id="${S.closing}">
+	<onentry>
+		<assign location="phase" expr="'closing'"/>
+		<send type="${GITHUB_IO_TYPE}" event="${EVENTS.githubClose}"><content expr="closeRequest(issue, deliveryId)"/></send>
+	</onentry>
+	<!-- Keep the verdict's reason (not-allowed or blocklist); a closing issue restored
+	     from the outbox after a restart has none, so it reports not-allowed. -->
+	<transition event="${EVENTS.githubClosed}" target="${S.closed}">
+		<assign location="reason" expr="${`reason ?? ${lit(OUTCOME_REASONS.notAllowed)}`}"/>
+	</transition>
+	<transition event="${EVENTS.githubGaveUp}" target="${S.failed}">
+		<assign location="reason" expr="${`${gaveUp} + _event.data.lastError`}"/>
+	</transition>
+	<!-- The github I/O processor failed the send (outbox not written). -->
+	<transition event="error.communication" target="${S.failed}">
+		<assign location="reason" expr="${`${gaveUp} + 'outbox write failed'`}"/>
+	</transition>
+</state>
 
-			.state(S.closing, (s) =>
-				s
-					.entry((a) =>
-						a
-							.assign('phase', literal('closing'))
-							.send(EVENTS.githubClose, (b) => b.via(GITHUB_IO_TYPE).data(closeRequest))
-					)
-					// Keep the verdict's reason (`not-allowed` or `blocklist`); a closing issue restored
-					// from the outbox after a restart has none, so it reports `not-allowed`.
-					.on(EVENTS.githubClosed, (t) => t.target(S.closed).assign('reason', ({ data }: Ctx) => data.reason ?? OUTCOME_REASONS.notAllowed))
-					.on(EVENTS.githubGaveUp, (t) =>
-						t
-							.target(S.failed)
-							.assign('reason', (ctx: Ctx) => OUTCOME_REASONS.gaveUp(eventData<GitHubGaveUpData>(ctx).lastError))
-					)
-					// The github I/O processor failed the send (outbox not written).
-					.on('error.communication', (t) =>
-						t.target(S.failed).assign('reason', (ctx: Ctx) => {
-							const d = ctx.event?.data as { error?: unknown } | undefined;
-							return OUTCOME_REASONS.gaveUp(`outbox write failed: ${String(d?.error ?? 'unknown error')}`);
-						})
-					)
-			)
-
-			.final(S.allowed, (s) =>
-				s.entry((a) => a.assign('verdict', literal('allowed'))).doneData((d) => d.content(doneData('allowed')))
-			)
-			.final(S.closed, (s) =>
-				s.entry((a) => a.assign('verdict', literal('closed'))).doneData((d) => d.content(doneData('closed')))
-			)
-			.final(S.failed, (s) =>
-				s.entry((a) => a.assign('verdict', literal('failed'))).doneData((d) => d.content(doneData('failed')))
-			)
-			.final(S.settled, (s) =>
-				s
-					.entry((a) =>
-						a.assign('verdict', literal('settled')).assign('reason', literal(OUTCOME_REASONS.alreadySettled))
-					)
-					.doneData((d) => d.content(doneData('settled')))
-			)
-	);
+<final id="${S.allowed}">
+	<onentry><assign location="verdict" expr="'allowed'"/></onentry>
+	${done('allowed')}
+</final>
+<final id="${S.closed}">
+	<onentry><assign location="verdict" expr="'closed'"/></onentry>
+	${done('closed')}
+</final>
+<final id="${S.failed}">
+	<onentry><assign location="verdict" expr="'failed'"/></onentry>
+	${done('failed')}
+</final>
+<final id="${S.settled}">
+	<onentry>
+		<assign location="verdict" expr="'settled'"/>
+		<assign location="reason" expr="${lit(OUTCOME_REASONS.alreadySettled)}"/>
+	</onentry>
+	${done('settled')}
+</final>`
+	});
 }

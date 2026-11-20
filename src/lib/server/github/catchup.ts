@@ -12,7 +12,8 @@
  * attempt was accepted, reply `catchup.redelivered`.
  * Failures reply `catchup.failed {error}`; the actor stays alive.
  */
-import type { ActorAddress, IOProcessor } from '@tinyactors/node-legacy';
+import type { IOProcessor } from '@tinyactors/node';
+import type { ActorAddress } from '../../schemas/actors';
 import { Type, type Static } from '@sinclair/typebox';
 import { GITHUB_APP_EVENTS, GITHUB_APP_LIFECYCLE_EVENTS } from '../../schemas/github-app';
 import { parse } from '../../schemas/standard';
@@ -106,19 +107,16 @@ export async function listCandidates(conn: GitHubConnection, wal: Wal, now = Dat
 export function catchupProcessor(deps: CatchupDeps): IOProcessor {
 	const spacing = deps.spacingMs ?? 200;
 	return {
-		async send(request, ctx) {
-			const source = request.source;
-			if (!('family' in source)) throw new Error('github-app processor: the sender must be a named actor');
-			const replyTo: ActorAddress = { family: source.family, name: source.name };
+		async receive(send) {
 			const conn = deps.connection();
 			const fail = (error: string) => {
 				log.warn(`catch-up: ${error}`, { 'catchup.outcome': 'failed', 'error.message': error });
 				conn?.recordCatchupPass({ at: Date.now(), redelivered: 0, error });
-				ctx.post(replyTo, CATCHUP_EVENTS.failed, { error } satisfies CatchupFailed);
+				send.answer(CATCHUP_EVENTS.failed, { error } satisfies CatchupFailed);
 			};
 			if (!conn || conn.mode() !== 'app') return fail('GitHub App mode is not active');
 
-			if (request.event === CATCHUP_EVENTS.list) {
+			if (send.event === CATCHUP_EVENTS.list) {
 				try {
 					const listed = await listCandidates(conn, deps.wal);
 					if (listed.candidates.length === 0) {
@@ -126,17 +124,17 @@ export function catchupProcessor(deps: CatchupDeps): IOProcessor {
 						log.info('catch-up: pass done, no missed webhooks', { 'catchup.outcome': 'ok', 'catchup.missed': 0, 'catchup.redelivered': 0 });
 						if (listed.newest !== null) conn.setCheckpoint(listed.newest);
 					}
-					ctx.post(replyTo, CATCHUP_EVENTS.listed, listed);
+					send.answer(CATCHUP_EVENTS.listed, listed);
 				} catch (e) {
 					fail(`listing deliveries failed: ${(e as Error).message}`);
 				}
 				return;
 			}
 
-			if (request.event === CATCHUP_EVENTS.redeliver) {
+			if (send.event === CATCHUP_EVENTS.redeliver) {
 				let input: CatchupRedeliver;
 				try {
-					input = parse(CatchupRedeliver, request.data, 'catchup.redeliver');
+					input = parse(CatchupRedeliver, send.data, 'catchup.redeliver');
 				} catch (e) {
 					return fail((e as Error).message);
 				}
@@ -162,11 +160,11 @@ export function catchupProcessor(deps: CatchupDeps): IOProcessor {
 					'catchup.failed': failed,
 					'error.message': lastError ?? undefined
 				});
-				ctx.post(replyTo, CATCHUP_EVENTS.redelivered, { redelivered, failed, lastError } satisfies CatchupRedelivered);
+				send.answer(CATCHUP_EVENTS.redelivered, { redelivered, failed, lastError } satisfies CatchupRedelivered);
 				return;
 			}
 
-			throw new Error(`github-app processor: unsupported event ${request.event}`);
+			return fail(`unsupported event ${send.event}`);
 		}
 	};
 }

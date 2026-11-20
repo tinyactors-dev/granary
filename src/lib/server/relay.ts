@@ -10,12 +10,11 @@
  *      Store `comment_id`.
  *   2. PATCH the issue `state=closed, state_reason=not_planned`, or for a
  *      pull request `PATCH …/pulls/{n}` `state=closed` (idempotent, ADR 0280).
- *   3. mark the row `done`, then `system.post(reply_to, 'github.closed', …)`.
+ *   3. mark the row `done`, then reply `github.closed` to `reply_to` (the runtime's `reply`).
  * On failure: `pending` again with exponential backoff (or `Retry-After`),
  * or after MAX_EFFECT_ATTEMPTS `dead` + `github.gave-up` to `reply_to`.
  * At most `concurrency` effects run at once.
  */
-import type { System } from '@tinyactors/node-legacy';
 import { EVENTS, MAX_EFFECT_ATTEMPTS, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
 import { commentMarker } from '../schemas/github';
 import { commentWithMarker, renderClosingBody } from './closing-messages';
@@ -30,7 +29,8 @@ export type RelayGitHub = GitHubClient | ((payload: OutboxPayload) => Promise<Gi
 export interface RelayOptions {
 	wal: Wal;
 	github: RelayGitHub;
-	system: System;
+	/** Deliver `event` to the issue actor `to`, spawning it from SQLite when it is not running (ADR 0300). */
+	reply: (to: { family: string; name: string }, event: string, data: unknown) => void;
 	/** Max effects in flight; default 4. */
 	concurrency?: number;
 	/** First retry delay; doubles per attempt. Default 1000 ms. */
@@ -43,7 +43,7 @@ export interface RelayOptions {
 export class Relay {
 	readonly #wal: Wal;
 	readonly #github: RelayGitHub;
-	readonly #system: System;
+	readonly #replyTo: RelayOptions['reply'];
 	readonly #concurrency: number;
 	readonly #baseDelayMs: number;
 	readonly #maxDelayMs: number;
@@ -59,7 +59,7 @@ export class Relay {
 	constructor(opts: RelayOptions) {
 		this.#wal = opts.wal;
 		this.#github = opts.github;
-		this.#system = opts.system;
+		this.#replyTo = opts.reply;
 		this.#concurrency = Math.max(1, opts.concurrency ?? 4);
 		this.#baseDelayMs = opts.baseDelayMs ?? 1000;
 		this.#maxDelayMs = opts.maxDelayMs ?? 5 * 60_000;
@@ -205,10 +205,10 @@ export class Relay {
 
 	#reply(to: { family: string; name: string }, event: string, data: unknown): void {
 		try {
-			this.#system.post(to, event, data);
+			this.#replyTo(to, event, data);
 		} catch (e) {
-			// queue-full / closed: the actor is restored in `closing` on the next
-			// issue.opened (sweeper) and the processor answers from the done row.
+			// The host is closed: on the next boot the issue is spawned again in
+			// `closing`, and the processor answers from the done row.
 			log.error(`relay: could not post ${event} to ${to.family}/${to.name}`, e);
 		}
 	}

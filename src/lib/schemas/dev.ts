@@ -49,9 +49,6 @@ export interface DevTool {
 // ---------------------------------------------------------------------------
 
 export interface DevInfo {
-	/** DAP TCP server: host is always 127.0.0.1. */
-	dapHost: string;
-	dapPort: number;
 	/** Base URL of the fake GitHub (GRANARY_GITHUB_API_URL in dev). */
 	fakeGithubUrl: string;
 	/** Current admins, for one-click "log in as admin". */
@@ -121,35 +118,6 @@ export type DevRedeliverResult = RedeliverResponse;
 export const DevInjectFaultInput = InjectFaultRequest;
 export type DevInjectFaultInput = Static<typeof DevInjectFaultInput>;
 export type DevInjectFaultResult = InjectFaultResponse;
-
-// ---------------------------------------------------------------------------
-// devSendEvent (command)
-// ---------------------------------------------------------------------------
-
-export const DevSendEventInput = Type.Object(
-	{
-		address: ActorAddress,
-		event: Type.String({ minLength: 1, maxLength: 200 }),
-		/** JSON text; parsed server-side. Omitted or '' = no data. */
-		data: Type.Optional(Type.String({ maxLength: 65536 }))
-	},
-	closed
-);
-export type DevSendEventInput = Static<typeof DevSendEventInput>;
-
-/** What the Backend receives (data already JSON-parsed; `undefined` = none). */
-export interface DevSendEvent {
-	address: ActorAddress;
-	event: string;
-	data: unknown;
-}
-
-export interface DevSendEventResult {
-	/** `SendResult.status` of `system.send(address, event, data, {until:'completed'})`. */
-	status: 'accepted' | 'stable' | 'done';
-	/** Active states after the macrostep, or null if the actor is gone. */
-	activeStates: string[] | null;
-}
 
 // ---------------------------------------------------------------------------
 // getRecentSpans (query)
@@ -241,24 +209,6 @@ export interface TraceSummary {
 	durationMs: number;
 	/** Other traces referenced through span links. */
 	linkedTraceIds: string[];
-}
-
-// ---------------------------------------------------------------------------
-// getDapLaunchConfig (query)
-// ---------------------------------------------------------------------------
-
-export const GetDapLaunchConfigInput = Type.Object({ address: ActorAddress }, closed);
-export type GetDapLaunchConfigInput = Static<typeof GetDapLaunchConfigInput>;
-
-/** A VS Code `launch.json` configuration for tinyactors-vscode (ADR 0009). */
-export interface DapLaunchConfig {
-	type: 'tinyactors';
-	request: 'attach';
-	/** e.g. `granary: issue/123-4` */
-	name: string;
-	port: number;
-	/** `family/name` */
-	address: string;
 }
 
 // ---------------------------------------------------------------------------

@@ -1,14 +1,12 @@
 /**
- * Boot the real backend (ADR 0003, ADR 0040): runtime (DB → system →
- * allowlist → issue loader → relay → re-post pending inbox), DAP server in
- * dev mode, graceful shutdown hooks. Called from `hooks.server.ts` `init`,
+ * Boot the real backend (ADR 0003, ADR 0040, ADR 0300): runtime (DB → host →
+ * allowlist → relay → re-send pending inbox), graceful shutdown hooks. Called from `hooks.server.ts` `init`,
  * which finishes before the server accepts HTTP.
  */
 import { startDevGithubAutoconnect } from './github/dev-autoconnect';
 import type { Config } from '$lib/schemas/config';
 import type { Backend } from './backend';
 import { RealBackend } from './backend.real';
-import { startDapServer, stopDapServer } from './dap';
 import { log, createLogger, setLogLevel } from './log';
 import { attachLogExport } from './log-export';
 import { getRuntime, onShutdown, startRuntime, type Runtime } from './system';
@@ -131,11 +129,6 @@ export async function bootBackend(config: Config, opts: { devMode: boolean }): P
 	onShutdown(() => closeGranarySecrets());
 	if (config.devGithubAutoconnect) onShutdown(startDevGithubAutoconnect(runtime.github, config));
 	await startOps(runtime, config, opts);
-	// The debugger (ADR 0290): always 127.0.0.1; in production only with GRANARY_DEBUGGER=1.
-	if (opts.devMode || config.debugger) {
-		startDapServer(runtime.system, config.dapPort);
-		onShutdown(() => stopDapServer());
-	}
 	installShutdown();
 	const backend = new RealBackend(runtime);
 	writePidFile(dataDir);

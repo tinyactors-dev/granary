@@ -267,7 +267,7 @@ export async function doctor(ctx: Context): Promise<number> {
 export async function version(ctx: Context): Promise<void> {
 	let tinyactors = 'unknown';
 	try {
-		tinyactors = (await import('@tinyactors/node-legacy')).version;
+		tinyactors = (await import('@tinyactors/node')).version;
 	} catch {
 		/* not installed next to the CLI */
 	}

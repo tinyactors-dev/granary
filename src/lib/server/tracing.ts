@@ -1,29 +1,29 @@
 /**
- * Trace export (ADR 0007, ADR 0042).
+ * Trace export (ADR 0007, ADR 0042, ADR 0300).
  *
- * `setTraceSink` with `resource: {'service.name': 'granary'}`,
- * `detail: 'decisions'`, `values: true`. Each pump turn's batch is decoded,
- * every span of a known actor session gets `granary.actor.family`,
- * `granary.actor.name` and `granary.actor.address`, and `scxml.finished`
- * spans of issue actors get `granary.done.*` from the done-data. Spans of
- * known actors are renamed `<family> <kind> …` (ADR 0155), keeping the original
- * name in `tinyactors.span.name` and the kind in `tinyactors.span.kind`. The batch
+ * The host's telemetry encoder (`hostConfig`: service `granary`, detail
+ * `decisions`, values) hands each OTLP request to `onExport`. Traces are
+ * decoded, every span of a named actor gets `granary.actor.family`,
+ * `granary.actor.name` and `granary.actor.address` from the native
+ * `tinyactors.actor.name`, and `scxml.finished` spans of issue actors get
+ * `granary.done.*` from the done-data (`noteDone`, called by `onDone`).
+ * Spans of known actors are renamed `<family> <kind> …` (ADR 0155). The batch
  * is then re-encoded and handed to the ops module's telemetry sink
  * (`attachSink`, ADR 0121), which fans it out to the configured OTLP sinks
- * (seeded with `GRANARY_SEED_OTLP_*`, ADR 0230). Without an ops sink (ops
- * failed to start) nothing is exported. The last SPAN_BUFFER_SIZE spans are kept (for /admin/traces, ADR 0290)
- * in memory for `/admin` (`getRecentSpans`, `listRecentTraces`, ADR 0054).
+ * (seeded with `GRANARY_SEED_OTLP_*`, ADR 0230); log requests pass through.
+ * Without an ops sink (ops failed to start) nothing is exported. The last
+ * SPAN_BUFFER_SIZE spans are kept in memory for /admin/traces
+ * (`getRecentSpans`, `listRecentTraces`, ADR 0054, 0290).
  */
+import { decodeTraces, type Actor, type Host, type HostConfig } from '@tinyactors/node';
 import { applyFamilySpanName, spanKindOf } from '../trace/span-name';
-import { decodeTraces, stepSpanID, type ActorInspection, type DecodedSpan, type System } from '@tinyactors/node-legacy';
 import type { GetRecentSpansInput, ListRecentTracesInput, SpanAttributeValue, SpanSummary, TraceSummary } from '../schemas/dev';
 import { summarizeTraces } from './trace-summary';
 import { SPAN_BUFFER_SIZE } from '../schemas/dev';
 import type { Resolved } from '../schemas/api';
-import type { ActorAddress, IssueDoneData } from '../schemas/actors';
-import { FAMILY, ALLOWLIST_ADDRESS, formatAddress } from '../schemas/actors';
-import { CATCHUP_ADDRESS, CATCHUP_FAMILY } from './github/catchup';
-import { encodeTraces } from './otlp-encode';
+import type { IssueDoneData } from '../schemas/actors';
+import { parseAddress } from '../schemas/actors';
+import { encodeTraces, fromTinyactors, type DecodedSpan } from './otlp-encode';
 import { log } from './log';
 import type { TelemetrySink } from '../ops/contract';
 
@@ -38,52 +38,38 @@ export const GRANARY_ATTRS = {
 } as const;
 
 export const SERVICE_NAME = 'granary';
-
-/** Name of an actor from its inspection: issue actors by `data.issueKey`; singletons (allowlist, delivery-catchup) are `main`. */
-export function addressOfInspection(i: ActorInspection): ActorAddress | null {
-	const family = i.definition.family;
-	if (family === FAMILY.allowlist) return ALLOWLIST_ADDRESS;
-	if (family === CATCHUP_FAMILY) return CATCHUP_ADDRESS;
-	const data = i.data as { issueKey?: unknown } | undefined;
-	if (family === FAMILY.issue && typeof data?.issueKey === 'string') return { family, name: data.issueKey };
-	return null;
-}
+/** A traces request at most this long after its first span (the host's clock runs in ms). */
+export const FLUSH_INTERVAL_MS = 100;
 
 export interface TracerOptions {
-	system: System;
-	/** Keep the last 200 decoded spans (dev mode). */
+	/** Keep the last SPAN_BUFFER_SIZE decoded spans (for /admin). */
 	keepRecent: boolean;
 }
 
 export class Tracer {
-	readonly #system: System;
 	readonly #keepRecent: boolean;
-	/** session id (decimal) → address; entries of destroyed actors are pruned lazily. */
-	#sessions = new Map<string, ActorAddress>();
-	/** session id → done-data, consumed when its `scxml.finished` span passes. */
+	/** session id (decimal) → done-data, consumed when its `scxml.finished` span passes. */
 	#done = new Map<string, IssueDoneData>();
 	#recent: SpanSummary[] = [];
 	#closed = false;
-	#installed = false;
 	/** The ops module's fan-out; when set, granary never POSTs itself. */
 	#sink: TelemetrySink | null = null;
 
 	constructor(opts: TracerOptions) {
-		this.#system = opts.system;
 		this.#keepRecent = opts.keepRecent;
 	}
 
-	/** Installs the sink when there is somewhere for spans to go. */
-	install(): boolean {
-		if (this.#installed) return true;
-		if (!this.#keepRecent && !this.#sink) return false;
-		this.#installed = true;
-		this.#system.setTraceSink((traces, logs) => this.#onBatch(traces, logs), {
-			resource: { 'service.name': SERVICE_NAME },
-			detail: 'decisions',
-			values: true
-		});
-		return true;
+	/** The host config's telemetry part (`new Host(charts, { config })`). */
+	hostConfig(): HostConfig {
+		return {
+			system: { ticksPerSecond: 1000 },
+			telemetry: { flushInterval: FLUSH_INTERVAL_MS, values: true, resource: { 'service.name': SERVICE_NAME } }
+		};
+	}
+
+	/** Sets the host's trace detail (ADR 0042: decisions, with values). */
+	attachHost(host: Host): void {
+		host.traceConfigure({ detail: 'decisions', values: true }).catch((e) => log.error('tracing: traceConfigure failed', e));
 	}
 
 	close(): void {
@@ -95,53 +81,34 @@ export class Tracer {
 	/** Route exports through the ops module (ADR 0121). */
 	attachSink(sink: TelemetrySink): void {
 		this.#sink = sink;
-		this.install();
 	}
 
-	/** Remember who a session is (spawn, done hook, fault hook). */
-	noteActor(inspection: ActorInspection): void {
-		const address = addressOfInspection(inspection);
-		if (address) this.#sessions.set(String(inspection.sessionID), address);
+	/** The issue actor's done-data (from `onDone`): attached to its session's `scxml.finished` span. */
+	noteDone(actor: Actor, done: IssueDoneData): void {
+		this.#done.set(String(actor.id), done);
+		if (this.#done.size > 10_000) this.#done.delete(this.#done.keys().next().value!);
 	}
 
-	/** The done hook's record: attached to the session's `scxml.finished` span. */
-	noteDone(inspection: ActorInspection, done: IssueDoneData): void {
-		this.noteActor(inspection);
-		this.#done.set(String(inspection.sessionID), done);
-	}
-
-	#lookup(session: string, batch: { scanned: boolean }): ActorAddress | undefined {
-		const a = this.#sessions.get(session);
-		if (a || batch.scanned) return a;
-		// Unknown session: learn every resident actor, once per batch.
-		batch.scanned = true;
-		for (const i of this.#system.actors()) this.noteActor(i);
-		return this.#sessions.get(session);
-	}
-
-	#onBatch(traces: Uint8Array, logs?: Uint8Array): void {
+	/** The host's `telemetry` handler. */
+	onExport(signal: 'traces' | 'logs', data: Uint8Array): void {
 		if (this.#closed) return;
 		const sink = this.#sink;
 		const exporting = sink ? (sink.active?.() ?? true) : false;
-		if (!exporting && !this.#keepRecent) {
-			// Nobody wants spans right now; keep the lookup maps bounded.
-			if (this.#sessions.size > 10_000) this.#sessions.clear();
-			if (this.#done.size > 10_000) this.#done.clear();
+		if (signal === 'logs') {
+			if (exporting && data.length) this.#export('logs', data.slice()); // the sink may hold it for a while
 			return;
 		}
+		if (!exporting && !this.#keepRecent) return;
 		let spans: DecodedSpan[];
 		try {
-			spans = decodeTraces(traces);
+			spans = decodeTraces(data).map(fromTinyactors);
 			this.#enrich(spans);
 		} catch (e) {
 			log.error('tracing: could not decode/enrich a batch', e);
-			if (exporting) this.#export('traces', traces.slice());
+			if (exporting) this.#export('traces', data.slice());
 			return;
 		}
-		if (exporting) {
-			this.#export('traces', encodeTraces(spans));
-			if (logs && logs.length) this.#export('logs', logs.slice()); // the sink may hold it for a while
-		}
+		if (exporting) this.#export('traces', encodeTraces(spans));
 		if (this.#keepRecent) this.#remember(spans);
 	}
 
@@ -179,22 +146,21 @@ export class Tracer {
 	}
 
 	#enrich(spans: DecodedSpan[]): void {
-		const destroyed: string[] = [];
-		const batch = { scanned: false };
 		for (const s of spans) {
-			const session = s.attributes['scxml.session_id'];
-			if (session === undefined) continue;
-			const key = String(session);
-			const address = this.#lookup(key, batch);
-			if (address) {
+			const actorName = s.attributes['tinyactors.actor.name'];
+			let family: string | undefined;
+			if (typeof actorName === 'string' && actorName.includes('/')) {
+				const address = parseAddress(actorName);
+				family = address.family;
 				s.attributes[GRANARY_ATTRS.family] = address.family;
 				s.attributes[GRANARY_ATTRS.name] = address.name;
-				s.attributes[GRANARY_ATTRS.address] = formatAddress(address);
+				s.attributes[GRANARY_ATTRS.address] = actorName;
 			}
 			const kind = spanKindOf(s);
 			// `scxml.macrostep issue.opened` → `issue macrostep issue.opened` (ADR 0155)
-			applyFamilySpanName(s, address?.family);
+			applyFamilySpanName(s, family);
 			if (kind === 'finished') {
+				const key = String(s.attributes['scxml.session_id']);
 				const done = this.#done.get(key);
 				if (done) {
 					s.attributes[GRANARY_ATTRS.doneVerdict] = done.verdict;
@@ -203,11 +169,6 @@ export class Tracer {
 					this.#done.delete(key);
 				}
 			}
-			if (kind === 'destroyed') destroyed.push(key);
-		}
-		for (const key of destroyed) {
-			this.#sessions.delete(key);
-			this.#done.delete(key);
 		}
 	}
 
@@ -216,19 +177,8 @@ export class Tracer {
 		if (this.#recent.length > SPAN_BUFFER_SIZE) this.#recent.splice(0, this.#recent.length - SPAN_BUFFER_SIZE);
 	}
 
-	/** Fill `cause.traceId` for causes that are (now) in the buffer. */
-	#resolveCauses(): void {
-		let byId: Map<string, string> | null = null;
-		for (const s of this.#recent) {
-			if (!s.cause || s.cause.traceId) continue;
-			byId ??= new Map(this.#recent.map((x) => [x.spanId, x.traceId]));
-			s.cause.traceId = byId.get(s.cause.spanId) ?? null;
-		}
-	}
-
 	/** Newest first. */
 	recent(q: Resolved<GetRecentSpansInput>): SpanSummary[] {
-		this.#resolveCauses();
 		const out: SpanSummary[] = [];
 		for (let i = this.#recent.length - 1; i >= 0 && out.length < q.limit; i--) {
 			const s = this.#recent[i]!;
@@ -241,7 +191,6 @@ export class Tracer {
 
 	/** The buffer grouped by trace, newest first (ADR 0054). */
 	traces(q: Resolved<ListRecentTracesInput>): TraceSummary[] {
-		this.#resolveCauses();
 		return summarizeTraces(this.#recent, q);
 	}
 }
@@ -275,20 +224,7 @@ function toSummary(s: DecodedSpan): SpanSummary {
 		events: s.events.map((e) => ({ name: e.name, time: e.time, attributes: attrs(e.attributes) })),
 		service: typeof s.resource?.attributes?.['service.name'] === 'string' ? (s.resource.attributes['service.name'] as string) : null,
 		links: s.links.map((l) => ({ traceId: l.traceID, spanId: l.spanID, attributes: attrs(l.attributes) })),
-		cause: causeOf(s)
+		// The causing step is the parent span (the host traces with `linkParents` off).
+		cause: null
 	};
-}
-
-/** The causing step's span id from `scxml.cause.*` (ADR 0054). */
-function causeOf(s: DecodedSpan): SpanSummary['cause'] {
-	const session = s.attributes['scxml.cause.session_id'];
-	const macrostep = s.attributes['scxml.cause.macrostep'];
-	if (session === undefined || macrostep === undefined) return null;
-	const microstep = s.attributes['scxml.cause.microstep'];
-	try {
-		const spanId = stepSpanID(session as bigint | number, macrostep as bigint | number, Number(microstep ?? 0));
-		return spanId === s.spanID ? null : { spanId, traceId: null };
-	} catch {
-		return null;
-	}
 }

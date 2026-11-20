@@ -7,7 +7,62 @@
  * Not encoded (the decoder does not surface them): trace_state, span flags,
  * dropped counts, link flags, schema URLs.
  */
-import type { DecodedSpan } from '@tinyactors/node-legacy';
+import type { DecodedSpan as TinyactorsSpan } from '@tinyactors/node';
+
+/**
+ * A span as granary handles it (the shape of 0.1.0's `DecodedSpan`): the
+ * Tracer's batches, granary's own HTTP spans (ADR 0234) and the /admin
+ * trace views use it. `fromTinyactors` converts what `decodeTraces` reads.
+ */
+export interface DecodedSpan {
+	traceID: string;
+	spanID: string;
+	parentSpanID?: string;
+	name: string;
+	kind: 'unspecified' | 'internal' | 'server' | 'client' | 'producer' | 'consumer';
+	/** Milliseconds since the epoch. */
+	startTime: number;
+	endTime: number;
+	startTimeUnixNano: bigint;
+	endTimeUnixNano: bigint;
+	attributes: Record<string, unknown>;
+	events: { name: string; time: number; timeUnixNano: bigint; attributes: Record<string, unknown> }[];
+	links: { traceID: string; spanID: string; attributes: Record<string, unknown> }[];
+	status: { code: 'unset' | 'ok' | 'error'; message?: string };
+	resource: { attributes: Record<string, unknown> };
+	scope: { name: string; version: string };
+}
+
+const KINDS: DecodedSpan['kind'][] = ['unspecified', 'internal', 'server', 'client', 'producer', 'consumer'];
+const STATUS: DecodedSpan['status']['code'][] = ['unset', 'ok', 'error'];
+const nanos = (v: number | bigint): bigint => (typeof v === 'bigint' ? v : BigInt(Math.round(v)));
+const millis = (ns: bigint): number => Number(ns / 1_000_000n) + Number(ns % 1_000_000n) / 1e6;
+
+/** A span of `decodeTraces` (@tinyactors/node 0.4) in granary's shape. */
+export function fromTinyactors(s: TinyactorsSpan): DecodedSpan {
+	const start = nanos(s.start);
+	const end = nanos(s.end);
+	return {
+		traceID: s.trace,
+		spanID: s.span,
+		...(s.parent ? { parentSpanID: s.parent } : {}),
+		name: s.name,
+		kind: KINDS[s.kind] ?? 'unspecified',
+		startTime: millis(start),
+		endTime: millis(end),
+		startTimeUnixNano: start,
+		endTimeUnixNano: end,
+		attributes: { ...s.attributes },
+		events: s.events.map((e) => {
+			const t = nanos(e.time);
+			return { name: e.name, time: millis(t), timeUnixNano: t, attributes: { ...e.attributes } };
+		}),
+		links: s.links.map((l) => ({ traceID: l.trace, spanID: l.span, attributes: { ...l.attributes } })),
+		status: { code: STATUS[s.status] ?? 'unset', ...(s.statusMessage ? { message: s.statusMessage } : {}) },
+		resource: { attributes: { ...s.resource } },
+		scope: { name: s.scope.name, version: s.scope.version }
+	};
+}
 
 class Writer {
 	#chunks: number[] = [];
@@ -109,8 +164,6 @@ function keyValues(w: Writer, field: number, attrs: Record<string, unknown>): vo
 	}
 }
 
-const KINDS = ['unspecified', 'internal', 'server', 'client', 'producer', 'consumer'];
-const STATUS = ['unset', 'ok', 'error'];
 
 function span(w: Writer, s: DecodedSpan): void {
 	w.hexBytes(1, s.traceID);

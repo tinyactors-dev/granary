@@ -4,7 +4,7 @@
  * `GRANARY_STUB_BACKEND=1`:
  *
  * ```ts
- * if (config.stubBackend) setBackend(new StubBackend({ admins: config.admins, dapPort: config.dapPort }));
+ * if (config.stubBackend) setBackend(new StubBackend({ admins: config.admins }));
  * ```
  *
  * Run with e.g. `GRANARY_STUB_BACKEND=1 GRANARY_SEED_ADMINS=admin bun --bun vite dev`.
@@ -45,7 +45,6 @@ import type {
 import { closeEffectKey, formatAddress, issueKey, parseIssueKey, type ActorAddress } from '$lib/schemas/actors';
 import type { AuthorAssociation } from '$lib/schemas/github';
 import type {
-	DapLaunchConfig,
 	DevInfo,
 	DevTool,
 	DevInjectFaultInput,
@@ -55,8 +54,6 @@ import type {
 	DevRedeliverResult,
 	DevReopenIssueInput,
 	DevReopenIssueResult,
-	DevSendEvent,
-	DevSendEventResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
 	SpanSummary,
@@ -75,7 +72,6 @@ import type { BeginManifestInput, GitHubMode, SetRepoEnabledInput } from '$lib/s
 
 export interface StubBackendOptions {
 	admins?: string[];
-	dapPort?: number;
 	fakeGithubUrl?: string;
 	/** Public URL used in stub login links / manifest URLs (default http://localhost:5173). */
 	origin?: string;
@@ -106,7 +102,6 @@ const hex = (n: number) =>
 
 export class StubBackend implements Backend {
 	private readonly admins: string[];
-	private readonly dapPort: number;
 	private readonly fakeGithubUrl: string;
 	private readonly startedAt = Date.now() - 42 * MINUTE;
 	private sessions = new Map<string, { login: string; avatarUrl: string | null; expiresAt: number }>();
@@ -121,7 +116,6 @@ export class StubBackend implements Backend {
 
 	constructor(options: StubBackendOptions = {}) {
 		this.admins = (options.admins ?? ['admin']).map((a) => a.toLowerCase());
-		this.dapPort = options.dapPort ?? 4711;
 		this.fakeGithubUrl = options.fakeGithubUrl ?? 'http://localhost:4010';
 		this.settings = new StubSettings({
 			admins: this.admins,
@@ -334,9 +328,10 @@ export class StubBackend implements Backend {
 			system: {
 				residentActors: actors.length,
 				actorsByFamily: byFamily,
-				queuedMessages: inbox.pending,
+				runnableActors: inbox.pending,
 				deliveredMessages: 137,
-				deadLetters: 2,
+				faults: 0,
+				errors: 2,
 				memoryBytes: 3_481_600,
 				startedAt: this.startedAt
 			},
@@ -482,18 +477,12 @@ export class StubBackend implements Backend {
 			address,
 			id: formatAddress(address),
 			family: address.family,
-			revision: 'v1',
+			segment: 0,
 			sessionId: String(1000 + address.name.length * 7),
 			activeStates,
-			residency: 'idle',
-			scheduling: 'idle',
-			macrostepInProgress: false,
-			macrostep: 3,
-			microstep: 0,
-			finalState: null,
 			delayedSendCount: 0,
 			mailboxDepth: 0,
-			allocatedBytes: 2048,
+			invocations: 0,
 			...extra
 		};
 	}
@@ -509,7 +498,7 @@ export class StubBackend implements Backend {
 
 	async listActors(): Promise<ActorSummary[]> {
 		const list = [
-			this.actorSummary({ family: 'allowlist', name: 'main' }, ['ready'], { allocatedBytes: 4096 }),
+			this.actorSummary({ family: 'allowlist', name: 'main' }, ['ready']),
 			...this.residentIssueKeys().map((r) =>
 				this.actorSummary({ family: 'issue', name: r.key }, r.states, { delayedSendCount: r.delayed })
 			)
@@ -531,9 +520,7 @@ export class StubBackend implements Backend {
 				verdict: null,
 				reason: null
 			},
-			delayedSends: r.delayed ? [{ id: 'check-timeout', event: 'check.timeout', due: Date.now() + 8000 }] : [],
-			mailbox: [],
-			currentEvent: null
+			delayedSends: r.delayed ? [{ id: 'check-timeout', event: 'check.timeout', due: Date.now() + 8000 }] : []
 		};
 	}
 
@@ -545,52 +532,17 @@ export class StubBackend implements Backend {
 		const isIssue = address.family === 'issue';
 		const detail = isIssue ? this.actorDetail(address.name) : null;
 		const checking = summary.activeStates.includes('checking');
-		const closing = summary.activeStates.includes('closing');
 		const data = isIssue
 			? detail?.data ?? null
-			: { logins: [...this.allowed.keys()].map((l) => l.toLowerCase()).sort() };
+			: { logins: [...this.allowed.keys()].map((l) => l.toLowerCase()).sort(), blocked: [] };
 		return {
 			...summary,
 			capturedAt: now,
-			runtime: { slot: isIssue ? 2 + (summary.sessionId.length % 5) : 1, generation: 1 },
-			definition: {
-				id: isIssue ? '2' : '3',
-				family: address.family,
-				revision: 'v1',
-				name: address.family,
-				datamodel: 'javascript',
-				binding: 'early',
-				stateCount: isIssue ? 8 : 1,
-				actorCount: (await this.listActors()).filter((a) => a.family === address.family).length,
-				retired: false
-			},
-			published: true,
-			microstepInProgress: false,
-			position: { at: 'none', state: null, transition: null, action: null, iteration: 0 },
-			currentEvent: null,
-			internalEvents: [],
-			mailbox: closing
-				? [{ event: 'issue.opened', data: { deliveryId: crypto.randomUUID(), note: 'duplicate delivery, ignored in closing' }, awaited: false, transition: null }]
-				: [],
-			mailboxTruncated: false,
-			delayedSends: checking
-				? [
-						{
-							id: 'check-timeout',
-							event: 'check.timeout',
-							due: now + 8000,
-							ioType: 'http://www.w3.org/TR/scxml/#SCXMLEventProcessor',
-							destination: 'self',
-							target: null,
-							data: null,
-							submitted: false
-						}
-					]
-				: [],
-			invocations: [],
+			state: summary.activeStates[0] ?? null,
+			history: {},
+			delayedSends: checking ? [{ id: 'check-timeout', event: 'check.timeout', due: now + 8000 }] : [],
 			data,
-			completion: null,
-			chart: chartFor({ family: address.family, revision: 'v1' }),
+			chart: chartFor(address.family),
 			issueKey: isIssue ? address.name : null
 		};
 	}
@@ -600,7 +552,6 @@ export class StubBackend implements Backend {
 	async getDevTools(): Promise<DevTool[]> {
 		return [
 			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
-			{ id: 'dap', name: `Debugger (DAP 127.0.0.1:${this.dapPort})`, url: '/admin/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
 			{ id: 'fake-github', name: 'Fake GitHub', url: `${this.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: true, external: true },
 			{ id: 'fake-infra', name: 'Fake infra', url: 'http://localhost:4090/', description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: false, external: true },
 			{ id: 'loadgen', name: 'Load generator', url: '/admin/load', description: 'Scenarios and personas (API http://localhost:4040)', group: 'fakes', up: true, external: false },
@@ -611,8 +562,6 @@ export class StubBackend implements Backend {
 
 	async getDevInfo(): Promise<DevInfo> {
 		return {
-			dapHost: '127.0.0.1',
-			dapPort: this.dapPort,
 			fakeGithubUrl: this.fakeGithubUrl,
 			admins: this.admins,
 			fakeGithub: {
@@ -670,12 +619,6 @@ export class StubBackend implements Backend {
 		this.fake = { users: [], repos: [], issues: [], deliveries: [], faults: [] };
 	}
 
-	async devSendEvent(input: DevSendEvent): Promise<DevSendEventResult> {
-		const actor = (await this.listActors()).find((a) => a.id === formatAddress(input.address));
-		if (!actor) throw new BackendError('not-found', `No resident actor ${formatAddress(input.address)}`);
-		return { status: 'stable', activeStates: actor.activeStates };
-	}
-
 	#traces?: StubTraces;
 
 	async getRecentSpans(q: Resolved<GetRecentSpansInput>): Promise<SpanSummary[]> {
@@ -694,11 +637,6 @@ export class StubBackend implements Backend {
 	async listRecentTraces(q: Resolved<ListRecentTracesInput>): Promise<TraceSummary[]> {
 		this.#traces ??= new StubTraces();
 		return summarizeTraces(this.#traces.all(), q);
-	}
-
-	async getDapLaunchConfig(address: ActorAddress): Promise<DapLaunchConfig> {
-		const a = formatAddress(address);
-		return { type: 'tinyactors', request: 'attach', name: `granary: ${a}`, port: this.dapPort, address: a };
 	}
 
 	// -- load generator (ADR 0076) ------------------------------------------------------

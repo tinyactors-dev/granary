@@ -1,135 +1,66 @@
 /**
- * Build an `ActorSnapshot` from a live tinyactors actor (ADR 0056).
+ * Summaries and snapshots of live actors (ADR 0056, ADR 0300), from
+ * `actor.state()`, `actor.context()` and `actor.get()`. The host gives no
+ * actor's name, so the caller passes the one it spawned the actor under.
  */
-import type { ActorAddress, ActorID, ActorInspection, EventOrigin, InspectedEvent, System } from '@tinyactors/node-legacy';
-import type { ActorSnapshot, ActorSummary, SnapshotEvent } from '../../schemas/api';
-import { formatAddress } from '../../schemas/actors';
+import type { Actor, StateValue } from '@tinyactors/node';
+import type { ActorDetail, ActorSnapshot, ActorSummary, DelayedSendSummary } from '../../schemas/api';
+import { parseAddress } from '../../schemas/actors';
 import { chartFor } from './charts';
 import { toJsonSafe } from './json-safe';
 
-const MAILBOX_LIMIT = 100;
-
-const revisionText = (r: string | Uint8Array): string =>
-	typeof r === 'string' ? r : Buffer.from(r).toString('hex');
-
-function describeOrigin(o: EventOrigin | undefined): string | null {
-	if (!o) return null;
-	if (o.uri) return o.uri;
-	if (o.kind === 'actor') {
-		const a = o.actor as ActorAddress | ActorID;
-		return 'family' in a ? `#_actor_${a.family}/${a.name}` : `#${a.slot}:${a.generation}`;
-	}
-	if (o.kind === 'invocation') return `invocation ${o.invocation}`;
-	return `${o.type} (io)`;
+/** The active atomic states of a state value (`{open: 'browsing'}` → `['browsing']`). */
+export function activeStates(value: StateValue): string[] {
+	if (typeof value === 'string') return [value];
+	return Object.values(value).flatMap(activeStates);
 }
 
-function event(e: InspectedEvent): SnapshotEvent {
+async function facts(actor: Actor) {
+	const [state, info] = await Promise.all([actor.state(), actor.get()]);
+	// Delayed sends are due on the host's clock (`host.now()`); shown as epoch ms.
+	const offset = Date.now() - actor.host.now();
+	const delayedSends: DelayedSendSummary[] = info.timers.map((t) => ({ id: t.sendid, event: t.event, due: Math.round(t.due + offset) }));
+	return { state, info, delayedSends };
+}
+
+function summaryOf(actor: Actor, name: string | null, f: Awaited<ReturnType<typeof facts>>): ActorSummary {
 	return {
-		name: e.name,
-		type: e.type,
-		sendId: e.sendID ?? null,
-		origin: describeOrigin(e.origin),
-		data: toJsonSafe(e.data)
+		address: name ? parseAddress(name) : null,
+		id: name ?? `#${actor.id}`,
+		family: f.info.chart,
+		segment: f.info.segment,
+		sessionId: String(actor.id),
+		activeStates: activeStates(f.state.value),
+		delayedSendCount: f.info.timersPending,
+		mailboxDepth: f.info.mailbox,
+		invocations: f.info.invocations
 	};
 }
 
-function destination(d: 'self' | ActorAddress | ActorID | null): string | null {
-	if (d === null) return null;
-	if (d === 'self') return 'self';
-	return 'family' in d ? formatAddress(d) : `#${d.slot}:${d.generation}`;
+/** A summary for lists; throws `StaleError` when the actor ended meanwhile. */
+export async function summaryOfActor(actor: Actor, name: string | null): Promise<ActorSummary> {
+	return summaryOf(actor, name, await facts(actor));
 }
 
-/**
- * Snapshot the actor inspected by `i`. `summary` supplies the fields shared
- * with `ActorSummary` (address, ids, mailbox depth, …).
- */
-export function snapshotOf(
-	system: System,
-	i: ActorInspection,
-	summary: ActorSummary
-): ActorSnapshot {
-	const capturedAt = Date.now();
-	const offset = capturedAt - system.time;
+/** The issue page's actor panel: the summary, the variables and the delayed sends. */
+export async function detailOfActor(actor: Actor, name: string | null): Promise<ActorDetail> {
+	const [f, context] = await Promise.all([facts(actor), actor.context()]);
+	return { ...summaryOf(actor, name, f), data: toJsonSafe(context.variables), delayedSends: f.delayedSends };
+}
 
-	let mailbox: ActorSnapshot['mailbox'] = [];
-	let mailboxTruncated = false;
-	try {
-		const raw = system.mailbox(i.actor, { limit: MAILBOX_LIMIT + 1 });
-		mailboxTruncated = raw.length > MAILBOX_LIMIT;
-		mailbox = raw.slice(0, MAILBOX_LIMIT).map((m) => ({
-			event: m.event,
-			data: toJsonSafe(m.data),
-			awaited: m.awaited,
-			transition: m.transition ? `${m.transition.source ?? '(root)'} → ${m.transition.targets.join(' ')}` : null
-		}));
-	} catch {
-		/* gone between inspect and mailbox */
-	}
-
-	let def: ActorSnapshot['definition'] = {
-		id: String(i.definitionID),
-		family: i.definition.family,
-		revision: revisionText(i.definition.revision),
-		name: null,
-		datamodel: 'javascript',
-		binding: 'early',
-		stateCount: 0,
-		actorCount: 0,
-		retired: false
-	};
-	for (const d of system.definitions()) {
-		if (d.id !== i.definitionID) continue;
-		def = {
-			...def,
-			name: d.name ?? null,
-			datamodel: d.datamodel,
-			binding: d.binding,
-			stateCount: d.stateCount,
-			actorCount: d.actorCount,
-			retired: d.retired
-		};
-		break;
-	}
-
-	const address = summary.address;
+/** Everything the inspector shows about one actor. */
+export async function snapshotOf(actor: Actor, name: string | null): Promise<ActorSnapshot> {
+	const [f, context] = await Promise.all([facts(actor), actor.context()]);
+	const summary = summaryOf(actor, name, f);
+	const issueKey = summary.address?.family === 'issue' ? summary.address.name : null;
 	return {
 		...summary,
-		capturedAt,
-		runtime: { slot: i.actor.slot, generation: i.actor.generation },
-		definition: def,
-		published: i.published,
-		microstepInProgress: i.microstepInProgress,
-		position: {
-			at: i.position.at,
-			state: i.position.state,
-			transition: i.position.transition,
-			action: i.position.action,
-			iteration: i.position.iteration
-		},
-		currentEvent: i.currentEvent ? event(i.currentEvent) : null,
-		internalEvents: i.internalEvents.map(event),
-		mailbox,
-		mailboxTruncated,
-		delayedSends: i.delayedSends.map((d) => ({
-			id: d.id,
-			event: d.event,
-			due: Math.round(d.due + offset),
-			ioType: d.ioType,
-			destination: destination(d.destination),
-			target: toJsonSafe(d.target),
-			data: toJsonSafe(d.data),
-			submitted: d.submitted
-		})),
-		invocations: i.invocations.map((v) => ({
-			id: String(v.id),
-			type: v.type,
-			active: v.active,
-			autoforward: v.autoforward,
-			serviceHandle: String(v.serviceHandle)
-		})),
-		data: toJsonSafe(i.data),
-		completion: toJsonSafe(i.completion),
-		chart: chartFor(i.definition),
-		issueKey: address?.family === 'issue' ? address.name : null
+		capturedAt: Date.now(),
+		state: toJsonSafe(f.state.value),
+		history: toJsonSafe(f.state.history),
+		data: toJsonSafe(context.variables),
+		delayedSends: f.delayedSends,
+		chart: chartFor(f.info.chart),
+		issueKey
 	};
 }

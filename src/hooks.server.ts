@@ -43,15 +43,13 @@ let capsCache: AdminCapabilities | null = null;
 function capabilities(devMode: boolean): AdminCapabilities {
 	if (capsCache && capsCache.devMode === devMode) return capsCache;
 	let simulation = { fakeGithub: false, fakeInfra: false, loadgen: false };
-	let debuggerOn = false;
 	try {
 		const config = loadConfig(env);
 		simulation = config.simulation;
-		debuggerOn = config.debugger;
 	} catch {
 		/* invalid config fails at boot; here, fall back to "nothing extra" */
 	}
-	capsCache = adminCapabilities({ devMode, debugger: debuggerOn, simulation });
+	capsCache = adminCapabilities({ devMode, simulation });
 	return capsCache;
 }
 
@@ -83,7 +81,6 @@ export const init: ServerInit = async () => {
 		setBackend(
 			new StubBackend({
 				admins: config.seedAdmins,
-				dapPort: config.dapPort,
 				fakeGithubUrl: config.fakeGithubUrl,
 				...(config.origin ? { origin: config.origin } : {}),
 				// Settings UI work (ADR 0210): GRANARY_STUB_GITHUB_MODE=none shows the setup wizard.

@@ -64,19 +64,20 @@ export interface Page<T> {
 export type Counts<K extends string> = Record<K, number>;
 
 export interface SystemOverview {
-	/** Resident actors (`system.actors()` count). */
+	/** Actors in memory (`hostStats().host.actors` less the hibernated). */
 	residentActors: number;
-	/** Resident actors per family, e.g. `{issue: 3, allowlist: 1}`. */
+	/** Live actors per chart, e.g. `{issue: 3, allowlist: 1}` (`hostStats().charts`). */
 	actorsByFamily: Record<string, number>;
-	/** `system.stats().messages.queued` */
-	queuedMessages: number;
-	/** `system.stats().messages.delivered` */
+	/** Actors with an event to run now (`hostStats().host.runnable`). */
+	runnableActors: number;
+	/** Events delivered since the host started (`hostStats().host.delivered`). */
 	deliveredMessages: number;
-	/** `system.stats().messages.deadLetters` */
-	deadLetters: number;
-	/** `system.stats().memory.total.bytesInUse` */
+	/** Actors that faulted and ended, and execution/communication errors raised in charts (`hostStats().charts`). */
+	faults: number;
+	errors: number;
+	/** The host's memory region (`hostStats().host.regionBytes`). */
 	memoryBytes: number;
-	/** Epoch ms when the actor system was started. */
+	/** Epoch ms when the runtime started. */
 	startedAt: number;
 }
 
@@ -225,32 +226,26 @@ export interface IssueDetail {
 // Actors
 // ---------------------------------------------------------------------------
 
-export type ActorResidency = 'idle' | 'running' | 'done';
-export type ActorScheduling = 'none' | 'idle' | 'ready' | 'runnable' | 'quarantined';
-
-/** A resident actor (`system.actors()` → `ActorInspection`, simplified). */
+/** A live actor (`host.actors()` and `actor.get()`/`state()`, ADR 0300). */
 export interface ActorSummary {
 	/** Null for an anonymous actor. */
 	address: ActorAddress | null;
 	/** `family/name`, or `#<sessionId>` when anonymous. Stable key for UI lists. */
 	id: string;
-	/** Definition identity family (same as address.family for named actors). */
+	/** The chart's name (same as address.family for named actors). */
 	family: string;
-	revision: string;
+	/** The chart's version: the host segment its image was added as. */
+	segment: number;
 	/** Session id (bigint) as a decimal string. */
 	sessionId: string;
+	/** Active atomic states, from `actor.state()`. */
 	activeStates: string[];
-	residency: ActorResidency;
-	scheduling: ActorScheduling;
-	macrostepInProgress: boolean;
-	/** `inspection.step.macrostep` / `.microstep` */
-	macrostep: number;
-	microstep: number;
-	finalState: string | null;
+	/** Pending delayed sends. */
 	delayedSendCount: number;
-	/** `system.mailbox(actor).length` */
+	/** Events waiting in its queue. */
 	mailboxDepth: number;
-	allocatedBytes: number;
+	/** Services it runs. */
+	invocations: number;
 }
 
 export interface DelayedSendSummary {
@@ -260,19 +255,10 @@ export interface DelayedSendSummary {
 	due: number;
 }
 
-export interface QueuedMessageSummary {
-	event: string;
-	/** JSON-safe copy of the data. */
-	data: unknown;
-}
-
 export interface ActorDetail extends ActorSummary {
-	/** JSON-safe copy of `actor.data()` (e.g. `IssueActorData`). */
+	/** JSON-safe copy of the actor's variables (e.g. `IssueActorData`). */
 	data: unknown;
 	delayedSends: DelayedSendSummary[];
-	mailbox: QueuedMessageSummary[];
-	/** Name of the event being processed, if a macrostep is in progress. */
-	currentEvent: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -330,87 +316,21 @@ export interface ChartStructure {
 	states: ChartState[];
 }
 
-export interface SnapshotEvent {
-	name: string;
-	type: 'external' | 'internal' | 'platform';
-	sendId: string | null;
-	/** Origin URI or a short description of who sent it. */
-	origin: string | null;
-	data: unknown;
-}
-
-export interface SnapshotQueuedMessage {
-	event: string;
-	data: unknown;
-	/** A send() waits for it. */
-	awaited: boolean;
-	/** Operator transition carried by the message, as `source → targets`. */
-	transition: string | null;
-}
-
-export interface SnapshotDelayedSend {
-	id: string | null;
-	event: string;
-	/** Epoch ms. */
-	due: number;
-	ioType: string;
-	/** `self`, `family/name`, `#slot:gen`, or null for custom processors. */
-	destination: string | null;
-	target: unknown;
-	data: unknown;
-	/** The router refused it once; waiting to be offered again. */
-	submitted: boolean;
-}
-
-export interface SnapshotInvocation {
-	id: string;
-	type: string;
-	active: boolean;
-	autoforward: boolean;
-	serviceHandle: string;
-}
-
 /**
- * Everything `ActorInspection` (+ mailbox, definition inspection, chart
- * structure) says about one resident actor, JSON-safe. Sets are shown as
- * `{ "$set": [...] }`, Maps as `{ "$map": {...} }`, functions as
- * `"[Function name]"`, cycles as `"[Circular]"`; deep/large values are cut
- * with `"…"` markers.
+ * What the host says about one live actor (`actor.state()`, `context()`,
+ * `get()`, ADR 0300), JSON-safe: bigints as decimal strings, deep or large
+ * values cut with `"…"` markers.
  */
 export interface ActorSnapshot extends ActorSummary {
 	/** Epoch ms when the snapshot was taken. */
 	capturedAt: number;
-	runtime: { slot: number; generation: number };
-	definition: {
-		id: string;
-		family: string;
-		revision: string;
-		name: string | null;
-		datamodel: string;
-		binding: 'early' | 'late';
-		stateCount: number;
-		actorCount: number;
-		retired: boolean;
-	};
-	published: boolean;
-	microstepInProgress: boolean;
-	position: {
-		at: string;
-		state: string | null;
-		transition: number | null;
-		action: number | null;
-		iteration: number;
-	};
-	currentEvent: SnapshotEvent | null;
-	internalEvents: SnapshotEvent[];
-	mailbox: SnapshotQueuedMessage[];
-	/** More messages were waiting than listed. */
-	mailboxTruncated: boolean;
-	delayedSends: SnapshotDelayedSend[];
-	invocations: SnapshotInvocation[];
+	/** The active configuration as `actor.state()` gives it: a state id, or `{compound: child}`. */
+	state: unknown;
+	/** What each history state would return to. */
+	history: unknown;
 	data: unknown;
-	completion: unknown;
-	/** null when the definition was not built by a known chart (or its revision changed). */
+	delayedSends: DelayedSendSummary[];
+	/** null when the chart is not one granary builds. */
 	chart: ChartStructure | null;
 	/** Set for `issue/<key>` actors: link target for the issue page. */
 	issueKey: string | null;

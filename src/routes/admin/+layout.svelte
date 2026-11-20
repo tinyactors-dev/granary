@@ -1,8 +1,7 @@
 <!--
 	The admin section (ADR 0290). Areas that aren't available in this
 	environment (e.g. a simulation service without its URL, impersonation in
-	production) show how to turn them on instead of their page. The debugger
-	page explains its own SSH-tunnel setup.
+	production) show how to turn them on instead of their page.
 -->
 <script lang="ts">
 	import { page } from '$app/state';
@@ -22,7 +21,7 @@
 	};
 
 	const item = $derived(ADMIN_NAV.findLast((n) => adminActive(page.url.pathname, n)));
-	const blocked = $derived(item && item.capability && item.href !== '/admin/debugger' && !adminAvailable(item, shellData().admin) ? item : null);
+	const blocked = $derived(item && item.capability && !adminAvailable(item, shellData().admin) ? item : null);
 </script>
 
 {#if blocked}

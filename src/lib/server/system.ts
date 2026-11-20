@@ -1,18 +1,20 @@
 /**
- * The granary runtime: one tinyactors `System` per process (ADR 0002), the
- * WAL, the outbox relay, the trace sink, the inbox sweeper and (dev only)
- * the DAP server. Kept on `globalThis` so Vite HMR never creates a second
- * one. Boot order per ADR 0003 (see `startRuntime`).
+ * The granary runtime: one tinyactors `Host` per process (ADR 0002, ADR
+ * 0300), the WAL, the outbox relay, the tracer and the inbox sweeper. Kept on
+ * `globalThis` so Vite HMR never creates a second one. Boot order per ADR
+ * 0003 (see `startRuntime`).
  */
-import { createSystem, type Actor, type Definition, type LoadResult, type System } from '@tinyactors/node-legacy';
+import { compileCharts, Host, type Actor } from '@tinyactors/node';
+import { findActor } from '../charts/runtime';
 import {
 	ALLOWLIST_ADDRESS,
 	EVENTS,
 	FAMILY,
+	GRANARY_SYSTEM,
 	IssueKey,
+	formatAddress,
 	issueAddressFromKey,
 	parseIssueDoneData,
-	type AllowlistActorData,
 	type IssueActorData,
 	type IssueLoaderBinding,
 	type IssueOpenedData
@@ -23,7 +25,7 @@ import { parseOutboxPayload } from '../schemas/wal';
 import { allowlistChart } from './actors/allowlist';
 import { issueChart } from './actors/issue';
 import { CATCHUP_INTERVAL_MS, deliveryCatchupChart, type DeliveryCatchupData } from './actors/delivery-catchup';
-import { CATCHUP_ADDRESS, CATCHUP_EVENTS, CATCHUP_IO_TYPE, catchupProcessor } from './github/catchup';
+import { CATCHUP_ADDRESS, CATCHUP_EVENTS, CATCHUP_FAMILY, CATCHUP_IO_TYPE, catchupProcessor } from './github/catchup';
 import { GitHubConnection } from './github/connection';
 import { GitHubStore } from './github/store';
 import { issueOpenedFromInbox } from './inbound';
@@ -38,27 +40,38 @@ import { Wal } from './wal';
 export const SWEEP_AGE_MS = 30_000;
 export const SWEEP_INTERVAL_MS = 30_000;
 
+/** Actor names (ADR 0300): `<family>/<name>`, as in traces and the admin UI. */
+export const ALLOWLIST_NAME = formatAddress(ALLOWLIST_ADDRESS);
+export const CATCHUP_NAME = formatAddress(CATCHUP_ADDRESS);
+export const issueName = (key: string): string => formatAddress(issueAddressFromKey(key));
+
 export interface Runtime {
 	config: Config;
 	devMode: boolean;
 	wal: Wal;
-	system: System;
+	host: Host;
 	relay: Relay;
 	/** The GitHub connection: mode, secrets, auth, installations (ADR 0160). */
 	github: GitHubConnection;
 	tracer: Tracer;
 	startedAt: number;
-	issueDefinition: Definition<IssueActorData>;
-	allowlist: Actor<AllowlistActorData>;
-	/** Post `issue.opened` to its issue actor; false when the queue refused it (the sweeper retries). */
-	/** `traceparent` makes the actor's trace a child of the request that received the webhook (ADR 0234). */
+	/**
+	 * Send `issue.opened` to its issue actor, spawning it from SQLite first
+	 * (ADR 0300); false when that was refused (the sweeper retries).
+	 * `traceparent` makes the actor's trace a child of the request that
+	 * received the webhook (ADR 0234).
+	 */
 	postIssueOpened(data: IssueOpenedData, traceparent?: string): boolean;
-	/** Post `allowlist.replace` with the current `allowed_users`. */
+	/** The issue actor `key`, spawned from SQLite when it is not running. */
+	issueActor(key: string, traceparent?: string): Actor;
+	/** Send `allowlist.replace` with the current `allowed_users`. */
 	publishAllowlist(): void;
-	/** Post `blocklist.replace` with the current (unexpired) `blocked_users` (ADR 0260). */
+	/** Send `blocklist.replace` with the current (unexpired) `blocked_users` (ADR 0260). */
 	publishBlocklist(): void;
-	/** Monotonic counters since process start (ops health, ADR 0124). */
-	stats: { deadLetters: number };
+	/** The name an actor was spawned under (`family/name`), or null (the host does not say, ADR 0300). */
+	nameOf(actor: Actor): string | null;
+	/** Monotonic counters since process start (ops health, ADR 0124): actors that faulted and ended. */
+	stats: { faults: number };
 	shutdown(reason?: string): Promise<void>;
 	closed: boolean;
 }
@@ -68,7 +81,7 @@ type Registry = { [KEY]?: Runtime };
 
 export const getRuntime = (): Runtime | null => (globalThis as Registry)[KEY] ?? null;
 
-/** Build the loader binding (ADR 0003): verdict → settled; outbox row → closing; else new. */
+/** What an issue actor starts from (ADR 0003): verdict → settled; outbox row → closing; else new. */
 export function issueLoaderBinding(wal: Wal, key: string): IssueLoaderBinding {
 	if (wal.getVerdict(key)) return { issueKey: key, phase: 'settled' };
 	const outbox = wal.outboxForIssue(key);
@@ -99,7 +112,8 @@ export function issueLoaderBinding(wal: Wal, key: string): IssueLoaderBinding {
 	return { issueKey: key, phase: 'new' };
 }
 
-function actorDataFor(b: IssueLoaderBinding): IssueActorData {
+/** The issue actor's spawn params: its variables from the binding. */
+export function issueParams(b: IssueLoaderBinding): IssueActorData {
 	return {
 		issueKey: b.issueKey,
 		phase: b.phase,
@@ -111,9 +125,10 @@ function actorDataFor(b: IssueLoaderBinding): IssueActorData {
 }
 
 /**
- * Boot order (ADR 0003): open DB → create system → spawn allowlist →
- * register issue loader → start relay on pending/inflight rows → re-post
- * every pending inbox row → (caller accepts HTTP). Idempotent per process.
+ * Boot order (ADR 0003, ADR 0300): open DB → create the host → spawn
+ * allowlist → start relay on pending/inflight rows → re-send every pending
+ * inbox row (spawning its issue actor) → (caller accepts HTTP). Idempotent
+ * per process.
  */
 export function startRuntime(config: Config, opts: { devMode: boolean }): Runtime {
 	const existing = getRuntime();
@@ -129,118 +144,110 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	const github = new GitHubConnection({ config, store: new GitHubStore(wal.db), secrets: granarySecretsOrNull });
 	github.seed();
 
-	// 2. System (the relay and tracer are created right after; hooks reach them late-bound)
+	// 2. Host (the relay and tracer are created right after; handlers reach them late-bound)
 	let relay: Relay | null = null;
-	let tracer: Tracer | null = null;
-	const stats = { deadLetters: 0 };
-	const system = createSystem({
-		io: {
+	const tracer = new Tracer({ keepRecent: true });
+	const stats = { faults: 0 };
+	/** session → the delivery its issue actor is handling (for `onError`, which cannot read an ended actor). */
+	const deliveries = new Map<string, string>();
+	/** session → the name it was spawned under; the host keeps names but does not give them back. */
+	const names = new Map<string, string>();
+	const ended = (actor: Actor) => {
+		deliveries.delete(String(actor.id));
+		names.delete(String(actor.id));
+	};
+	const charts = compileCharts([issueChart(), allowlistChart(), deliveryCatchupChart()], { warningsAsErrors: true });
+	const host = new Host(charts, {
+		system: GRANARY_SYSTEM,
+		config: tracer.hostConfig(),
+		telemetry: (signal, data) => tracer.onExport(signal, data),
+		ioProcessors: {
 			[GITHUB_IO_TYPE]: githubProcessor({ wal, kickRelay: () => relay?.kick() }),
 			[CATCHUP_IO_TYPE]: catchupProcessor({ connection: () => github, wal })
 		},
-		done(record) {
-			const inspection = record.actor.inspect();
-			if (inspection.definition.family !== FAMILY.issue) {
-				tracer?.noteActor(inspection);
-				return;
-			}
+		onDone(actor, donedata) {
+			ended(actor);
+			if (donedata === undefined) return;
 			try {
-				const done = parseIssueDoneData(record.data);
+				const done = parseIssueDoneData(donedata);
 				wal.recordDone(done);
-				tracer?.noteDone(inspection, done);
+				tracer.noteDone(actor, done);
 				log.info(`issue/${done.issueKey} finished: ${done.verdict} (${done.reason})`, { 'granary.issue_key': done.issueKey, 'granary.verdict': done.verdict, 'granary.reason': done.reason, 'github.delivery_id': done.deliveryId ?? undefined, 'granary.actor.address': `issue/${done.issueKey}` });
 			} catch (e) {
-				log.error(`done hook failed for ${record.finalState}`, e);
+				log.error('recording an issue\'s outcome failed', e);
 			}
 		},
-		fault(record) {
-			let deliveryId: string | null = null;
+		onError(actor, error) {
+			stats.faults++;
+			const deliveryId = deliveries.get(String(actor.id)) ?? null;
+			ended(actor);
 			try {
-				const inspection = record.actor.inspect();
-				tracer?.noteActor(inspection);
-				deliveryId = (inspection.data as Partial<IssueActorData> | undefined)?.deliveryId ?? null;
 				if (deliveryId) wal.setInboxState(deliveryId, 'failed');
 			} catch (e) {
-				log.error('fault hook failed', e);
+				log.error('marking the inbox row failed failed', e);
 			}
-			log.error(
-				`actor faulted in ${record.operation}: ${record.code} ${record.message}` +
-					(deliveryId ? ` (inbox ${deliveryId} → failed)` : '')
-			);
-			// Free the address so a later delivery can load a fresh actor.
-			queueMicrotask(() => {
-				try {
-					if (!system.closed && system.exists(record.actor)) system.destroy(record.actor);
-				} catch {
-					/* already gone */
-				}
-			});
+			log.error(`actor ${actor.id} faulted: ${error.status ?? ''} ${error.message}` + (deliveryId ? ` (inbox ${deliveryId} → failed)` : ''));
 		},
-		deadLetter(record) {
-			stats.deadLetters++;
-			const target =
-				'family' in record.target ? `${record.target.family}/${record.target.name}` : `#${record.target.slot}`;
-			log.warn(`dead letter: ${record.event} → ${target} (${record.reason}${record.detail ? `: ${record.detail}` : ''})`);
+		onHandlerError(error, effect) {
+			log.error(`a handler failed${effect && 'event' in effect ? ` (${effect.event})` : ''}`, error);
 		}
 	});
-
-	// The last SPAN_BUFFER_SIZE spans stay in memory for /admin/traces in every environment (ADR 0290).
-	tracer = new Tracer({ system, keepRecent: true });
-	tracer.install();
-
-	const issueDefinition = system.define(issueChart());
-	const allowlistDefinition = system.define(allowlistChart());
+	charts.close();
+	tracer.attachHost(host);
+	const spawn = (chart: string, name: string, options: { params?: object; traceparent?: string } = {}): Actor => {
+		const actor = host.spawn(chart, { name, ...options } as never);
+		names.set(String(actor.id), name);
+		return actor;
+	};
 
 	// 3. allowlist/main
-	const allowlist = system.spawn(allowlistDefinition, {
-		address: ALLOWLIST_ADDRESS,
-		binding: { logins: wal.allowedLogins(), blocked: wal.blocklistEntries() }
-	});
-	tracer.noteActor(allowlist.inspect());
+	spawn(FAMILY.allowlist, ALLOWLIST_NAME, { params: { logins: wal.allowedLogins(), blocked: wal.blocklistEntries() } });
 
-	// 4. issue loader
-	system.setLoader(FAMILY.issue, (address): LoadResult => {
-		if (!check(IssueKey, address.name)) return 'not-found';
-		const binding = issueLoaderBinding(wal, address.name);
-		return { spawn: issueDefinition, binding: actorDataFor(binding) };
-	});
+	// 4. issue actors are spawned when something is sent to them (no loaders in 0.4, ADR 0300)
+	const issueActor = (key: string, traceparent?: string): Actor => {
+		const name = issueName(key);
+		const running = findActor(host, name);
+		if (running) return running;
+		const params = issueParams(issueLoaderBinding(wal, key));
+		return spawn(FAMILY.issue, name, { params, ...(traceparent ? { traceparent } : {}) });
+	};
 
 	// 5. relay
 	relay = new Relay({
 		wal,
 		github: (payload) => github.clientForRepo({ owner: payload.owner, repo: payload.repo, repoId: payload.repoId }),
-		system,
+		reply: (to, event, data) => {
+			if (to.family !== FAMILY.issue || !check(IssueKey, to.name)) throw new Error(`relay: unknown reply_to ${to.family}/${to.name}`);
+			issueActor(to.name).send(event, data as never);
+		},
 		baseDelayMs: config.relayBaseDelayMs
 	});
 	relay.start();
 
 	// 5b. delivery-catchup/main (ADR 0162): app mode only; spawned when the mode becomes `app`.
-	const catchupDefinition = system.define(deliveryCatchupChart());
 	const catchupTiming = catchupTimingFromEnv();
 	const spawnCatchup = () => {
-		if (github.mode() !== 'app' || system.closed || system.findActor(CATCHUP_ADDRESS)) return;
-		const actor = system.spawn(catchupDefinition, { address: CATCHUP_ADDRESS, binding: catchupTiming });
-		tracer!.noteActor(actor.inspect());
+		if (github.mode() !== 'app' || host.closed || findActor(host, CATCHUP_NAME)) return;
+		spawn(CATCHUP_FAMILY, CATCHUP_NAME, { params: catchupTiming });
 		log.info('github: delivery catch-up started');
 	};
 	spawnCatchup();
 	github.onModeChange((mode) => {
 		if (mode === 'app') {
 			spawnCatchup();
-			try {
-				system.post(CATCHUP_ADDRESS, CATCHUP_EVENTS.runNow);
-			} catch {
-				/* not resident */
-			}
+			findActor(host, CATCHUP_NAME)?.send(CATCHUP_EVENTS.runNow);
 		}
 	});
 
 	const postIssueOpened = (data: IssueOpenedData, traceparent?: string): boolean => {
 		try {
-			system.post(issueAddressFromKey(data.issueKey), EVENTS.issueOpened, data, traceparent ? { traceparent } : undefined);
+			if (!check(IssueKey, data.issueKey)) throw new Error(`invalid issue key ${data.issueKey}`);
+			const actor = issueActor(data.issueKey, traceparent);
+			actor.send(EVENTS.issueOpened, data as never, traceparent ? { traceparent } : undefined);
+			deliveries.set(String(actor.id), data.deliveryId);
 			return true;
 		} catch (e) {
-			log.warn(`could not post issue.opened for ${data.issueKey} (sweeper will retry)`, e);
+			log.warn(`could not send issue.opened for ${data.issueKey} (sweeper will retry)`, e);
 			return false;
 		}
 	};
@@ -258,7 +265,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 		return n;
 	};
 
-	// 6. re-post every pending inbox row
+	// 6. re-send every pending inbox row
 	const reposted = repostPending(Number.MAX_SAFE_INTEGER);
 	if (reposted) log.info(`boot: re-posted ${reposted} pending inbox row(s)`);
 
@@ -273,24 +280,25 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	}, SWEEP_INTERVAL_MS);
 	sweeper.unref?.();
 
+	const allowlist = () => host.actor(ALLOWLIST_NAME);
 	const runtime: Runtime = {
 		config,
 		devMode: opts.devMode,
 		wal,
-		system,
+		host,
 		relay,
 		github,
 		tracer,
 		startedAt: Date.now(),
-		issueDefinition,
-		allowlist,
 		postIssueOpened,
+		issueActor,
+		nameOf: (actor) => names.get(String(actor.id)) ?? null,
 		stats,
 		publishAllowlist() {
-			system.post(ALLOWLIST_ADDRESS, EVENTS.allowlistReplace, { logins: wal.allowedLogins() });
+			allowlist().send(EVENTS.allowlistReplace, { logins: wal.allowedLogins() });
 		},
 		publishBlocklist() {
-			system.post(ALLOWLIST_ADDRESS, EVENTS.blocklistReplace, { entries: wal.blocklistEntries() });
+			allowlist().send(EVENTS.blocklistReplace, { entries: wal.blocklistEntries() } as never);
 		},
 		closed: false,
 		async shutdown(reason) {
@@ -306,12 +314,13 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 					log.error('shutdown hook failed', e);
 				}
 			}
-			tracer!.close();
 			try {
-				system.close();
+				// Ends the open spans and hands the last telemetry to the tracer.
+				await host[Symbol.asyncDispose]();
 			} catch (e) {
-				log.error('closing the actor system failed', e);
+				log.error('closing the actor host failed', e);
 			}
+			tracer.close();
 			try {
 				wal.close();
 			} catch (e) {
@@ -341,7 +350,7 @@ function catchupTimingFromEnv(): Partial<DeliveryCatchupData> {
 }
 
 const shutdownHooks: (() => void | Promise<void>)[] = [];
-/** Extra teardown (e.g. the DAP server), run before the system closes. */
+/** Extra teardown, run before the host closes. */
 export function onShutdown(fn: () => void | Promise<void>): void {
 	shutdownHooks.push(fn);
 }

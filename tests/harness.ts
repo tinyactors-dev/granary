@@ -159,7 +159,6 @@ export class Harness {
 	readonly infraPeerPort = freePort();
 	readonly infraUrl: string;
 	readonly infraOutput = new Output('fake-infra');
-	readonly dapPort = freePort();
 	private infra: Subprocess | null = null;
 	private loadgen: Subprocess | null = null;
 	private app: Subprocess | null = null;
@@ -221,7 +220,6 @@ export class Harness {
 				: { GRANARY_SEED_OTLP_ENDPOINT: this.collector.url, GRANARY_SEED_OTLP_AUTH: 'none' };
 		return {
 			GRANARY_DEV: '1',
-			GRANARY_DAP_PORT: String(this.dapPort),
 			GRANARY_SEED_R2_ACCOUNT_ID: OPS_TEST.accountId,
 			GRANARY_SEED_R2_JURISDICTION: 'eu',
 			GRANARY_SEED_R2_BUCKET: OPS_TEST.bucket,

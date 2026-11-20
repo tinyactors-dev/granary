@@ -1,8 +1,8 @@
 /**
  * The real `Backend` (ADR 0032): read models from the SQLite WAL, live actor
- * inspection through the tinyactors system, allowlist mutations, effect
- * retries, sessions, and (dev only) the fake-GitHub control API, the span
- * ring buffer and DAP launch configurations.
+ * inspection through the tinyactors host, allowlist mutations, effect
+ * retries, sessions, and (dev only) the fake-GitHub control API and the span
+ * ring buffer.
  */
 import type { ClosingMessages } from '$lib/schemas/message-template';
 import { readClosingMessages, saveClosingMessages } from './closing-messages';
@@ -10,7 +10,7 @@ import { CLOSING_MESSAGES_SETTING } from '$lib/schemas/message-template';
 import { randomBytes } from 'node:crypto';
 import { LoadgenClient } from './loadgen-client';
 import { FakeInfraClient } from './fake-infra-client';
-import { TinyactorsError, type ActorInspection } from '@tinyactors/node-legacy';
+import { StaleError, type Actor } from '@tinyactors/node';
 import type { TSchema, Static } from '@sinclair/typebox';
 import type {
 	ActorDetail,
@@ -46,7 +46,6 @@ import { AdminStore, AdminStoreError } from './admins';
 import { log } from './log';
 import { masterKeyStatus } from './secrets';
 import type {
-	DapLaunchConfig,
 	DevInfo,
 	DevTool,
 	DevInjectFaultInput,
@@ -56,8 +55,6 @@ import type {
 	DevRedeliverResult,
 	DevReopenIssueInput,
 	DevReopenIssueResult,
-	DevSendEvent,
-	DevSendEventResult,
 	GetRecentSpansInput,
 	ListRecentTracesInput,
 	SpanSummary,
@@ -110,10 +107,9 @@ import type {
 	RepoSummary,
 	SetRepoEnabledInput
 } from '../schemas/github-app';
-import { DAP_HOST } from './dap';
-import type { Runtime } from './system';
-import { addressOfInspection } from './tracing';
-import { snapshotOf } from './inspect/snapshot';
+import { issueName, type Runtime } from './system';
+import { findActor } from '../charts/runtime';
+import { detailOfActor, snapshotOf, summaryOfActor } from './inspect/snapshot';
 import { destinationConsoleLink, getOpsBackend, hasOpsBackend, type OpsStatus } from '$lib/ops/contract';
 import { setupSteps } from './setup-steps';
 
@@ -129,15 +125,6 @@ function cursorOffset(before: string | undefined): number {
 	return Number(before);
 }
 
-/** JSON-safe deep copy (bigint → string, functions dropped). */
-function jsonSafe(v: unknown): unknown {
-	if (v === undefined) return null;
-	try {
-		return JSON.parse(JSON.stringify(v, (_k, x) => (typeof x === 'bigint' ? x.toString() : x)));
-	} catch {
-		return String(v);
-	}
-}
 
 export class RealBackend implements Backend {
 	readonly #rt: Runtime;
@@ -276,22 +263,23 @@ export class RealBackend implements Backend {
 	}
 
 	async getOverview(): Promise<Overview> {
-		const actors = this.#inspections();
+		const stats = await this.#rt.host.hostStats();
 		const byFamily: Record<string, number> = {};
-		for (const a of actors) byFamily[a.definition.family] = (byFamily[a.definition.family] ?? 0) + 1;
-		const stats = this.#rt.system.stats();
+		for (const c of stats.charts) if (c.actors) byFamily[c.name] = (byFamily[c.name] ?? 0) + c.actors;
+		const sum = (f: (c: (typeof stats.charts)[number]) => number) => stats.charts.reduce((n, c) => n + f(c), 0);
 		return {
 			inbox: this.#wal.inboxCounts(),
 			outbox: this.#wal.outboxCounts(),
 			verdicts: this.#wal.verdictCounts(),
 			allowlistSize: this.#wal.allowedCount(),
 			system: {
-				residentActors: actors.length,
+				residentActors: stats.host.actors - stats.host.hibernated,
 				actorsByFamily: byFamily,
-				queuedMessages: stats.messages.queued,
-				deliveredMessages: stats.messages.delivered,
-				deadLetters: stats.messages.deadLetters,
-				memoryBytes: stats.memory.total.bytesInUse,
+				runnableActors: stats.host.runnable,
+				deliveredMessages: stats.host.delivered,
+				faults: sum((c) => c.faults),
+				errors: sum((c) => c.errorsExecution + c.errorsCommunication),
+				memoryBytes: stats.host.regionBytes,
 				startedAt: this.#rt.startedAt
 			},
 			nextRelayAttemptAt: this.#wal.nextOutboxDueAt(),
@@ -345,8 +333,8 @@ export class RealBackend implements Backend {
 		const inbox = this.#wal.inboxForIssue(key);
 		const outbox = this.#wal.outboxForIssue(key);
 		const verdict = this.#wal.getVerdict(key);
-		const actor = this.#rt.system.findActor({ family: 'issue', name: key });
-		const detail = actor && !actor.destroyed ? this.#actorDetail(actor.inspect()) : null;
+		const actor = findActor(this.#rt.host, issueName(key));
+		const detail = actor ? await this.#live(() => detailOfActor(actor, issueName(key))) : null;
 		if (!inbox.length && !outbox && !verdict && !detail) return null;
 		return {
 			issueKey: key,
@@ -444,75 +432,28 @@ export class RealBackend implements Backend {
 
 	// -- actors ---------------------------------------------------------------------------
 
-	#inspections(): ActorInspection[] {
-		return [...this.#rt.system.actors()];
-	}
-
-	#actorSummary(i: ActorInspection): ActorSummary {
-		const address = addressOfInspection(i);
-		const revision = typeof i.definition.revision === 'string' ? i.definition.revision : Buffer.from(i.definition.revision).toString('hex');
-		let mailboxDepth = 0;
+	/** `f()`, or null when the actor ended meanwhile. */
+	async #live<T>(f: () => Promise<T>): Promise<T | null> {
 		try {
-			mailboxDepth = this.#rt.system.mailbox(i.actor, { limit: 1000 }).length;
-		} catch {
-			/* gone */
+			return await f();
+		} catch (e) {
+			if (e instanceof StaleError) return null;
+			throw e;
 		}
-		return {
-			address,
-			id: address ? formatAddress(address) : `#${i.sessionID}`,
-			family: i.definition.family,
-			revision,
-			sessionId: String(i.sessionID),
-			activeStates: [...i.activeStates],
-			residency: i.residency,
-			scheduling: i.scheduling,
-			macrostepInProgress: i.macrostepInProgress,
-			macrostep: i.step.macrostep,
-			microstep: i.step.microstep,
-			finalState: i.finalState,
-			delayedSendCount: i.delayedSendCount,
-			mailboxDepth,
-			allocatedBytes: i.allocatedBytes
-		};
-	}
-
-	#actorDetail(i: ActorInspection): ActorDetail {
-		const system = this.#rt.system;
-		const offset = Date.now() - system.time;
-		let mailbox: ActorDetail['mailbox'] = [];
-		try {
-			mailbox = system.mailbox(i.actor, { limit: 50 }).map((m) => ({ event: m.event, data: jsonSafe(m.data) }));
-		} catch {
-			/* gone */
-		}
-		return {
-			...this.#actorSummary(i),
-			data: jsonSafe(i.data),
-			delayedSends: i.delayedSends.map((d) => ({ id: d.id, event: d.event, due: Math.round(d.due + offset) })),
-			mailbox,
-			currentEvent: i.currentEvent?.name ?? null
-		};
 	}
 
 	async listActors(): Promise<ActorSummary[]> {
-		return this.#inspections()
-			.map((i) => this.#actorSummary(i))
+		const actors: Actor[] = await this.#rt.host.actors();
+		const summaries = await Promise.all(actors.map((a) => this.#live(() => summaryOfActor(a, this.#rt.nameOf(a)))));
+		return summaries
+			.filter((s): s is ActorSummary => s !== null)
 			.sort((a, b) => a.family.localeCompare(b.family) || a.id.localeCompare(b.id));
 	}
 
 	async inspectActor(address: ActorAddress): Promise<ActorSnapshot | null> {
-		const system = this.#rt.system;
-		const actor = system.findActor(address);
-		if (!actor) return null;
-		try {
-			const i = actor.inspect();
-			// the directory knows the address even when data has no issueKey yet
-			const summary = { ...this.#actorSummary(i), address, id: formatAddress(address) };
-			return snapshotOf(system, i, summary);
-		} catch (e) {
-			if (e instanceof TinyactorsError && (e.code === 'not-found' || e.code === 'closed')) return null;
-			throw e;
-		}
+		const name = formatAddress(address);
+		const actor = findActor(this.#rt.host, name);
+		return actor ? this.#live(() => snapshotOf(actor, name)) : null;
 	}
 
 	// -- dev ------------------------------------------------------------------------------
@@ -558,7 +499,6 @@ export class RealBackend implements Backend {
 		const c = this.#rt.config;
 		const tools: DevTool[] = [
 			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
-			{ id: 'dap', name: `Debugger (DAP ${DAP_HOST}:${c.dapPort})`, url: '/admin/actors', description: 'Attach configurations per actor', group: 'granary', up: null, external: false },
 			{ id: 'fake-github', name: 'Fake GitHub', url: `${c.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: null, external: true },
 			{ id: 'fake-infra', name: 'Fake infra', url: `${c.fakeInfraUrl}/`, description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: null, external: true },
 			{ id: 'loadgen', name: 'Load generator', url: '/admin/load', description: `Scenarios and personas (API ${c.loadgenUrl})`, group: 'fakes', up: null, external: false }
@@ -607,8 +547,6 @@ export class RealBackend implements Backend {
 
 	async getDevInfo(): Promise<DevInfo> {
 		const base = {
-			dapHost: DAP_HOST,
-			dapPort: this.#rt.config.dapPort,
 			fakeGithubUrl: this.#rt.config.fakeGithubUrl,
 			admins: this.#admins.listAdmins().map((a) => a.login)
 		};
@@ -662,40 +600,12 @@ export class RealBackend implements Backend {
 		await this.#control('POST', CONTROL_PATHS.reset, ControlOk);
 	}
 
-	async devSendEvent(input: DevSendEvent): Promise<DevSendEventResult> {
-		const system = this.#rt.system;
-		try {
-			const result = await system.send(input.address, input.event, input.data, { until: 'completed', timeout: 5000 });
-			const actor = system.findActor(input.address);
-			let activeStates: string[] | null = null;
-			if (actor && !actor.destroyed) {
-				try {
-					activeStates = [...actor.inspect().activeStates];
-				} catch {
-					activeStates = null;
-				}
-			}
-			return { status: result.status, activeStates };
-		} catch (e) {
-			if (e instanceof TinyactorsError) {
-				if (e.code === 'not-found') throw new BackendError('not-found', `No actor at ${formatAddress(input.address)}`);
-				throw new BackendError('invalid', e.code);
-			}
-			throw e;
-		}
-	}
-
 	async getRecentSpans(q: Resolved<GetRecentSpansInput>): Promise<SpanSummary[]> {
 		return this.#rt.tracer.recent(q);
 	}
 
 	async listRecentTraces(q: Resolved<ListRecentTracesInput>): Promise<TraceSummary[]> {
 		return this.#rt.tracer.traces(q);
-	}
-
-	async getDapLaunchConfig(address: ActorAddress): Promise<DapLaunchConfig> {
-		const a = formatAddress(address);
-		return { type: 'tinyactors', request: 'attach', name: `granary: ${a}`, port: this.#rt.config.dapPort, address: a };
 	}
 
 	// -- load generator (ADR 0076) ------------------------------------------------------

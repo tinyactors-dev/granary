@@ -7,7 +7,6 @@
 
 	const changes = $derived(diffJson(before.data, after.data));
 	const statesChanged = $derived(before.activeStates.join(' ') !== after.activeStates.join(' '));
-	const stepChanged = $derived(before.macrostep !== after.macrostep || before.microstep !== after.microstep);
 	const KIND = { added: 'text-emerald-700 dark:text-emerald-400', removed: 'text-red-700 dark:text-red-400', changed: 'text-amber-700 dark:text-amber-400' };
 </script>
 
@@ -17,12 +16,6 @@
 			<span class="text-muted-foreground">states:</span>
 			<span class="font-mono">{before.activeStates.join(', ') || '—'}</span> →
 			<span class="font-mono font-semibold">{after.activeStates.join(', ') || '—'}</span>
-		</div>
-	{/if}
-	{#if stepChanged}
-		<div>
-			<span class="text-muted-foreground">step:</span>
-			<span class="font-mono">{before.macrostep}.{before.microstep} → {after.macrostep}.{after.microstep}</span>
 		</div>
 	{/if}
 	{#if changes.length}
@@ -36,7 +29,7 @@
 				</li>
 			{/each}
 		</ul>
-	{:else if !statesChanged && !stepChanged}
+	{:else if !statesChanged}
 		<p class="text-muted-foreground">No changes since the snapshot was captured.</p>
 	{:else}
 		<p class="text-muted-foreground">Data unchanged.</p>

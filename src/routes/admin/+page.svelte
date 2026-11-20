@@ -37,7 +37,7 @@
 	});
 </script>
 
-<PageHeader title="Admin" description="What's inside granary: the actor system, traces and the debugger, plus the simulation services used to exercise it." />
+<PageHeader title="Admin" description="What's inside granary: the actor host and its traces, plus the simulation services used to exercise it." />
 
 {#snippet status(state: 'up' | 'down' | 'off', label: string)}
 	<span class="inline-flex items-center gap-1 text-xs font-medium {state === 'up' ? 'text-emerald-700 dark:text-emerald-400' : state === 'down' ? 'text-red-700 dark:text-red-400' : 'text-muted-foreground'}">
@@ -58,12 +58,12 @@
 					<dl class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
 						<dt class="text-muted-foreground">Resident actors</dt>
 						<dd class="text-right tabular-nums">{o.system.residentActors}</dd>
-						<dt class="text-muted-foreground">Queued messages</dt>
-						<dd class="text-right tabular-nums">{o.system.queuedMessages}</dd>
-						<dt class="text-muted-foreground">Delivered messages</dt>
+						<dt class="text-muted-foreground">Runnable actors</dt>
+						<dd class="text-right tabular-nums">{o.system.runnableActors}</dd>
+						<dt class="text-muted-foreground">Delivered events</dt>
 						<dd class="text-right tabular-nums">{o.system.deliveredMessages}</dd>
-						<dt class="text-muted-foreground">Dead letters</dt>
-						<dd class="text-right tabular-nums">{o.system.deadLetters}</dd>
+						<dt class="text-muted-foreground">Faults · errors</dt>
+						<dd class="text-right tabular-nums">{o.system.faults} · {o.system.errors}</dd>
 						<dt class="text-muted-foreground">Memory</dt>
 						<dd class="text-right tabular-nums">{formatBytes(o.system.memoryBytes)}</dd>
 						<dt class="text-muted-foreground">Up since</dt>

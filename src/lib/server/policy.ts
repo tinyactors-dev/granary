@@ -29,13 +29,25 @@ export interface PolicyLists {
 }
 
 /** Is this blocklist entry in force at `now`? */
-export const blockActive = (e: BlockEntry, now: number): boolean => e.expiresAt === null || e.expiresAt > now;
+export function blockActive(e: BlockEntry, now: number): boolean {
+	return e.expiresAt === null || e.expiresAt > now;
+}
 
-export function decidePolicy(lists: PolicyLists, subject: PolicySubject, now: number = Date.now()): AllowlistVerdictData {
+/**
+ * The decision for one subject. The allowlist actor's chart embeds this
+ * function and `blockActive` as helpers (ADR 0300), so both must stay
+ * self-contained: the chart passes `maintainers` and `now` explicitly.
+ */
+export function decidePolicy(
+	lists: PolicyLists,
+	subject: PolicySubject,
+	now: number = Date.now(),
+	maintainers: readonly string[] = MAINTAINER_ASSOCIATIONS
+): AllowlistVerdictData {
 	const login = subject.login;
 	const lower = login.toLowerCase();
 	if (lists.blocked.some((e) => e.login === lower && blockActive(e, now))) return { login, allowed: false, reason: 'blocklist' };
 	if (lists.allowed.includes(lower)) return { login, allowed: true, reason: 'allowlist' };
-	if (MAINTAINER_ASSOCIATIONS.includes(subject.association)) return { login, allowed: true, reason: 'association' };
+	if (maintainers.includes(subject.association)) return { login, allowed: true, reason: 'association' };
 	return { login, allowed: false, reason: 'not-allowed' };
 }

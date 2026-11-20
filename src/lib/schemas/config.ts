@@ -42,13 +42,10 @@ export const RawEnv = Type.Object(
 		/** Seeds (ADR 0161, 0040): logins added once, never overwriting in-product changes. */
 		GRANARY_SEED_ADMINS: Type.Optional(Type.String()),
 		GRANARY_SEED_ALLOWLIST: Type.Optional(Type.String()),
-		/** `1` turns on development mode outside `vite dev`: impersonation (/admin/sessions), the dev JSON API and the debugger (ADR 0009, 0290). */
+		/** `1` turns on development mode outside `vite dev`: impersonation (/admin/sessions) and the dev JSON API (ADR 0009, 0290). */
 		GRANARY_DEV: Type.Optional(Flag),
-		/** `1` starts the DAP debugger (127.0.0.1 only) outside development mode (ADR 0290). */
-		GRANARY_DEBUGGER: Type.Optional(Flag),
 		/** Minimum log level: debug | info (default) | warn | error (ADR 0234). */
 		GRANARY_LOG_LEVEL: Type.Optional(Type.Union(['debug', 'info', 'warn', 'error', ''].map((l) => Type.Literal(l)))),
-		GRANARY_DAP_PORT: Type.Optional(Port),
 		/** Dev only: `origin=user:pass,…` login hints in the /admin Tools card (ADR 0027). */
 		GRANARY_DEV_LOGIN_HINTS: Type.Optional(Type.String()),
 		/** Dev/tests only: connect to the fake GitHub as a GitHub App automatically (ADR 0230). */
@@ -102,9 +99,6 @@ export interface Config {
 	granaryDev: boolean;
 	/** `GRANARY_STUB_BACKEND=1`: register `StubBackend` instead of the real one (UI work). */
 	stubBackend: boolean;
-	dapPort: number;
-	/** `GRANARY_DEBUGGER=1` (ADR 0290). */
-	debugger: boolean;
 	/** Which simulation URLs were set explicitly (not defaulted), ADR 0290. */
 	simulation: { fakeGithub: boolean; fakeInfra: boolean; loadgen: boolean };
 	/** Dev-only login hints for local stand-in UIs, keyed by URL origin. */
@@ -185,8 +179,6 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 		granaryDev: raw.GRANARY_DEV === '1',
 		logLevel: (raw.GRANARY_LOG_LEVEL || 'info') as Config['logLevel'],
 		stubBackend: raw.GRANARY_STUB_BACKEND === '1',
-		dapPort: Number(raw.GRANARY_DAP_PORT ?? 4711),
-		debugger: raw.GRANARY_DEBUGGER === '1',
 		simulation: { fakeGithub: raw.FAKE_GITHUB_URL !== undefined, fakeInfra: raw.FAKE_INFRA_URL !== undefined, loadgen: raw.LOADGEN_URL !== undefined },
 		devLoginHints: parseLoginHints(raw.GRANARY_DEV_LOGIN_HINTS),
 		devGithubAutoconnect: raw.GRANARY_DEV_GITHUB_AUTOCONNECT === '1',

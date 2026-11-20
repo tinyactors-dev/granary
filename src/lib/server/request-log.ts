@@ -16,7 +16,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { isHttpError, isRedirect, type RequestEvent } from '@sveltejs/kit';
-import type { DecodedSpan } from '@tinyactors/node-legacy';
+import type { DecodedSpan } from './otlp-encode';
 import { log, withLogContext, SENSITIVE_LOG_KEY, type LogAttrs } from './log';
 import { getRuntime } from './system';
 import { SERVICE_NAME } from './tracing';
