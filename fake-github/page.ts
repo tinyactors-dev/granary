@@ -139,3 +139,45 @@ export function authorizePage(url: URL, users: FakeUser[]): string {
 <button>Authorize</button></form>
 </main></body></html>`;
 }
+
+/** One comment as the thread pages show it (body as plain text: the fake renders no Markdown). */
+export interface ThreadComment {
+	author: string;
+	body: string;
+	createdAt: string;
+}
+
+/**
+ * `GET /{owner}/{repo}/issues|pull|discussions/{n}` (ADR 0310): a read-only
+ * page for the links granary shows, so an issue's closing comment or a
+ * discussion's reply can be read in a browser.
+ */
+export function threadPage(t: {
+	kind: 'Issue' | 'Pull request' | 'Discussion';
+	repo: string;
+	number: number;
+	title: string;
+	author: string;
+	state: string | null;
+	category: string | null;
+	body: string;
+	comments: ThreadComment[];
+}): string {
+	const comment = (c: ThreadComment) =>
+		`<section class="comment"><div class="who"><strong>${esc(c.author)}</strong> <span class="muted">${esc(c.createdAt)}</span></div><pre>${esc(c.body)}</pre></section>`;
+	return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc(t.title)} · ${esc(t.repo)}#${t.number}</title><style>${STYLE}
+.comment { margin-top: 12px; } .who { margin-bottom: 6px; } .muted { color: var(--muted); font-size: 12px; }
+.badge { display:inline-block; border:1px solid var(--border); border-radius: 999px; padding: 0 8px; font-size: 12px; margin-right: 6px; }
+pre { font: 14px/1.5 system-ui, sans-serif; word-break: normal; }
+</style></head>
+<body><main>
+<p class="muted"><a href="/">Fake GitHub</a> · ${esc(t.repo)}</p>
+<h1>${esc(t.title)} <span class="muted">#${t.number}</span></h1>
+<p><span class="badge">${t.kind}</span>${t.category ? `<span class="badge">${esc(t.category)}</span>` : ''}${t.state ? `<span class="badge ${t.state === 'open' ? 'open' : 'closed'}">${esc(t.state)}</span>` : ''}</p>
+${comment({ author: t.author, body: t.body || '(no description)', createdAt: '' })}
+${t.comments.map(comment).join('\n')}
+${t.comments.length ? '' : '<p class="muted">No comments yet.</p>'}
+</main></body></html>`;
+}

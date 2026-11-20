@@ -66,7 +66,7 @@ import { OAUTH_ADDRESS, OAUTH_EVENTS } from './actors/oauth';
 import { REPOSITORY_EVENTS, repositoryAddress } from './actors/repository';
 import { DELIVERY_EVENTS, deliveryAddress, type DeliveryReply } from './actors/delivery';
 import { issuesEvent, repositoryView, userView, type Bases } from './views';
-import { authorizePage, controlPage } from './page';
+import { authorizePage, controlPage, threadPage } from './page';
 import { EventLog } from './events';
 import { createAppRoutes, type DeliveryTarget } from './app-routes';
 import { createGraphQL } from './graphql';
@@ -994,6 +994,38 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 }
 
 // ---------------------------------------------------------------------------
+// Web pages for issues, pull requests and discussions (read-only, ADR 0310)
+// ---------------------------------------------------------------------------
+
+async function threadRoute(m: RegExpExecArray): Promise<Response> {
+	const [, owner, repo, kind, n] = m;
+	const number = Number(n);
+	const s = await fake.snapshot();
+	const html = (body: string, status = 200) => new Response(body, { status, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+	const same = (o: string, r: string) => o.toLowerCase() === owner!.toLowerCase() && r.toLowerCase() === repo!.toLowerCase();
+	if (kind === 'discussions') {
+		const d = s.discussions?.find((x) => same(x.owner, x.repo) && x.number === number);
+		if (!d) return html('<p>Not Found</p>', 404);
+		return html(threadPage({ kind: 'Discussion', repo: `${d.owner}/${d.repo}`, number, title: d.title, author: d.author, state: null, category: d.category, body: d.body, comments: d.comments }));
+	}
+	const i = s.issues.find((x) => same(x.owner, x.repo) && x.number === number);
+	if (!i) return html('<p>Not Found</p>', 404);
+	return html(
+		threadPage({
+			kind: i.pullRequest ? 'Pull request' : 'Issue',
+			repo: `${i.owner}/${i.repo}`,
+			number,
+			title: i.title,
+			author: i.user.login,
+			state: i.state,
+			category: null,
+			body: i.body ?? '',
+			comments: i.comments.map((c) => ({ author: c.user.login, body: c.body ?? '', createdAt: c.created_at ?? '' }))
+		})
+	);
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -1004,6 +1036,8 @@ async function route(req: Request): Promise<Response> {
 		return new Response(controlPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 	}
 	if (path === '/healthz') return json({ ok: true });
+	const thread = /^\/([^/_][^/]*)\/([^/]+)\/(issues|pull|discussions)\/(\d+)\/?$/.exec(path);
+	if (thread && req.method === 'GET') return threadRoute(thread);
 	const appResponse = await appRoutes.route(req, url);
 	if (appResponse) return appResponse;
 	if (path.startsWith('/__control/')) return control(req, path);
