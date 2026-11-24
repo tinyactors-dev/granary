@@ -16,7 +16,7 @@
 	import LoaderCircleIcon from '@lucide/svelte/icons/loader-circle';
 	import { toast } from 'svelte-sonner';
 	import type { DevInfo } from '$lib/schemas/dev';
-	import { devInjectFault, devIntroduce, devOpenIssue, devRedeliver, devReopenIssue, devReset, devSetUpDiscussions } from '$lib/remote/dev.remote';
+	import { devInjectFault, devIntroduce, devOpenIssue, devRedeliver, devReopenIssue, devDeleteIssue, devReset, devSetUpDiscussions } from '$lib/remote/dev.remote';
 	import HandIcon from '@lucide/svelte/icons/hand';
 	import { DEV_ASSOCIATIONS, describeError, issueHref } from '$lib/components/app/format';
 	import StateBadge from '$lib/components/app/StateBadge.svelte';
@@ -65,6 +65,9 @@
 
 	const reopen = (owner: string, repo: string, number: number, actor: string) =>
 		run(`reopen:${owner}/${repo}#${number}`, () => devReopenIssue({ owner, repo, number, actor }), (r) => `Reopened ${owner}/${repo}#${number} (${r.deliveryId ? `delivery ${r.deliveryId.slice(0, 8)}…` : 'no GitHub App covers it: nothing delivered'})`);
+
+	const del = (owner: string, repo: string, number: number, actor: string) =>
+		run(`delete:${owner}/${repo}#${number}`, () => devDeleteIssue({ owner, repo, number, actor }), () => `Deleted ${owner}/${repo}#${number}: GitHub now answers 410 Gone for it`);
 
 	const redeliver = (deliveryId: string) =>
 		run(`redeliver:${deliveryId}`, () => devRedeliver({ deliveryId }), (r) => `Redelivered ${r.deliveryId.slice(0, 8)}… → ${r.responseCode ?? 'unreachable'}`);
@@ -217,6 +220,10 @@
 							<FieldIssues issues={devInjectFault.fields.retryAfter.issues()} />
 						</div>
 					</div>
+					<label class="flex items-start gap-2 text-sm">
+						<input class="accent-primary mt-0.5" {...devInjectFault.fields.applied.as('checkbox')} />
+						<span>Lose the response: GitHub makes the change, then answers the error</span>
+					</label>
 					<FieldIssues issues={devInjectFault.fields.issues()} />
 					<Button type="submit" variant="secondary" disabled={devInjectFault.pending > 0}><ZapIcon /> Inject</Button>
 				</form>
@@ -304,16 +311,26 @@
 											<span class="text-muted-foreground block max-w-64 truncate text-xs">{i.title}</span>
 										</Table.Cell>
 										<Table.Cell class="text-sm">{i.user.login}<span class="text-muted-foreground block font-mono text-[11px]">{i.author_association}</span></Table.Cell>
-										<Table.Cell><StateBadge state={i.state} tone={i.state === 'open' ? 'success' : 'info'} /></Table.Cell>
+										<Table.Cell>{#if i.deleted}<StateBadge state="deleted" label="Deleted" tone="muted" />{:else}<StateBadge state={i.state} tone={i.state === 'open' ? 'success' : 'info'} />{/if}</Table.Cell>
 										<Table.Cell class="text-right tabular-nums">{i.comments.length}</Table.Cell>
 										<Table.Cell>
 											<Button
 												variant="outline"
 												size="xs"
-												disabled={i.state === 'open' || busy === `reopen:${i.owner}/${i.repo}#${i.number}`}
+												disabled={i.deleted || i.state === 'open' || busy === `reopen:${i.owner}/${i.repo}#${i.number}`}
 												title="Reopen as the repository owner ({i.owner})"
 												onclick={() => reopen(i.owner, i.repo, i.number, i.owner)}
 											>Reopen</Button>
+											{#if !i.pullRequest}
+												<Button
+													variant="outline"
+													size="xs"
+													data-testid="fake-delete-issue"
+													disabled={i.deleted || busy === `delete:${i.owner}/${i.repo}#${i.number}`}
+													title="Delete as the repository owner ({i.owner}); GitHub then answers 410 Gone"
+													onclick={() => del(i.owner, i.repo, i.number, i.owner)}
+												>Delete</Button>
+											{/if}
 										</Table.Cell>
 									</Table.Row>
 								{:else}

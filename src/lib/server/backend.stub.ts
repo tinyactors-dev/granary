@@ -60,6 +60,8 @@ import type {
 	DevOpenIssueResult,
 	DevRedeliverResult,
 	DevReopenIssueInput,
+	DevDeleteIssueInput,
+	DevDeleteIssueResult,
 	DevSetUpDiscussionsInput,
 	DevIntroduceInput,
 	DevIntroduceResult,
@@ -735,6 +737,16 @@ export class StubBackend implements Backend {
 		return { deliveryId };
 	}
 
+	async devDeleteIssue(input: DevDeleteIssueInput): Promise<DevDeleteIssueResult> {
+		const issue = this.fake.issues.find((i) => i.owner === input.owner && i.repo === input.repo && i.number === input.number && !i.deleted);
+		if (!issue) throw new BackendError('not-found', `No issue ${input.owner}/${input.repo}#${input.number}`);
+		if (issue.pullRequest) throw new BackendError('invalid', 'Pull requests cannot be deleted');
+		issue.deleted = true;
+		const deliveryId = crypto.randomUUID();
+		this.fake.deliveries.push({ id: deliveryId, event: 'issues', action: 'deleted', status: 'delivered', responseCode: 202 });
+		return { deliveryId };
+	}
+
 	async devRedeliver(deliveryId: string): Promise<DevRedeliverResult> {
 		const d = this.fake.deliveries.find((x) => x.id === deliveryId);
 		if (!d) throw new BackendError('not-found', `No delivery ${deliveryId}`);
@@ -745,7 +757,7 @@ export class StubBackend implements Backend {
 
 	async devInjectFault(input: DevInjectFaultInput): Promise<DevInjectFaultResult> {
 		const id = `fault-${this.fake.faults.length + 1}`;
-		this.fake.faults.push({ id, method: input.method, pathPattern: input.pathPattern, status: input.status, remaining: input.count, ...(input.retryAfter !== undefined ? { retryAfter: input.retryAfter } : {}) });
+		this.fake.faults.push({ id, method: input.method, pathPattern: input.pathPattern, status: input.status, remaining: input.count, ...(input.retryAfter !== undefined ? { retryAfter: input.retryAfter } : {}), ...(input.applied ? { applied: true as const } : {}) });
 		return { id };
 	}
 

@@ -12,6 +12,7 @@ import {
 	DevOpenIssueInput,
 	DevRedeliverInput,
 	DevReopenIssueInput,
+	DevDeleteIssueInput,
 	DevSetUpDiscussionsInput,
 	DevIntroduceInput,
 	type DevIntroduceResult,
@@ -23,6 +24,7 @@ import {
 	type DevOpenIssueResult,
 	type DevRedeliverResult,
 	type DevReopenIssueResult,
+	type DevDeleteIssueResult,
 	type SpanSummary,
 	type TraceSummary
 } from '$lib/schemas/dev';
@@ -89,6 +91,17 @@ export const devReopenIssue = command(
 		requireAdminArea('fakeGithub');
 		const result = await withBackend((b) => b.devReopenIssue(input));
 		await Promise.all([getDevInfo().refresh(), getOverview().refresh()]);
+		return result;
+	}
+);
+
+/** Command `{owner, repo, number, actor}` (ADR 0313): an admin deletes an issue on the fake (delivers `issues.deleted`; REST then answers 410). */
+export const devDeleteIssue = command(
+	standard(DevDeleteIssueInput),
+	async (input): Promise<DevDeleteIssueResult> => {
+		requireAdminArea('fakeGithub');
+		const result = await withBackend((b) => b.devDeleteIssue(input));
+		await getDevInfo().refresh();
 		return result;
 	}
 );

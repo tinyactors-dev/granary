@@ -61,6 +61,8 @@ import type {
 	DevOpenIssueResult,
 	DevRedeliverResult,
 	DevReopenIssueInput,
+	DevDeleteIssueInput,
+	DevDeleteIssueResult,
 	DevSetUpDiscussionsInput,
 	DevIntroduceInput,
 	DevIntroduceResult,
@@ -107,6 +109,7 @@ import {
 	InjectFaultResponse,
 	RedeliverResponse,
 	ReopenIssueResponse,
+	DeleteIssueResponse,
 	CreateDiscussionResponse,
 	FakeCategory,
 	parseFakeState
@@ -793,6 +796,10 @@ export class RealBackend implements Backend {
 
 	async devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult> {
 		return this.#control('POST', CONTROL_PATHS.reopen, ReopenIssueResponse, input);
+	}
+
+	async devDeleteIssue(input: DevDeleteIssueInput): Promise<DevDeleteIssueResult> {
+		return this.#control('POST', CONTROL_PATHS.deleteIssue, DeleteIssueResponse, input);
 	}
 
 	async devSetUpDiscussions(input: DevSetUpDiscussionsInput): Promise<void> {

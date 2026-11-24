@@ -7,10 +7,12 @@ import {
 	CreateIssueRequest,
 	InjectFaultRequest,
 	ReopenIssueRequest,
+	DeleteIssueRequest,
 	type FakeState,
 	type InjectFaultResponse,
 	type RedeliverResponse,
-	type ReopenIssueResponse
+	type ReopenIssueResponse,
+	type DeleteIssueResponse
 } from '../../../fake-github/schemas';
 import { ActorAddress } from './actors';
 import { Login } from './github';
@@ -109,6 +111,11 @@ export interface DevOpenIssueResult {
 export const DevReopenIssueInput = ReopenIssueRequest;
 export type DevReopenIssueInput = Static<typeof DevReopenIssueInput>;
 export type DevReopenIssueResult = ReopenIssueResponse;
+
+/** ADR 0313: `devDeleteIssue` command input — `POST /__control/issues/delete` body (an admin deletes an issue). */
+export const DevDeleteIssueInput = DeleteIssueRequest;
+export type DevDeleteIssueInput = Static<typeof DevDeleteIssueInput>;
+export type DevDeleteIssueResult = DeleteIssueResponse;
 
 /** ADR 0310: turn Discussions on for a fake repository and add the Introductions category (idempotent). */
 export const DevSetUpDiscussionsInput = Type.Object({ owner: CreateIssueRequest.properties.owner, repo: CreateIssueRequest.properties.repo }, closed);

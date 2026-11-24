@@ -79,6 +79,8 @@ import type {
 	DevOpenIssueResult,
 	DevRedeliverResult,
 	DevReopenIssueInput,
+	DevDeleteIssueInput,
+	DevDeleteIssueResult,
 	DevSetUpDiscussionsInput,
 	DevIntroduceInput,
 	DevIntroduceResult,
@@ -206,6 +208,8 @@ export interface Backend {
 	/** Ensures the repo (`POST /__control/repos`) then `POST /__control/issues`. */
 	devOpenIssue(input: DevOpenIssueInput): Promise<DevOpenIssueResult>;
 	devReopenIssue(input: DevReopenIssueInput): Promise<DevReopenIssueResult>;
+	/** ADR 0313: an admin deletes an issue on the fake (delivers `issues.deleted`; REST then answers 410). */
+	devDeleteIssue(input: DevDeleteIssueInput): Promise<DevDeleteIssueResult>;
 	/** ADR 0310: Discussions on + the Introductions category on a fake repository. */
 	devSetUpDiscussions(input: DevSetUpDiscussionsInput): Promise<void>;
 	/** ADR 0310: post a discussion on the fake (delivers `discussion.created`). */
