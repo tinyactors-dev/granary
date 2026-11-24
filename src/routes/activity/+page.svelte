@@ -43,7 +43,7 @@
 	/** One line under the outcome: why, or what is still happening. */
 	function detail(a: ActivityItem): string {
 		if (a.reopen && a.reopen.state !== 'done')
-			return a.reopen.state === 'dead' ? `Reopening on GitHub gave up: ${a.reopen.lastError ?? 'unknown error'}` : 'Reopening on GitHub…';
+			return a.reopen.state === 'dead' ? `Could not reopen: ${a.reopen.lastError ?? 'unknown error'}` : 'Reopening on GitHub…';
 		if (a.decision) return reasonLabel(a.decision.reason);
 		if (a.action) return `GitHub action: ${ACTION_LABELS[a.action.state] ?? a.action.state}${a.action.attempts > 1 ? ` (attempt ${a.action.attempts})` : ''}`;
 		if (a.latestDelivery?.ignoreReason) return a.latestDelivery.ignoreReason;

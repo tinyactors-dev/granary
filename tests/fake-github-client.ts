@@ -15,6 +15,7 @@ import {
 	InstallAppResponse,
 	RedeliverResponse,
 	ReopenIssueResponse,
+	EventsLogResponse,
 	DeleteIssueResponse,
 	ResetResponse,
 	CreateDiscussionResponse,
@@ -92,6 +93,10 @@ export class FakeGithubClient {
 	}
 	reopen(body: ReopenIssueRequest) {
 		return this.call(ReopenIssueResponse, 'POST', CONTROL_PATHS.reopen, body);
+	}
+	/** The fake's event log (oldest first), from `since`. */
+	eventsLog(since = 0) {
+		return this.call(EventsLogResponse, 'GET', `${CONTROL_PATHS.eventsLog}?since=${since}&limit=5000`);
 	}
 	/** ADR 0313: an admin deletes an issue; the REST API then answers 410 Gone. */
 	deleteIssue(body: DeleteIssueRequest) {

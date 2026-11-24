@@ -145,6 +145,36 @@
 						</Card.Content>
 					{/if}
 				</Card.Root>
+
+				{#if d.reopen}
+					<Card.Root data-testid="reopen-card" data-state={d.reopen.state}>
+						<Card.Header>
+							<Card.Description>Reopen on GitHub (an admin let the author in)</Card.Description>
+							<Card.Title><StateBadge state={d.reopen.state} label={ACTION_LABELS[d.reopen.state]} class="h-6 px-2.5 text-sm" /></Card.Title>
+							{#if d.reopen.state === 'dead'}
+								<Card.Action>
+									<RetryEffectButton effectKey={d.reopen.effectKey} updates={() => [issue]} size="sm" />
+								</Card.Action>
+							{/if}
+						</Card.Header>
+						<Card.Content>
+							<dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
+								<dt class="text-muted-foreground">Attempts</dt>
+								<dd class="tabular-nums">{d.reopen.attempts}</dd>
+								{#if d.reopen.state !== 'done' && d.reopen.nextAttemptAt}
+									<dt class="text-muted-foreground">Next attempt</dt>
+									<dd><RelativeTime ms={d.reopen.nextAttemptAt} /></dd>
+								{/if}
+								<dt class="text-muted-foreground">Updated</dt>
+								<dd><RelativeTime ms={d.reopen.updatedAt} /></dd>
+								{#if d.reopen.lastError}
+									<dt class="text-muted-foreground">Last error</dt>
+									<dd class="text-xs leading-5 break-all text-red-700 dark:text-red-400">{d.reopen.lastError}</dd>
+								{/if}
+							</dl>
+						</Card.Content>
+					</Card.Root>
+				{/if}
 			</div>
 
 			{#if commentBody}

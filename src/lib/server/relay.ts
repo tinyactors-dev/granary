@@ -211,6 +211,14 @@ export class Relay {
 				return;
 			}
 			const message = e instanceof Error ? e.message : String(e);
+			// An item deleted on GitHub (410) or no longer visible (404) cannot be reopened: retrying changes nothing (ADR 0313).
+			const gone = isReopenPayload(payload) && e instanceof GitHubHttpError && (e.status === 404 || e.status === 410);
+			if (gone) {
+				const status = (e as GitHubHttpError).status;
+				this.#wal.markOutboxDead(key, `${status === 410 ? 'deleted' : 'not found'} on GitHub (${status})`);
+				log.warn(`relay: ${key} cannot reopen ${payload.owner}/${payload.repo}#${payload.number}: it is gone on GitHub (${status})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts, 'http.response.status_code': status });
+				return;
+			}
 			if (row.attempts >= this.#maxAttempts) {
 				this.#wal.markOutboxDead(key, message);
 				log.error(`relay: ${key} gave up after ${row.attempts} attempts: ${message}`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts, 'error.message': message });

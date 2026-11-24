@@ -219,6 +219,8 @@ export interface IssueDetail {
 	/** Every inbox row with this issue_key, newest first. */
 	deliveries: DeliverySummary[];
 	effect: EffectSummary | null;
+	/** Reopening it after an admin let its author in (ADR 0313), if asked. */
+	reopen: EffectSummary | null;
 	verdict: VerdictSummary | null;
 	/** Live inspection of `issue/<issueKey>` if resident, else null. */
 	actor: ActorDetail | null;

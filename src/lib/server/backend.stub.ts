@@ -415,7 +415,7 @@ export class StubBackend implements Backend {
 		if (!deliveries.length && !effect && !verdict && !actor) return null;
 		const found = this.issues.find((i) => issueKey(i.repoId, i.number) === key);
 		const issue = found ? summary(found) : null;
-		return { issueKey: key, repoId, number, issue, deliveries, effect, verdict, actor };
+		return { issueKey: key, repoId, number, issue, deliveries, effect, reopen: null, verdict, actor };
 	}
 
 	// -- allowlist -------------------------------------------------------------------

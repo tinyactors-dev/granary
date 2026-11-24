@@ -369,6 +369,7 @@ export class RealBackend implements Backend {
 		const inbox = this.#wal.inboxForIssue(key);
 		const outbox = this.#wal.outboxForIssue(key);
 		const verdict = this.#wal.getVerdict(key);
+		const reopen = this.#wal.getOutbox(reopenEffectKey(repoId, number));
 		const actor = findActor(this.#rt.host, issueName(key));
 		const detail = actor ? await this.#live(() => detailOfActor(actor, issueName(key))) : null;
 		if (!inbox.length && !outbox && !verdict && !detail) return null;
@@ -379,6 +380,7 @@ export class RealBackend implements Backend {
 			issue: this.#issueSummary(this.#wal.latestIssuesInbox(key)),
 			deliveries: inbox.map((r) => this.#delivery(r)),
 			effect: outbox ? this.#effect(outbox) : null,
+			reopen: reopen ? this.#effect(reopen) : null,
 			verdict: verdict ? this.#verdict(verdict) : null,
 			actor: detail
 		};
