@@ -23,6 +23,8 @@ import {
 	EnsureUserRequest,
 	InjectFaultRequest,
 	ReopenIssueRequest,
+	DeleteIssueRequest,
+	type DeleteIssueResponse,
 	WebhookOutageRequest,
 	SetDiscussionsEnabledRequest,
 	CreateCategoryRequest,
@@ -127,6 +129,27 @@ function validate<T extends TSchema>(schema: T, value: unknown, what: string): S
 	const issues = issuesOf(schema, value);
 	if (issues.length) throw new HttpError(controlError(400, `Invalid ${what}`, issues));
 	return value as Static<T>;
+}
+
+/** An injected fault's answer (ADR 0035). */
+function faultResponse(fault: FaultHit): Response {
+	const headers: Record<string, string> = {};
+	if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
+	return json({ message: 'injected fault' }, fault.status, headers);
+}
+
+/**
+ * An `applied` fault (ADR 0313): carry the request out (webhooks included),
+ * then answer the fault instead of its result — GitHub made the change but
+ * the response was lost.
+ */
+async function appliedThenFault(fault: FaultHit, serve: () => Promise<Response>): Promise<Response> {
+	try {
+		await serve();
+	} catch (e) {
+		if (!(e instanceof HttpError)) throw e;
+	}
+	return faultResponse(fault);
 }
 
 /** Unwrap an actor result; an ActorFailure becomes an HttpError via `onFail`. */
@@ -276,6 +299,11 @@ async function recordAppDelivery(
  * Auto-install apps are installed on the owner first. Returns the first
  * delivery's reply, or null when no app covers the repo (nothing is sent).
  */
+/** As GitHub does for a REST change: the response does not wait for the webhook (ADR 0313). */
+function deliverLater(...args: Parameters<typeof deliverRepoEvent>): void {
+	deliverRepoEvent(...args).catch((e) => console.error(`fake-github: delivering ${args[0]}.${args[1]} failed`, e));
+}
+
 async function deliverRepoEvent(
 	event: string,
 	action: string,
@@ -479,11 +507,7 @@ async function graphqlRoute(req: Request): Promise<Response> {
 	const user = await tokenUser(token);
 	if (!user) return githubError(401, 'Bad credentials');
 	const fault = await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path: '/graphql' });
-	if (fault) {
-		const headers: Record<string, string> = {};
-		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
-		return json({ message: 'injected fault' }, fault.status, headers);
-	}
+	if (fault) return faultResponse(fault);
 	let body: unknown;
 	try {
 		body = JSON.parse(await req.text());
@@ -637,6 +661,21 @@ async function control(req: Request, path: string): Promise<Response> {
 		);
 		const result = await deliverRepoEvent('issues', 'reopened', payload as unknown as Record<string, unknown>, found.repo, issue.number);
 		return json({ deliveryId: result?.deliveryId ?? null } satisfies ReopenIssueResponse);
+	}
+
+	if (path === CONTROL_PATHS.deleteIssue) {
+		const body = validate(DeleteIssueRequest, await readJson(req), 'delete request');
+		const found = await findRepo(body.owner, body.repo);
+		if (!found) return controlError(404, `Unknown repository ${body.owner}/${body.repo}`);
+		const actor = await ensureUser(body.actor);
+		const issue = unwrap<Issue>(
+			await askActor(host, repositoryAddress(found.repo.id), REPOSITORY_EVENTS.deleteIssue, { number: body.number, now: now() }),
+			(status, msg) => controlError(status, `${body.owner}/${body.repo}#${body.number}: ${msg}`)
+		);
+		events.emit({ type: 'issue.deleted', ...issueRef(found.repo, issue.number), by: actor.login });
+		const payload = issuesEvent('deleted', issue, repositoryView(found.repo, found.owner, bases), userView(actor, bases));
+		const result = await deliverRepoEvent('issues', 'deleted', payload as unknown as Record<string, unknown>, found.repo, issue.number);
+		return json({ deliveryId: result?.deliveryId ?? null } satisfies DeleteIssueResponse);
 	}
 
 	const redeliver = /^\/__control\/deliveries\/([^/]+)\/redeliver$/.exec(path);
@@ -841,7 +880,7 @@ const PULL_PATH = /^\/repos\/([^/]+)\/([^/]+)\/pulls\/(\d+)\/?$/;
  * the accepted `pull_requests` permission (`write` for PATCH), as on GitHub:
  * 403 "Resource not accessible by integration" otherwise.
  */
-async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Response> {
+async function pulls(req: Request, path: string, m: RegExpExecArray, faultsChecked = false): Promise<Response> {
 	const token = bearer(req);
 	if (!token) return githubError(401, 'Requires authentication');
 	let installation: InstallationRecord | null = null;
@@ -854,12 +893,9 @@ async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Re
 	}
 	const actor = await tokenUser(token);
 	if (!actor) return githubError(401, 'Bad credentials');
-	const fault = await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
-	if (fault) {
-		const headers: Record<string, string> = {};
-		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
-		return json({ message: 'injected fault' }, fault.status, headers);
-	}
+	const fault = faultsChecked ? null : await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
+	if (fault?.applied) return appliedThenFault(fault, () => pulls(req, path, m, true));
+	if (fault) return faultResponse(fault);
 	const [, owner, repoName, numberText] = m;
 	const number = Number(numberText);
 	const found = await findRepo(owner!, repoName!);
@@ -885,15 +921,20 @@ async function pulls(req: Request, path: string, m: RegExpExecArray): Promise<Re
 			await askActor(host, address, REPOSITORY_EVENTS.updateIssue, { number, patch: body, now: now() }),
 			(st, msg) => githubError(st, msg)
 		);
-		if ((before as { state: string }).state !== after.state && after.state === 'closed') {
-			events.emit({ type: 'pull_request.closed', ...issueRef(found.repo, number), by: actor.login });
+		const pull = unwrap<Record<string, unknown>>(await askActor(host, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg));
+		if ((before as { state: string }).state !== after.state) {
+			// GitHub sends the app its own changes too, with its bot as the sender (ADR 0313).
+			const action = after.state === 'closed' ? 'closed' : 'reopened';
+			events.emit({ type: `pull_request.${action}`, ...issueRef(found.repo, number), by: actor.login });
+			const payload = { action, number, pull_request: pull, repository: repositoryView(found.repo, found.owner, bases), sender: userView(actor, bases) };
+			deliverLater('pull_request', action, payload, found.repo, number);
 		}
-		return json(unwrap(await askActor(host, address, REPOSITORY_EVENTS.getPull, { number }), (st, msg) => githubError(st, msg)));
+		return json(pull);
 	}
 	return githubError(404, 'Not Found');
 }
 
-async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Response> {
+async function rest(req: Request, path: string, m: RegExpExecArray, faultsChecked = false): Promise<Response> {
 	const token = bearer(req);
 	if (!token) return githubError(401, 'Requires authentication');
 	// ADR 0164: installation tokens must be valid and cover the repository.
@@ -908,12 +949,9 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 	const actor = await tokenUser(token);
 	if (!actor) return githubError(401, 'Bad credentials');
 
-	const fault = await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
-	if (fault) {
-		const headers: Record<string, string> = {};
-		if (fault.retryAfter !== undefined) headers['Retry-After'] = String(fault.retryAfter);
-		return json({ message: 'injected fault' }, fault.status, headers);
-	}
+	const fault = faultsChecked ? null : await askActor<FaultHit | null>(host, FAULTS_ADDRESS, FAULT_EVENTS.check, { method: req.method, path });
+	if (fault?.applied) return appliedThenFault(fault, () => rest(req, path, m, true));
+	if (fault) return faultResponse(fault);
 
 	const [, owner, repoName, numberText, comments] = m;
 	const number = Number(numberText);
@@ -954,6 +992,10 @@ async function rest(req: Request, path: string, m: RegExpExecArray): Promise<Res
 				} else {
 					events.emit({ type: 'issue.reopened', ...issueRef(found.repo, number), by });
 				}
+				// GitHub sends the app its own changes too, with its bot as the sender (ADR 0313).
+				const action = after.state === 'closed' ? 'closed' : 'reopened';
+				const payload = issuesEvent(action, after, repositoryView(found.repo, found.owner, bases), userView(actor, bases));
+				deliverLater('issues', action, payload as unknown as Record<string, unknown>, found.repo, number);
 			}
 		}
 		return json(after);
@@ -1010,6 +1052,7 @@ async function threadRoute(m: RegExpExecArray): Promise<Response> {
 	}
 	const i = s.issues.find((x) => same(x.owner, x.repo) && x.number === number);
 	if (!i) return html('<p>Not Found</p>', 404);
+	if (i.deleted) return html('<p>This issue has been deleted.</p>', 410);
 	return html(
 		threadPage({
 			kind: i.pullRequest ? 'Pull request' : 'Issue',

@@ -28,6 +28,8 @@ export const CONTROL_PATHS = {
 	repos: '/__control/repos',
 	issues: '/__control/issues',
 	reopen: '/__control/issues/reopen',
+	/** ADR 0313: an admin deletes an issue (GitHub web UI only); delivers `issues`/`deleted`. */
+	deleteIssue: '/__control/issues/delete',
 	redeliver: (deliveryId: string) => `/__control/deliveries/${encodeURIComponent(deliveryId)}/redeliver`,
 	faults: '/__control/faults',
 	state: '/__control/state',
@@ -163,6 +165,12 @@ export const ReopenIssueRequest = Type.Object(
 );
 export type ReopenIssueRequest = Static<typeof ReopenIssueRequest>;
 
+/** ADR 0313: `actor` must be an admin of the repository on GitHub; the fake takes anyone. */
+export const DeleteIssueRequest = ReopenIssueRequest;
+export type DeleteIssueRequest = Static<typeof DeleteIssueRequest>;
+export const DeleteIssueResponse = Type.Object({ deliveryId: Nullable(Type.String()) }, closed);
+export type DeleteIssueResponse = Static<typeof DeleteIssueResponse>;
+
 export const ReopenIssueResponse = Type.Object({ deliveryId: Nullable(Type.String()) }, closed);
 export type ReopenIssueResponse = Static<typeof ReopenIssueResponse>;
 
@@ -201,7 +209,14 @@ export const InjectFaultRequest = Type.Object(
 		pathPattern: Type.String({ minLength: 1 }),
 		status: Type.Integer({ minimum: 400, maximum: 599 }),
 		count: Type.Integer({ minimum: 1 }),
-		retryAfter: Type.Optional(Type.Integer({ minimum: 0 }))
+		retryAfter: Type.Optional(Type.Integer({ minimum: 0 })),
+		/**
+		 * The request is carried out, then the fault's status is answered
+		 * instead of the result: GitHub made the change but the response was
+		 * lost (a 502 or a timeout after the write). Default false: refused
+		 * before anything changes.
+		 */
+		applied: Type.Optional(Type.Boolean())
 	},
 	closed
 );
@@ -218,7 +233,8 @@ export const FakeFault = Type.Object(
 		status: Type.Integer(),
 		/** Remaining matching calls that will fail. */
 		remaining: Type.Integer({ minimum: 0 }),
-		retryAfter: Type.Optional(Type.Integer())
+		retryAfter: Type.Optional(Type.Integer()),
+		applied: Type.Optional(Type.Boolean())
 	},
 	closed
 );
@@ -237,7 +253,9 @@ export const FakeIssue = Type.Intersect([
 		repo: Type.String(),
 		comments: Type.Array(IssueComment),
 		/** Present for pull requests (ADR 0282). */
-		pullRequest: Type.Optional(Type.Object({ draft: Type.Boolean() }))
+		pullRequest: Type.Optional(Type.Object({ draft: Type.Boolean() })),
+		/** Deleted by an admin; the REST API answers 410 Gone (ADR 0313). */
+		deleted: Type.Optional(Type.Literal(true))
 	})
 ]);
 export type FakeIssue = Static<typeof FakeIssue>;
@@ -569,7 +587,7 @@ export const FakeEvent = Type.Union([
 		},
 		closed
 	),
-	Type.Object({ ...EventBase, type: Type.Literal('pull_request.closed'), ...IssueRef, by: Type.String() }, closed),
+	Type.Object({ ...EventBase, type: Type.Union([Type.Literal('pull_request.closed'), Type.Literal('pull_request.reopened')]), ...IssueRef, by: Type.String() }, closed),
 	Type.Object(
 		{
 			...EventBase,
@@ -591,7 +609,7 @@ export const FakeEvent = Type.Union([
 		},
 		closed
 	),
-	Type.Object({ ...EventBase, type: Type.Literal('issue.reopened'), ...IssueRef, by: Type.String() }, closed),
+	Type.Object({ ...EventBase, type: Type.Union([Type.Literal('issue.reopened'), Type.Literal('issue.deleted')]), ...IssueRef, by: Type.String() }, closed),
 	Type.Object(
 		{
 			...EventBase,

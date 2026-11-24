@@ -15,6 +15,7 @@ import {
 	InstallAppResponse,
 	RedeliverResponse,
 	ReopenIssueResponse,
+	DeleteIssueResponse,
 	ResetResponse,
 	CreateDiscussionResponse,
 	DiscussionDeliveryResponse,
@@ -33,7 +34,8 @@ import {
 	type FakeState,
 	type InjectFaultRequest,
 	type InstallAppRequest,
-	type ReopenIssueRequest
+	type ReopenIssueRequest,
+	type DeleteIssueRequest
 } from '../fake-github/schemas';
 import { parse } from '../src/lib/schemas/standard';
 import { Type } from '@sinclair/typebox';
@@ -90,6 +92,10 @@ export class FakeGithubClient {
 	}
 	reopen(body: ReopenIssueRequest) {
 		return this.call(ReopenIssueResponse, 'POST', CONTROL_PATHS.reopen, body);
+	}
+	/** ADR 0313: an admin deletes an issue; the REST API then answers 410 Gone. */
+	deleteIssue(body: DeleteIssueRequest) {
+		return this.call(DeleteIssueResponse, 'POST', CONTROL_PATHS.deleteIssue, body);
 	}
 	redeliver(deliveryId: string) {
 		return this.call(RedeliverResponse, 'POST', CONTROL_PATHS.redeliver(deliveryId));

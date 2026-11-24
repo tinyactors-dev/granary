@@ -206,7 +206,8 @@ export function createFakeSystem(options: FakeSystemOptions) {
 						owner: d.owner,
 						repo: d.name,
 						comments: i.comments.map((c) => commentView(d, i, c)),
-						...(i.pullRequest ? { pullRequest: { draft: i.pullRequest.draft } } : {})
+						...(i.pullRequest ? { pullRequest: { draft: i.pullRequest.draft } } : {}),
+						...(i.deleted ? { deleted: true } : {})
 					};
 					state.issues.push(issue);
 				}

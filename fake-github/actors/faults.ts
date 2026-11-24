@@ -25,7 +25,7 @@ export interface CheckFaultEvent {
 	method: string;
 	path: string;
 }
-export type FaultHit = Pick<FakeFault, 'id' | 'status' | 'retryAfter'>;
+export type FaultHit = Pick<FakeFault, 'id' | 'status' | 'retryAfter' | 'applied'>;
 
 export const faultsChart = handlerChart<FaultsData>({
 	name: FAULTS_CHART,
@@ -34,6 +34,7 @@ export const faultsChart = handlerChart<FaultsData>({
 		[FAULT_EVENTS.inject]: (d, e: InjectFaultEvent) => {
 			const fault: FakeFault = { id: e.id, method: e.method, pathPattern: e.pathPattern, status: e.status, remaining: e.count };
 			if (e.retryAfter !== undefined) fault.retryAfter = e.retryAfter;
+			if (e.applied) fault.applied = true;
 			d.faults.push(fault);
 			return { id: e.id };
 		},
@@ -45,6 +46,7 @@ export const faultsChart = handlerChart<FaultsData>({
 				f.remaining -= 1;
 				const hit: FaultHit = { id: f.id, status: f.status };
 				if (f.retryAfter !== undefined) hit.retryAfter = f.retryAfter;
+				if (f.applied) hit.applied = true;
 				return hit;
 			}
 			return null;

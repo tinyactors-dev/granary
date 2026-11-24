@@ -40,6 +40,8 @@ export interface StoredIssue {
 	comments: StoredComment[];
 	/** Set for pull requests, which share the issue number sequence (ADR 0282). */
 	pullRequest?: { draft: boolean };
+	/** Deleted by an admin (ADR 0313): kept so the REST API answers 410 Gone, as GitHub does. */
+	deleted?: boolean;
 }
 
 export interface RepositoryData {
@@ -89,6 +91,8 @@ export const REPOSITORY_EVENTS = {
 	getIssue: 'issue.get',
 	updateIssue: 'issue.update',
 	reopenIssue: 'issue.reopen',
+	/** ADR 0313: an admin deletes an issue (GitHub web UI; no REST API). */
+	deleteIssue: 'issue.delete',
 	createComment: 'comment.create',
 	listComments: 'comment.list',
 	/** ADR 0310: Discussions. */
@@ -330,10 +334,12 @@ export const repositoryChart = handlerChart<RepositoryData>({
 		},
 		[REPOSITORY_EVENTS.getIssue]: (d, e: { number: number }) => {
 			const i = find(d, e.number);
+			if (i?.deleted) return { error: 'This issue was deleted', status: 410 };
 			return i ? issueView(d, i) : { error: 'Not Found', status: 404 };
 		},
 		[REPOSITORY_EVENTS.updateIssue]: (d, e: UpdateIssueEvent) => {
 			const i = find(d, e.number);
+			if (i?.deleted) return { error: 'This issue was deleted', status: 410 };
 			if (!i) return { error: 'Not Found', status: 404 };
 			const p = e.patch;
 			if (p.title !== undefined) i.title = p.title;
@@ -356,6 +362,7 @@ export const repositoryChart = handlerChart<RepositoryData>({
 		},
 		[REPOSITORY_EVENTS.reopenIssue]: (d, e: { number: number; now: string }) => {
 			const i = find(d, e.number);
+			if (i?.deleted) return { error: 'This issue was deleted', status: 410 };
 			if (!i) return { error: 'Not Found', status: 404 };
 			i.state = 'open';
 			i.state_reason = 'reopened';
@@ -363,8 +370,18 @@ export const repositoryChart = handlerChart<RepositoryData>({
 			i.updated_at = e.now;
 			return issueView(d, i);
 		},
+		[REPOSITORY_EVENTS.deleteIssue]: (d, e: { number: number; now: string }) => {
+			const i = find(d, e.number);
+			if (!i || i.deleted) return { error: 'Not Found', status: 404 };
+			if (i.pullRequest) return { error: 'Pull requests cannot be deleted', status: 422 };
+			const view = issueView(d, i);
+			i.deleted = true;
+			i.updated_at = e.now;
+			return view;
+		},
 		[REPOSITORY_EVENTS.createComment]: (d, e: CreateCommentEvent) => {
 			const i = find(d, e.number);
+			if (i?.deleted) return { error: 'This issue was deleted', status: 410 };
 			if (!i) return { error: 'Not Found', status: 404 };
 			const c: StoredComment = { id: e.id, body: e.body, user: e.user, created_at: e.now, updated_at: e.now };
 			i.comments.push(c);
@@ -373,6 +390,7 @@ export const repositoryChart = handlerChart<RepositoryData>({
 		},
 		[REPOSITORY_EVENTS.listComments]: (d, e: { number: number }) => {
 			const i = find(d, e.number);
+			if (i?.deleted) return { error: 'This issue was deleted', status: 410 };
 			return i ? i.comments.map((c) => commentView(d, i, c)) : { error: 'Not Found', status: 404 };
 		},
 		[REPOSITORY_EVENTS.setDiscussions]: (d, e: { enabled: boolean }) => {
