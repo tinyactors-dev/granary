@@ -80,6 +80,20 @@ same login can have several entries. Approving an
 [introduction](introductions.md) adds an entry scoped to where the person
 introduced themselves.
 
+### Letting someone in from Activity
+
+On **Activity**, a row granary closed has a person-with-a-check icon
+(admins only). It asks where to let the author in: that repository, every
+repository of its owner, or everywhere. Confirming adds the allowlist
+entry, lifts an active block, and reopens every issue and pull request
+granary closed on them there. Nothing is commented; GitHub tells the author
+their item was reopened. The row then reads *Reopened: an admin let them
+in*; the item page shows the reopen action with its attempts and errors.
+
+Reopening is queued like closing: it is carried out after a restart, and a
+failed call is retried. An item deleted on GitHub cannot be reopened; its
+row says *Could not reopen: deleted on GitHub (410)*.
+
 For a first install you can seed logins with the environment variable
 `GRANARY_SEED_ALLOWLIST=alice,bob`. It is applied once at startup and never
 removes or overrides anything edited in the UI.

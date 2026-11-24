@@ -13,6 +13,14 @@ outbox effect kind (`reopen`), one Backend method, one remote command, one
 icon per closed row. Out of scope: posting a comment on the reopened items
 (the reopening itself notifies the author), and the item detail page.
 
+What GitHub offers (docs.github.com, 2026-11-24): `PATCH …/issues/{n}`
+with `state: open` reopens an issue and answers `410 Gone` when the issue
+was deleted, `301` when it was transferred, `404` without read access;
+`PATCH …/pulls/{n}` reopens a pull request. Reopening sends the app the
+`issues` / `pull_request` `reopened` webhook for its own change. GitHub
+does not document when reopening a pull request fails (a deleted head
+branch is the likely case), so the fake does not model it.
+
 ## Decision
 - **The action:** on an Activity row whose outcome is `closed`, admins get
   an icon ("Let them in"). It opens a dialog to choose the allowlist scope
@@ -35,6 +43,21 @@ icon per closed row. Out of scope: posting a comment on the reopened items
   them in") and marks the row done. Nothing is posted and no actor is
   told: the row is the record, and Activity shows "Reopening on GitHub…"
   or why it gave up.
+- **Gone items:** a reopen answered `404` or `410` is dead at once, with
+  "deleted on GitHub (410)" / "not found on GitHub (404)": retrying cannot
+  help. Every other failure is retried as a close is.
+- **Restarts:** the admin's decision (block lifted, entry, one effect per
+  item) is one SQLite transaction, so a kill leaves all or none of it. The
+  relay carries out pending rows after a restart (in-flight rows go back to
+  pending; a `Retry-After` is honoured), and reopening an open item changes
+  nothing, so a lost response or a kill between GitHub's change and the
+  done mark reopens nothing twice. `tests/admit-crash.test.ts` SIGKILLs the
+  app before GitHub was asked, after GitHub reopened the item but before
+  granary recorded it, and between two items.
+- **Fakes first:** the fake GitHub delivers `closed`/`reopened` webhooks
+  for REST changes, lets an admin delete an issue (then `410`), and can
+  lose a response after making the change (`applied` faults). Admin →
+  Fake GitHub has a Delete button and a "lose the response" fault option.
 - **Audit:** one log line with `audit.action = allowlist.admit`; a lifted
   block is also written to the audit log as `blocklist.remove`.
 
