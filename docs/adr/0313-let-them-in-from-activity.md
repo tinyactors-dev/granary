@@ -1,6 +1,6 @@
 # 313. Let an author in from Activity: allowlist them and reopen what was closed
 
-Date: 2026-11-24 · Status: accepted (builds on ADR 0310 and 0311)
+Date: 2026-11-24 · Status: accepted (builds on ADR 0310 and 0311; amended by 0314: each reopened item gets a comment)
 
 ## Context
 An admin looking at Activity sees an item granary closed and decides its

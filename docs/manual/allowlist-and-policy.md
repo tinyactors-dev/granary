@@ -85,10 +85,14 @@ introduced themselves.
 On **Activity**, a row granary closed has a person-with-a-check icon
 (admins only). It asks where to let the author in: that repository, every
 repository of its owner, or everywhere. Confirming adds the allowlist
-entry, lifts an active block, and reopens every issue and pull request
-granary closed on them there. Nothing is commented; GitHub tells the author
-their item was reopened. The row then reads *Reopened: an admin let them
-in*; the item page shows the reopen action with its attempts and errors.
+entry, lifts an active block, reopens every issue and pull request
+granary closed on them there, and comments on each to tell them they were
+added to the allowlist. The comment is a template, edited on the Policy
+page under **The comment when you let someone in** (variables `{{author}}`,
+`{{scope}}`, `{{repository}}`, `{{owner}}`); it is fixed when you click, so
+a retry posts the same text, and never twice. The row then reads
+*Reopened: an admin let them in*; the item page shows the reopen action
+with its attempts and errors.
 
 Reopening is queued like closing: it is carried out after a restart, and a
 failed call is retried. An item deleted on GitHub cannot be reopened; its
