@@ -28,7 +28,9 @@ faults, oauth, apps; the host asks them with `askActor`), `io/` (the `webhook` I
 - A `PATCH` that changes an issue's or pull request's state delivers
   `issues` / `pull_request` `closed` or `reopened` to the installed apps,
   with the caller (an app's bot) as `sender`, as GitHub does for an app's
-  own changes. The response does not wait for the delivery.
+  own changes. A comment posted through REST delivers `issue_comment`
+  `created` to the apps subscribed to it. The responses do not wait for the
+  delivery.
 - `POST /__control/issues/delete {owner, repo, number, actor}` — an admin
   deletes an issue (GitHub: web UI only); delivers `issues`/`deleted`. The
   REST API then answers `410 Gone` ("This issue was deleted") and its page

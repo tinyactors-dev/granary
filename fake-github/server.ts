@@ -1030,6 +1030,12 @@ async function rest(req: Request, path: string, m: RegExpExecArray, faultsChecke
 			author: user.login,
 			body: comment.body ?? ''
 		});
+		// GitHub tells apps subscribed to issue_comment about every comment, an app's own included (ADR 0314).
+		const issue = await askActor<Issue | { error: string }>(host, address, REPOSITORY_EVENTS.getIssue, { number });
+		if (!isFailure(issue)) {
+			const payload = { action: 'created', issue, comment, repository: repositoryView(found.repo, found.owner, bases), sender: user };
+			deliverLater('issue_comment', 'created', payload, found.repo, number);
+		}
 		return json(comment, 201);
 	}
 	return githubError(404, 'Not Found');
