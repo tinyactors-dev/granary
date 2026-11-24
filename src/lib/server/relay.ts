@@ -20,11 +20,16 @@
  * reply on the discussion with GraphQL, marked like the closing comment (on a
  * retry it looks for the marker first; a discussion that is gone is
  * skipped), and replies `github.approved` to `introduction/<key>`.
+ *
+ * A `reopen:<repoId>:<number>` effect (ADR 0313) reopens one item an admin
+ * let its author in for from Activity (idempotent PATCH; the verdict becomes
+ * `allowed`, reason `admitted`). Nothing is posted and no actor is told: done
+ * or dead, the row is the record.
  */
 import { EVENTS, MAX_EFFECT_ATTEMPTS, issueKey, type GitHubApprovedData, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
 import { commentMarker } from '../schemas/github';
 import { commentWithMarker, renderClosingBody } from './closing-messages';
-import { isApprovePayload, parseOutboxPayload, parseReplyTo, type ApproveEffectPayload, type OutboxRow } from '../schemas/wal';
+import { isApprovePayload, isReopenPayload, parseOutboxPayload, parseReplyTo, type ApproveEffectPayload, type OutboxRow } from '../schemas/wal';
 import { GitHubGraphQLError, GitHubHttpError, type GitHubClient } from './github-client';
 import { log } from './log';
 import type { Wal } from './wal';
@@ -163,6 +168,17 @@ export class Relay {
 				this.#reply(replyTo, EVENTS.githubApproved, { effectKey: key, commentId: result.commentId, reopened: payload.reopen.length } satisfies GitHubApprovedData);
 				return;
 			}
+			if (isReopenPayload(payload)) {
+				const github = await this.#github(payload);
+				if (payload.kind === 'pull_request') await github.reopenPullRequest(payload.owner, payload.repo, payload.number, signal);
+				else await github.reopenIssue(payload.owner, payload.repo, payload.number, signal);
+				this.#wal.tx(() => {
+					this.#wal.markReopened(issueKey(payload.repoId, payload.number), 'admitted');
+					this.#wal.markOutboxDone(key);
+				});
+				log.info(`relay: ${key} done (reopened ${payload.owner}/${payload.repo}#${payload.number} for ${payload.author}, attempt ${row.attempts})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts });
+				return;
+			}
 			const github = await this.#github(payload);
 			let commentId = row.comment_id;
 			if (commentId === null) {
@@ -198,6 +214,7 @@ export class Relay {
 			if (row.attempts >= this.#maxAttempts) {
 				this.#wal.markOutboxDead(key, message);
 				log.error(`relay: ${key} gave up after ${row.attempts} attempts: ${message}`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts, 'error.message': message });
+				if (isReopenPayload(payload)) return;
 				this.#reply(replyTo, EVENTS.githubGaveUp, {
 					effectKey: key,
 					attempts: row.attempts,
@@ -222,7 +239,7 @@ export class Relay {
 			const github = await this.#github(item);
 			if (item.kind === 'pull_request') await github.reopenPullRequest(item.owner, item.repo, item.number, signal);
 			else await github.reopenIssue(item.owner, item.repo, item.number, signal);
-			this.#wal.markReopened(issueKey(item.repoId, item.number));
+			this.#wal.markReopened(issueKey(item.repoId, item.number), 'introduction-approved');
 			log.info(`relay: ${row.effect_key} reopened ${item.owner}/${item.repo}#${item.number}`, { 'relay.effect_key': row.effect_key, 'github.repository': `${item.owner}/${item.repo}`, 'github.issue.number': item.number });
 		}
 		if (row.comment_id !== null) return { commentId: row.comment_id };

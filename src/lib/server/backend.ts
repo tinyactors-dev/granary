@@ -21,6 +21,8 @@ import type {
 	ActorSnapshot,
 	ActorSummary,
 	AddAllowedUserResult,
+	AdmitAuthorResult,
+	AdmitScope,
 	AllowedUser,
 	BlockedUser,
 	BlockUserRequest,
@@ -142,6 +144,16 @@ export interface Backend {
 	addAllowedUser(login: string, addedBy: string, scope?: string): Promise<AddAllowedUserResult>;
 	/** Delete the (login, scope) entry from allowed_users, then post `allowlist.replace`. */
 	removeAllowedUser(login: string, removedBy: string, scope?: string): Promise<RemoveAllowedUserResult>;
+	/**
+	 * Let the author of an item granary closed in (ADR 0313): in one
+	 * transaction lift an active block, add the allowlist entry for `scope`
+	 * (the item's repository, its owner, or everywhere) and queue a
+	 * `reopen:<repoId>:<number>` effect for every item granary closed on them
+	 * within it; then post `allowlist.replace` (and `blocklist.replace`) and
+	 * kick the relay. `not-found` for an unknown item, `conflict` when granary
+	 * did not close it.
+	 */
+	admitAuthor(issueKey: string, scope: AdmitScope, by: string): Promise<AdmitAuthorResult>;
 
 	// -- blocklist (ADR 0260) ---------------------------------------------------
 	/** All blocked_users entries, expired ones included (`active: false`). */

@@ -36,7 +36,8 @@ export const REASON_LABELS: Record<string, string> = {
 	'not-allowed': 'Not on the allowlist',
 	'check-timeout': 'The policy check timed out',
 	'already-settled': 'Already decided earlier',
-	'introduction-approved': 'Reopened: approved after introducing themselves'
+	'introduction-approved': 'Reopened: approved after introducing themselves',
+	admitted: 'Reopened: an admin let them in'
 };
 
 export const reasonLabel = (reason: string): string =>

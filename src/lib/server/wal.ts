@@ -767,16 +767,17 @@ export class Wal {
 	}
 
 	/**
-	 * Items granary closed on `author` within `scope` (`owner/repo` or `owner`):
-	 * done close effects whose verdict is still `closed` (ADR 0310).
+	 * Items granary closed on `author` within `scope` (`''` everywhere, `owner`
+	 * or `owner/repo`): done close effects whose verdict is still `closed`
+	 * (ADR 0310, ADR 0313).
 	 */
 	closedItemsOf(author: string, scope: string): ReopenItem[] {
-		const [owner, repo] = scope.toLowerCase().split('/') as [string, string | undefined];
+		const [owner, repo] = scope ? (scope.toLowerCase().split('/') as [string, string | undefined]) : [null, undefined];
 		const rows = this.#q(
 			`SELECT o.payload AS payload FROM outbox o JOIN verdicts v ON v.issue_key = o.issue_key
 			 WHERE o.effect_key LIKE 'close:%' AND o.state = 'done' AND v.verdict = 'closed'
 			   AND lower(json_extract(o.payload, '$.author')) = lower($author)
-			   AND lower(json_extract(o.payload, '$.owner')) = $owner
+			   AND ($owner IS NULL OR lower(json_extract(o.payload, '$.owner')) = $owner)
 			   AND ($repo IS NULL OR lower(json_extract(o.payload, '$.repo')) = $repo)
 			 ORDER BY o.updated_at`
 		).all({ author, owner, repo: repo ?? null }) as { payload: string }[];
@@ -786,9 +787,13 @@ export class Wal {
 		});
 	}
 
-	/** After an approval reopened an item: it is allowed now (ADR 0310). */
-	markReopened(issueKey: string, now = Date.now()): void {
-		this.#q(`UPDATE verdicts SET verdict = 'allowed', reason = 'introduction-approved', decided_at = $now WHERE issue_key = $key AND verdict = 'closed'`).run({ key: issueKey, now });
+	/**
+	 * After an item was reopened: it is allowed now. `reason` says why:
+	 * `introduction-approved` (ADR 0310) or `admitted` (an admin let the
+	 * author in from Activity, ADR 0313).
+	 */
+	markReopened(issueKey: string, reason: 'introduction-approved' | 'admitted', now = Date.now()): void {
+		this.#q(`UPDATE verdicts SET verdict = 'allowed', reason = $reason, decided_at = $now WHERE issue_key = $key AND verdict = 'closed'`).run({ key: issueKey, reason, now });
 	}
 
 	// -------------------------------------------------------------------------

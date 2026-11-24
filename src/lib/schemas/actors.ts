@@ -62,12 +62,15 @@ export const issueAddressFromKey = (key: string): ActorAddress => ({ family: FAM
 /**
  * Outbox effect keys: `close:<repoId>:<number>` closes an issue or pull
  * request; `approve:<repoId>:<number>` carries out an approved introduction
- * (the discussion's repository and number, ADR 0310).
+ * (the discussion's repository and number, ADR 0310); `reopen:<repoId>:<number>`
+ * reopens an item an admin let its author in for (ADR 0313).
  */
-export const EffectKey = Type.String({ pattern: '^(close|approve):[0-9]+:[0-9]+$', title: 'effect key' });
+export const EffectKey = Type.String({ pattern: '^(close|approve|reopen):[0-9]+:[0-9]+$', title: 'effect key' });
 export type EffectKey = Static<typeof EffectKey>;
 export const closeEffectKey = (repoId: number, number: number): string => `close:${repoId}:${number}`;
 export const approveEffectKey = (repoId: number, number: number): string => `approve:${repoId}:${number}`;
+/** Reopens an item granary closed, after an admin let its author in from Activity (ADR 0313). */
+export const reopenEffectKey = (repoId: number, number: number): string => `reopen:${repoId}:${number}`;
 export const isApproveEffectKey = (key: string): boolean => key.startsWith('approve:');
 
 /** `introduction/<repoId>-<number>`: one actor per introduction (a discussion; ADR 0310). */

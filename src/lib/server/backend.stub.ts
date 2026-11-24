@@ -18,6 +18,8 @@ import type {
 	ActorSnapshot,
 	ActorSummary,
 	AddAllowedUserResult,
+	AdmitAuthorResult,
+	AdmitScope,
 	AllowedUser,
 	BlockedUser,
 	BlockUserRequest,
@@ -393,6 +395,7 @@ export class StubBackend implements Backend {
 				issue,
 				decision: verdict ? { verdict: verdict.verdict, reason: verdict.reason, decidedAt: verdict.decidedAt } : null,
 				action: effect ? { state: effect.state, attempts: effect.attempts, lastError: effect.lastError, updatedAt: effect.updatedAt } : null,
+				reopen: this.reopened.has(key) ? { state: 'done', attempts: 1, lastError: null, updatedAt: this.reopened.get(key)! } : null,
 				latestDelivery: latest ? { deliveryId: latest.deliveryId, event: latest.event, action: latest.action, state: latest.state, ignoreReason: latest.ignoreReason, receivedAt: latest.receivedAt } : null
 			};
 		});
@@ -428,6 +431,33 @@ export class StubBackend implements Backend {
 		const user: AllowedUser = { login, scope: scope.toLowerCase(), note: null, addedBy, addedAt: Date.now() };
 		this.allowed.set(key, user);
 		return { user, added: true };
+	}
+
+	/** Item key → when it was reopened (ADR 0313). */
+	private reopened = new Map<string, number>();
+
+	async admitAuthor(key: string, scope: AdmitScope, by: string): Promise<AdmitAuthorResult> {
+		const found = this.issues.find((i) => issueKey(i.repoId, i.number) === key);
+		if (!found) throw new BackendError('not-found', `No item ${key}`);
+		const verdict = this.verdicts.find((v) => v.issueKey === key);
+		if (verdict?.verdict !== 'closed') throw new BackendError('conflict', 'granary did not close this item');
+		const login = found.author;
+		const entryScope = scope === 'everywhere' ? '' : scope === 'owner' ? found.owner.toLowerCase() : `${found.owner}/${found.repo}`.toLowerCase();
+		const unblocked = this.blocked.delete(login.toLowerCase());
+		const { added } = await this.addAllowedUser(login, by, entryScope);
+		const now = Date.now();
+		const reopening: string[] = [];
+		for (const v of this.verdicts) {
+			const i = this.issues.find((x) => issueKey(x.repoId, x.number) === v.issueKey);
+			if (!i || v.verdict !== 'closed' || i.author.toLowerCase() !== login.toLowerCase()) continue;
+			if (entryScope && !(i.owner.toLowerCase() === entryScope || `${i.owner}/${i.repo}`.toLowerCase() === entryScope)) continue;
+			v.verdict = 'allowed';
+			v.reason = 'admitted';
+			v.decidedAt = now;
+			this.reopened.set(v.issueKey, now);
+			reopening.push(`${i.owner}/${i.repo}#${i.number}`);
+		}
+		return { login, scope: entryScope, added, unblocked, reopening };
 	}
 
 	async removeAllowedUser(login: string, _removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {

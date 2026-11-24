@@ -198,6 +198,8 @@ export interface ActivityItem {
 	decision: { verdict: VerdictValue; reason: string; decidedAt: number } | null;
 	/** The GitHub action (outbox row: comment + close), if any. */
 	action: { state: OutboxState; attempts: number; lastError: string | null; updatedAt: number } | null;
+	/** Reopening it after an admin let its author in (ADR 0313), if asked. */
+	reopen: { state: OutboxState; attempts: number; lastError: string | null; updatedAt: number } | null;
 	/** The newest delivery for the item. */
 	latestDelivery: { deliveryId: string; event: string; action: string | null; state: InboxState; ignoreReason: string | null; receivedAt: number } | null;
 }
@@ -363,6 +365,31 @@ export type AddAllowedUserInput = Static<typeof AddAllowedUserInput>;
 
 export const RemoveAllowedUserInput = Type.Object({ login: Type.String({ minLength: 1 }), scope: Type.Optional(Type.String({ maxLength: 140 })) }, closed);
 export type RemoveAllowedUserInput = Static<typeof RemoveAllowedUserInput>;
+
+/**
+ * Let an item's author in from Activity (ADR 0313): allowlist them for the
+ * item's repository, its owner or everywhere, lift an active block, and
+ * reopen what granary closed on them within that scope.
+ */
+export const ADMIT_SCOPES = ['repository', 'owner', 'everywhere'] as const;
+export type AdmitScope = (typeof ADMIT_SCOPES)[number];
+export const AdmitAuthorInput = Type.Object(
+	{ issueKey: IssueKey, scope: Type.Union(ADMIT_SCOPES.map((s) => Type.Literal(s))) },
+	closed
+);
+export type AdmitAuthorInput = Static<typeof AdmitAuthorInput>;
+
+export interface AdmitAuthorResult {
+	login: string;
+	/** The allowlist scope granted: '' (everywhere), `owner` or `owner/repo`. */
+	scope: string;
+	/** false when that allowlist entry existed already. */
+	added: boolean;
+	/** true when an active block was lifted. */
+	unblocked: boolean;
+	/** The items being reopened, as `owner/repo#number`. */
+	reopening: string[];
+}
 
 export interface AddAllowedUserResult {
 	user: AllowedUser;

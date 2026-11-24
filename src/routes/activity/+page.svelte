@@ -1,6 +1,7 @@
 <!--
 	Activity (ADR 0291): one row per issue or pull request — who opened it,
-	what granary decided and whether the GitHub action finished. Replaces the
+	what granary decided and whether the GitHub action finished; on a closed
+	row an admin can let its author in and reopen it (ADR 0313). Replaces the
 	separate Deliveries, Effects and Verdicts tables; the item page has the
 	full timeline.
 -->
@@ -18,6 +19,7 @@
 	import RelativeTime from '$lib/components/app/RelativeTime.svelte';
 	import IssueRef from '$lib/components/app/IssueRef.svelte';
 	import KindBadge from '$lib/components/app/KindBadge.svelte';
+	import AdmitAuthorButton from '$lib/components/app/AdmitAuthorButton.svelte';
 	import { ACTION_LABELS, KIND_LABELS, OUTCOME_LABELS, reasonLabel } from '$lib/components/app/glossary';
 
 	const KINDS: readonly ItemKind[] = ['issue', 'pull_request'];
@@ -40,6 +42,8 @@
 
 	/** One line under the outcome: why, or what is still happening. */
 	function detail(a: ActivityItem): string {
+		if (a.reopen && a.reopen.state !== 'done')
+			return a.reopen.state === 'dead' ? `Reopening on GitHub gave up: ${a.reopen.lastError ?? 'unknown error'}` : 'Reopening on GitHub…';
 		if (a.decision) return reasonLabel(a.decision.reason);
 		if (a.action) return `GitHub action: ${ACTION_LABELS[a.action.state] ?? a.action.state}${a.action.attempts > 1 ? ` (attempt ${a.action.attempts})` : ''}`;
 		if (a.latestDelivery?.ignoreReason) return a.latestDelivery.ignoreReason;
@@ -59,12 +63,13 @@
 </div>
 
 {#key `${outcome}:${kind}:${generation}`}
-	<PagedTable {load} columns={4} empty="Nothing matches these filters.">
+	<PagedTable {load} columns={5} empty="Nothing matches these filters.">
 		{#snippet header()}
 			<Table.Head>Item</Table.Head>
 			<Table.Head>Author</Table.Head>
 			<Table.Head>Outcome</Table.Head>
 			<Table.Head class="text-right">Updated</Table.Head>
+			<Table.Head class="w-10"><span class="sr-only">Actions</span></Table.Head>
 		{/snippet}
 		{#snippet row(a: ActivityItem)}
 			<Table.Row data-testid="activity-row">
@@ -80,6 +85,9 @@
 					{#if detail(a)}<span class="text-muted-foreground mt-0.5 block max-w-72 truncate text-xs" title={detail(a)}>{detail(a)}</span>{/if}
 				</Table.Cell>
 				<Table.Cell class="text-muted-foreground text-right text-sm"><RelativeTime ms={a.updatedAt} /></Table.Cell>
+				<Table.Cell class="w-10 text-right">
+					{#if a.outcome === 'closed' && a.issue && !a.reopen}<AdmitAuthorButton item={a} onchange={refresh} />{/if}
+				</Table.Cell>
 			</Table.Row>
 		{/snippet}
 	</PagedTable>

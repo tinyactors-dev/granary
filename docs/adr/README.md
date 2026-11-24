@@ -14,7 +14,7 @@ superseded by N`) and the newer ADR says what changed.
   ops.sqlite (0230).
 - **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290). On phones tables stack into cards and the nav is a drawer (0295, 0296).
 - **tinyactors:** granary runs on @tinyactors/node 0.4.0: SCXML charts built in TypeScript, no loaders, no debugger (0300).
-- **Introductions:** people introduce themselves in an Introductions discussion category; admins approve (scoped allowlist entry, closed items reopened, a reply on the discussion) or decline (0310); allowlist entries are scoped to everywhere, an owner or a repository (0311).
+- **Introductions:** people introduce themselves in an Introductions discussion category; admins approve (scoped allowlist entry, closed items reopened, a reply on the discussion) or decline (0310); allowlist entries are scoped to everywhere, an owner or a repository (0311); admins can also let an author in from a closed Activity row, which allowlists them, lifts an active block and reopens what was closed on them (0313).
 - **Sandbox:** `granary sandbox init|serve` runs a second granary on the fake GitHub next to production, loopback only (0312).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233); every green push to main is released (npm `dev`, and the GitHub prerelease `edge`) and pulled by `granary update` (0301, 0302).
 
@@ -202,3 +202,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0310](0310-introductions-through-github-discussions.md) | Introductions through GitHub Discussions | active |
 | [0311](0311-allowlist-scopes.md) | Allowlist entries have a scope: everywhere, an owner, or a repository | active |
 | [0312](0312-sandbox-next-to-production.md) | A sandbox next to production: a second granary on the fake GitHub | active |
+| [0313](0313-let-them-in-from-activity.md) | Let an author in from Activity: allowlist them and reopen what was closed | active |

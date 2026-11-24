@@ -8,11 +8,13 @@ import { error, invalid } from '@sveltejs/kit';
 import { standard } from '$lib/schemas/standard';
 import {
 	AddAllowedUserInput,
+	AdmitAuthorInput,
 	BLOCK_DURATION_MS,
 	BlockUserInput,
 	RemoveAllowedUserInput,
 	UnblockUserInput,
 	type AddAllowedUserResult,
+	type AdmitAuthorResult,
 	type AllowedUser,
 	type BlockedUser,
 	type BlockUserResult,
@@ -107,6 +109,21 @@ export const removeAllowedUser = command(
 		const admin = requireAdmin();
 		const result = await withBackend((b) => b.removeAllowedUser(login, admin.login, scope ?? ''));
 		await Promise.all([listAllowedUsers().refresh(), getOverview().refresh()]);
+		return result;
+	}
+);
+
+/**
+ * Command `{issueKey, scope}` from Activity (ADR 0313): let the author of an
+ * item granary closed in for its repository, its owner or everywhere (lifting
+ * an active block) and reopen what was closed on them there. Admin only.
+ */
+export const admitAuthor = command(
+	standard(AdmitAuthorInput),
+	async ({ issueKey, scope }): Promise<AdmitAuthorResult> => {
+		const admin = requireAdmin();
+		const result = await withBackend((b) => b.admitAuthor(issueKey, scope, admin.login));
+		await Promise.all([listAllowedUsers().refresh(), listBlockedUsers().refresh(), getOverview().refresh()]);
 		return result;
 	}
 );

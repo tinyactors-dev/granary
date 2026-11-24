@@ -17,6 +17,8 @@ import type {
 	ActorSnapshot,
 	ActorSummary,
 	AddAllowedUserResult,
+	AdmitAuthorResult,
+	AdmitScope,
 	AllowedUser,
 	BlockedUser,
 	BlockUserRequest,
@@ -46,7 +48,7 @@ import type {
 	IntroductionSummary,
 	ListIntroductionsInput
 } from '../schemas/api';
-import { formatAddress, parseIssueKey, type ActorAddress } from '../schemas/actors';
+import { formatAddress, issueAddressFromKey, parseIssueKey, reopenEffectKey, type ActorAddress } from '../schemas/actors';
 import { AdminStore, AdminStoreError } from './admins';
 import { log } from './log';
 import { masterKeyStatus } from './secrets';
@@ -86,6 +88,8 @@ import { issueKey } from '../schemas/actors';
 import { parse, SchemaValidationError } from '../schemas/standard';
 import {
 	SESSION_TTL_MS,
+	isApprovePayload,
+	parseClosePayload,
 	parseOutboxPayload,
 	parseReplyTo,
 	type AllowedUserRow,
@@ -345,12 +349,19 @@ export class RealBackend implements Backend {
 				issue: this.#issueSummary(this.#wal.latestIssuesInbox(r.issueKey)),
 				decision: verdict ? { verdict: verdict.verdict, reason: verdict.reason, decidedAt: verdict.decided_at } : null,
 				action: outbox ? { state: outbox.state, attempts: outbox.attempts, lastError: outbox.last_error, updatedAt: outbox.updated_at } : null,
+				reopen: this.#reopenOf(r.issueKey),
 				latestDelivery: latest
 					? { deliveryId: latest.delivery_id, event: latest.event, action: latest.action, state: latest.state, ignoreReason: latest.ignore_reason ?? null, receivedAt: latest.received_at }
 					: null
 			};
 		});
 		return offsetPage(items, q.limit, offset);
+	}
+
+	#reopenOf(key: string): ActivityItem['reopen'] {
+		const { repoId, number } = parseIssueKey(key);
+		const row = this.#wal.getOutbox(reopenEffectKey(repoId, number));
+		return row ? { state: row.state, attempts: row.attempts, lastError: row.last_error, updatedAt: row.updated_at } : null;
 	}
 
 	async getIssue(key: string): Promise<IssueDetail | null> {
@@ -389,6 +400,50 @@ export class RealBackend implements Backend {
 		return { user: allowedUser(row), added };
 	}
 
+	async admitAuthor(key: string, scope: AdmitScope, by: string): Promise<AdmitAuthorResult> {
+		const close = this.#wal.outboxForIssue(key);
+		if (!close) {
+			if (!this.#wal.getVerdict(key) && !this.#wal.inboxForIssue(key).length) throw new BackendError('not-found', `No item ${key}`);
+			throw new BackendError('conflict', 'granary did not close this item');
+		}
+		const item = parseClosePayload(close.payload);
+		const login = item.author;
+		const entryScope = scope === 'everywhere' ? '' : scope === 'owner' ? item.owner.toLowerCase() : `${item.owner}/${item.repo}`.toLowerCase();
+		const now = Date.now();
+		const { added, unblocked, reopening } = this.#wal.tx(() => {
+			const block = this.#wal.getBlockedUser(login);
+			const unblocked = block !== null && (block.expires_at === null || block.expires_at > now) && this.#wal.unblockUser(block.login);
+			const { added } = this.#wal.addAllowedUser(login, by, { scope: entryScope, note: `activity ${item.owner}/${item.repo}#${item.number}` }, now);
+			const reopening: string[] = [];
+			for (const c of this.#wal.closedItemsOf(login, entryScope)) {
+				const effectKey = reopenEffectKey(c.repoId, c.number);
+				const { inserted, row } = this.#wal.insertOutbox(
+					{ effectKey, issueKey: itemKey(c.repoId, c.number), replyTo: issueAddressFromKey(itemKey(c.repoId, c.number)), payload: { effect: 'reopen', ...c, author: login, scope: entryScope, by } },
+					now
+				);
+				// Asked again after it gave up: try again.
+				if (!inserted && row.state === 'dead') this.#wal.retryOutbox(effectKey, now);
+				reopening.push(`${c.owner}/${c.repo}#${c.number}`);
+			}
+			return { added, unblocked, reopening };
+		});
+		const subject = entryScope ? `${login} (${entryScope})` : login;
+		if (unblocked) {
+			this.#admins.audit(by, 'blocklist.remove', login, { via: `activity ${key}` });
+			this.#rt.publishBlocklist();
+		}
+		if (added) this.#rt.publishAllowlist();
+		this.#rt.relay.kick();
+		log.info(`allowlist: ${by} let ${subject} in from activity (${item.owner}/${item.repo}#${item.number}), reopening ${reopening.length}${unblocked ? ', block lifted' : ''}`, {
+			'audit.action': 'allowlist.admit',
+			'audit.subject': subject,
+			'audit.actor': by,
+			'github.repository': `${item.owner}/${item.repo}`,
+			'github.issue.number': item.number
+		});
+		return { login, scope: entryScope, added, unblocked, reopening };
+	}
+
 	async removeAllowedUser(login: string, removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {
 		const removed = this.#wal.removeAllowedUser(login, scope.toLowerCase());
 		if (removed) {
@@ -410,7 +465,7 @@ export class RealBackend implements Backend {
 		const effect = this.#wal.getOutbox(`approve:${r.repo_id}:${r.number}`);
 		const effectPayload = effect ? parseOutboxPayload(effect.payload) : null;
 		const reopened: IntroductionClosedItem[] =
-			effectPayload && 'effect' in effectPayload
+			effectPayload && isApprovePayload(effectPayload)
 				? effectPayload.reopen.map((i) => ({ kind: i.kind, issueKey: itemKey(i.repoId, i.number), owner: i.owner, repo: i.repo, number: i.number, title: i.title, htmlUrl: i.htmlUrl }))
 				: [];
 		return {

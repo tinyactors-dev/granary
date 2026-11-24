@@ -104,9 +104,30 @@ export const ApproveEffectPayload = Type.Object(
 );
 export type ApproveEffectPayload = Static<typeof ApproveEffectPayload>;
 
-export const OutboxPayload = Type.Union([CloseEffectPayload, ApproveEffectPayload], { title: 'outbox.payload' });
+/**
+ * `outbox.payload` of a `reopen:<repoId>:<number>` effect (ADR 0313): an
+ * admin let the item's author in from Activity; the relay reopens the item.
+ * Nothing is posted and no actor is told.
+ */
+export const ReopenEffectPayload = Type.Composite(
+	[
+		Type.Object({ effect: Type.Literal('reopen') }),
+		ReopenItem,
+		Type.Object({
+			author: Type.String(),
+			/** The allowlist scope granted: '' (everywhere), `owner` or `owner/repo`. */
+			scope: Type.String(),
+			by: Type.String()
+		})
+	],
+	{ additionalProperties: false, title: 'outbox.payload (reopen)' }
+);
+export type ReopenEffectPayload = Static<typeof ReopenEffectPayload>;
+
+export const OutboxPayload = Type.Union([CloseEffectPayload, ApproveEffectPayload, ReopenEffectPayload], { title: 'outbox.payload' });
 export type OutboxPayload = Static<typeof OutboxPayload>;
 export const isApprovePayload = (p: OutboxPayload): p is ApproveEffectPayload => 'effect' in p && p.effect === 'approve';
+export const isReopenPayload = (p: OutboxPayload): p is ReopenEffectPayload => 'effect' in p && p.effect === 'reopen';
 
 /** `outbox.reply_to` JSON — the actor to notify (`issue/<key>`). */
 export const ReplyTo = ActorAddress;
@@ -117,7 +138,7 @@ export const parseOutboxPayload = (text: string): OutboxPayload => parseJson(Out
 /** A close effect's payload; throws for any other kind. */
 export function parseClosePayload(text: string): CloseEffectPayload {
 	const p = parseOutboxPayload(text);
-	if (isApprovePayload(p)) throw new Error('outbox.payload: an approve effect where a close effect was expected');
+	if ('effect' in p) throw new Error(`outbox.payload: an ${p.effect} effect where a close effect was expected`);
 	return p;
 }
 export const encodeOutboxPayload = (p: OutboxPayload): string => stringifyJson(OutboxPayload, p, 'outbox.payload');
