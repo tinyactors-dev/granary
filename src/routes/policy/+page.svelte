@@ -19,6 +19,7 @@
 	import { describeError } from '$lib/components/app/format';
 	import { isAdmin } from '$lib/components/app/session';
 	import Blocklist from '$lib/components/policy/Blocklist.svelte';
+	import AdmittedMessage from '$lib/components/policy/AdmittedMessage.svelte';
 
 	const users = listAllowedUsers();
 	const blocked = listBlockedUsers();
@@ -187,6 +188,10 @@
 			</form>
 		</Card.Content>
 	</Card.Root>
+</div>
+
+<div class="mt-6">
+	<AdmittedMessage />
 </div>
 
 <div class="mt-10">

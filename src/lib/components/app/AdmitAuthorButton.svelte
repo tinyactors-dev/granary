@@ -83,7 +83,8 @@
 		<Dialog.Header>
 			<Dialog.Title>Let {author} in?</Dialog.Title>
 			<Dialog.Description>
-				granary adds {author} to the allowlist and reopens every issue and pull request it closed on them in {where}.{#if blocked}
+				granary adds {author} to the allowlist, reopens every issue and pull request it closed on them in {where}, and comments on each to
+				tell them (the comment is on the Policy page).{#if blocked}
 					Their block is lifted too.{/if}
 			</Dialog.Description>
 		</Dialog.Header>

@@ -19,6 +19,7 @@ import type {
 	AddAllowedUserResult,
 	AdmitAuthorResult,
 	AdmitScope,
+	AdmittedTemplateStatus,
 	AllowedUser,
 	BlockedUser,
 	BlockUserRequest,
@@ -133,8 +134,9 @@ import { setupSteps } from './setup-steps';
 import { EVENTS, issueKey as itemKey } from '../schemas/actors';
 import { AuthorAssociation } from '../schemas/github';
 import { check as checkSchema } from '../schemas/standard';
-import { DEFAULT_APPROVED_TEMPLATE } from '../schemas/message-template';
+import { DEFAULT_ADMITTED_TEMPLATE, DEFAULT_APPROVED_TEMPLATE } from '../schemas/message-template';
 import { decidePolicy } from './policy';
+import { readAdmittedTemplate, renderAdmittedComment, saveAdmittedTemplate as storeAdmittedTemplate } from './admitted-message';
 import {
 	INTRODUCTIONS_CATEGORY,
 	INTRODUCTIONS_CATEGORY_DESCRIPTION,
@@ -423,7 +425,7 @@ export class RealBackend implements Backend {
 			for (const c of this.#wal.closedItemsOf(login, entryScope)) {
 				const effectKey = reopenEffectKey(c.repoId, c.number);
 				const { inserted, row } = this.#wal.insertOutbox(
-					{ effectKey, issueKey: itemKey(c.repoId, c.number), replyTo: issueAddressFromKey(itemKey(c.repoId, c.number)), payload: { effect: 'reopen', ...c, author: login, scope: entryScope, by } },
+					{ effectKey, issueKey: itemKey(c.repoId, c.number), replyTo: issueAddressFromKey(itemKey(c.repoId, c.number)), payload: { effect: 'reopen', ...c, author: login, scope: entryScope, by, commentBody: renderAdmittedComment(this.#wal.db, { author: login, scope: entryScope, owner: c.owner, repo: c.repo }) } },
 					now
 				);
 				// Asked again after it gave up: try again.
@@ -447,6 +449,20 @@ export class RealBackend implements Backend {
 			'github.issue.number': item.number
 		});
 		return { login, scope: entryScope, added, unblocked, reopening };
+	}
+
+	async admittedTemplate(): Promise<AdmittedTemplateStatus> {
+		return { ...readAdmittedTemplate(this.#wal.db), default: DEFAULT_ADMITTED_TEMPLATE };
+	}
+
+	async saveAdmittedTemplate(template: string | null, by: string): Promise<AdmittedTemplateStatus> {
+		try {
+			storeAdmittedTemplate(this.#wal.db, template, by);
+		} catch (e) {
+			if (e instanceof AdminStoreError) throw new BackendError('invalid', e.message);
+			throw e;
+		}
+		return this.admittedTemplate();
 	}
 
 	async removeAllowedUser(login: string, removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {

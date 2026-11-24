@@ -294,3 +294,54 @@ export function renderApproved(template: string, ctx: ApprovedContext): string {
 	if (out.length > MAX_RENDERED_LENGTH) throw new TemplateError([{ message: `Rendered message is too long (${out.length} characters)` }]);
 	return out;
 }
+
+// ---------------------------------------------------------------------------
+// The comment on an item reopened when an admin lets its author in (ADR 0314)
+// ---------------------------------------------------------------------------
+
+/** Setting key: the Markdown template granary posts on each item it reopens for an author let in (`null` = built-in). */
+export const ADMITTED_MESSAGE_SETTING = 'messages.admitted';
+
+export const ADMITTED_VARIABLES = [
+	{ name: 'author', description: 'Login of the author let in (no @)' },
+	{ name: 'scope', description: '"this repository", "the repositories of <owner>" or "every repository"' },
+	{ name: 'repository', description: 'owner/repo of the reopened item' },
+	{ name: 'owner', description: 'Repository owner' }
+] as const;
+const ADMITTED_NAMES = new Set<string>(ADMITTED_VARIABLES.map((v) => v.name));
+
+export const DEFAULT_ADMITTED_TEMPLATE =
+	"@{{author}}, you've been added to the allowlist, so this is open again. Issues and pull requests you open in {{scope}} will stay open.";
+
+export interface AdmittedContext {
+	author: string;
+	/** The allowlist scope granted: '' (everywhere), `owner` or `owner/repo` (ADR 0311). */
+	scope: string;
+	owner: string;
+	repo: string;
+}
+
+export const validateAdmittedTemplate = (template: string): TemplateProblem[] => validateTemplate(template, ADMITTED_NAMES);
+
+/** Render the comment; throws TemplateError for an invalid template. The marker is NOT added here. */
+export function renderAdmitted(template: string, ctx: AdmittedContext): string {
+	const problems = validateAdmittedTemplate(template);
+	if (problems.length) throw new TemplateError(problems);
+	const value = (v: string): string => {
+		switch (v) {
+			case 'author':
+				return name(ctx.author);
+			case 'scope':
+				return ctx.scope === '' ? 'every repository' : ctx.scope.includes('/') ? 'this repository' : `the repositories of ${name(ctx.scope)}`;
+			case 'repository':
+				return `${name(ctx.owner)}/${name(ctx.repo)}`;
+			case 'owner':
+				return name(ctx.owner);
+			default:
+				return '';
+		}
+	};
+	const out = template.replace(TOKEN, (_m, v: string) => value(v));
+	if (out.length > MAX_RENDERED_LENGTH) throw new TemplateError([{ message: `Rendered message is too long (${out.length} characters)` }]);
+	return out;
+}

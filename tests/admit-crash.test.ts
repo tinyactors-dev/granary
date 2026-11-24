@@ -52,11 +52,13 @@ async function expectAdmitted(i: OpenedIssue) {
 	const issue = await fakeIssue(h(), i);
 	expect(issue.state).toBe('open');
 	expect(issue.state_reason).toBe('reopened');
-	// Reopened once, by the app, and not commented on again.
+	// Reopened once, by the app, and told once: the closing comment, then exactly one let-in comment.
 	const reopened = await reopenedEvents(i);
 	expect(reopened).toHaveLength(1);
 	expect(reopened[0]!.by).toEndWith('[bot]');
-	expect(issue.comments).toHaveLength(1);
+	expect(issue.comments).toHaveLength(2);
+	expect(issue.comments.filter((c) => (c.body ?? '').includes(`<!-- granary:reopen:${i.repoId}:${i.number} -->`))).toHaveLength(1);
+	expect(issue.comments[1]!.body).toContain("you've been added to the allowlist");
 	const page = (await reopenState(i))!.html;
 	expect(page).toContain('Reopened: an admin let them in');
 }
@@ -132,6 +134,44 @@ describe('letting an author in survives restarts', () => {
 			await expectAdmitted(second);
 			await settle(500);
 			await expectAdmitted(first);
+		},
+		T
+	);
+
+	test(
+		'SIGKILL after the comment was posted but its response lost → no second comment after restart',
+		async () => {
+			const repo = uniqueName();
+			const i = await closed('lostcomment', repo);
+			// The reopen goes through; the comment is posted, but GitHub's answer is lost (502), retry in 5 s.
+			await h().fakeGithub.injectFault({ method: 'POST', pathPattern: `^/repos/${OWNER}/${repo}/issues/${i.number}/comments$`, status: 502, count: 1, retryAfter: 5, applied: true });
+
+			await admit(i.issueKey, 'repository');
+			await h().waitFor(async () => ((await fakeIssue(h(), i)).comments.length === 2 ? true : null), { message: 'the let-in comment is on GitHub' });
+			await h().waitFor(async () => (await h().fakeGithub.state()).faults.some((f) => f.pathPattern.includes(repo) && f.remaining === 0), { message: 'the lost response was answered' });
+			expect((await reopenState(i))?.state).not.toBe('done');
+
+			await h().restartApp({ kill: 'SIGKILL' });
+			// The retry finds the marker instead of posting again.
+			await expectAdmitted(i);
+		},
+		T
+	);
+
+	test(
+		'SIGKILL after the reopen, with the comment refused once → reopened once and told once after restart',
+		async () => {
+			const repo = uniqueName();
+			const i = await closed('refusedcomment', repo);
+			await h().fakeGithub.injectFault({ method: 'POST', pathPattern: `^/repos/${OWNER}/${repo}/issues/${i.number}/comments$`, status: 503, count: 1, retryAfter: 5 });
+
+			await admit(i.issueKey, 'repository');
+			await h().waitFor(async () => ((await fakeIssue(h(), i)).state === 'open' ? true : null), { message: 'reopened on GitHub' });
+			await h().waitFor(async () => (await h().fakeGithub.state()).faults.some((f) => f.pathPattern.includes(repo) && f.remaining === 0), { message: 'the comment was refused once' });
+			expect((await fakeIssue(h(), i)).comments).toHaveLength(1);
+
+			await h().restartApp({ kill: 'SIGKILL' });
+			await expectAdmitted(i);
 		},
 		T
 	);

@@ -9,12 +9,14 @@ import { standard } from '$lib/schemas/standard';
 import {
 	AddAllowedUserInput,
 	AdmitAuthorInput,
+	SaveAdmittedTemplateInput,
 	BLOCK_DURATION_MS,
 	BlockUserInput,
 	RemoveAllowedUserInput,
 	UnblockUserInput,
 	type AddAllowedUserResult,
 	type AdmitAuthorResult,
+	type AdmittedTemplateStatus,
 	type AllowedUser,
 	type BlockedUser,
 	type BlockUserResult,
@@ -127,3 +129,17 @@ export const admitAuthor = command(
 		return result;
 	}
 );
+
+/** The comment posted on each item reopened when an admin lets its author in (ADR 0314). */
+export const getAdmittedTemplate = query(async (): Promise<AdmittedTemplateStatus> => {
+	requireUser();
+	return withBackend((b) => b.admittedTemplate());
+});
+
+/** Command `{template}` (`null` = the built-in comment). Admin only. */
+export const saveAdmittedTemplate = command(standard(SaveAdmittedTemplateInput), async ({ template }): Promise<AdmittedTemplateStatus> => {
+	const admin = requireAdmin();
+	const result = await withBackend((b) => b.saveAdmittedTemplate(template, admin.login));
+	await getAdmittedTemplate().refresh();
+	return result;
+});

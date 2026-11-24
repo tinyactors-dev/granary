@@ -32,6 +32,14 @@ function waitReopened(i: OpenedIssue) {
 	}, { message: `${i.repo}#${i.number} is reopened` });
 }
 
+/** The item once granary's "you are in" comment (its reopen marker) is on it. */
+function waitLetInComment(i: OpenedIssue) {
+	return h().waitFor(async () => {
+		const issue = await fakeIssue(h(), i);
+		return issue.comments.some((c) => (c.body ?? '').includes(`<!-- granary:reopen:${i.repoId}:${i.number} -->`)) ? issue : null;
+	}, { message: `${i.repo}#${i.number} has the let-in comment` });
+}
+
 async function closed(author: string, repo?: string): Promise<OpenedIssue> {
 	const i = await openIssue(h(), author, repo ? { repo } : {});
 	expectClosedOnce(await waitClosedOnGithub(h(), i), i);
@@ -60,10 +68,15 @@ describe('let them in from Activity', () => {
 			expect(r.reopening.sort()).toEqual([`acme/${repo}#${first.number}`, `acme/${repo}#${second.number}`].sort());
 
 			for (const i of [first, second]) {
-				const issue = await waitReopened(i);
+				await waitReopened(i);
+				const issue = await waitLetInComment(i);
 				expect(issue.state_reason).toBe('reopened');
-				// Reopened, not commented on again.
-				expect(issue.comments).toHaveLength(1);
+				// The closing comment, then one telling them they are in, from the app, with the marker.
+				expect(issue.comments).toHaveLength(2);
+				const told = issue.comments[1]!;
+				expect(told.user.login).toEndWith('[bot]');
+				expect(told.body).toContain("@oscar, you've been added to the allowlist, so this is open again. Issues and pull requests you open in this repository will stay open.");
+				expect(told.body).toContain(`<!-- granary:reopen:${i.repoId}:${i.number} -->`);
 			}
 			await settle(500);
 			expect((await fakeIssue(h(), elsewhere)).state).toBe('closed');
@@ -104,6 +117,29 @@ describe('let them in from Activity', () => {
 			// No longer blocked: their next issue anywhere stays open.
 			const next = await openIssue(h(), login);
 			await h().waitForSpan(actorFinished(next.address, 'allowed'));
+		},
+		T
+	);
+
+	test(
+		'the comment is the template on the Policy page, rendered for the scope granted; a bad template is refused',
+		async () => {
+			const save = (template: string | null) => remoteCommand<{ template: string; custom: boolean }>(h(), cookie, '/policy', 'saveAdmittedTemplate', { template });
+			await expect(save('Welcome {{nobody}}')).rejects.toThrow(/Unknown variable/);
+			expect(await save('Welcome aboard, @{{author}}: open in {{scope}} ({{owner}}, {{repository}}).')).toMatchObject({ custom: true });
+			try {
+				const repo = uniqueName();
+				const i = await closed('peggy', repo);
+				const page = await (await h().fetchApp('/policy', { headers: { Cookie: cookie } })).text();
+				expect(page).toContain('data-testid="admitted-message"');
+				expect(page).toContain('Welcome aboard, @{{author}}');
+
+				await admit(i.issueKey, 'owner');
+				const issue = await waitLetInComment(i);
+				expect(issue.comments[1]!.body).toContain(`Welcome aboard, @peggy: open in the repositories of acme (acme, acme/${repo}).`);
+			} finally {
+				expect(await save(null)).toMatchObject({ custom: false });
+			}
 		},
 		T
 	);

@@ -105,9 +105,9 @@ export const ApproveEffectPayload = Type.Object(
 export type ApproveEffectPayload = Static<typeof ApproveEffectPayload>;
 
 /**
- * `outbox.payload` of a `reopen:<repoId>:<number>` effect (ADR 0313): an
- * admin let the item's author in from Activity; the relay reopens the item.
- * Nothing is posted and no actor is told.
+ * `outbox.payload` of a `reopen:<repoId>:<number>` effect (ADR 0313, 0314):
+ * an admin let the item's author in from Activity; the relay reopens the
+ * item and comments on it. No actor is told.
  */
 export const ReopenEffectPayload = Type.Composite(
 	[
@@ -117,7 +117,12 @@ export const ReopenEffectPayload = Type.Composite(
 			author: Type.String(),
 			/** The allowlist scope granted: '' (everywhere), `owner` or `owner/repo`. */
 			scope: Type.String(),
-			by: Type.String()
+			by: Type.String(),
+			/**
+			 * The comment, rendered when the reopen was queued (ADR 0314), so
+			 * retries post the same text. Absent: rendered when it runs.
+			 */
+			commentBody: Type.Optional(Type.String({ maxLength: MAX_RENDERED_LENGTH }))
 		})
 	],
 	{ additionalProperties: false, title: 'outbox.payload (reopen)' }

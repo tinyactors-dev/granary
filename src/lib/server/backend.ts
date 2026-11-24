@@ -23,6 +23,7 @@ import type {
 	AddAllowedUserResult,
 	AdmitAuthorResult,
 	AdmitScope,
+	AdmittedTemplateStatus,
 	AllowedUser,
 	BlockedUser,
 	BlockUserRequest,
@@ -156,6 +157,10 @@ export interface Backend {
 	 * did not close it.
 	 */
 	admitAuthor(issueKey: string, scope: AdmitScope, by: string): Promise<AdmitAuthorResult>;
+	/** The comment posted on each item reopened by `admitAuthor` (ADR 0314). */
+	admittedTemplate(): Promise<AdmittedTemplateStatus>;
+	/** Save it (`null` = the built-in comment); `invalid` for an unknown variable or bad braces. */
+	saveAdmittedTemplate(template: string | null, by: string): Promise<AdmittedTemplateStatus>;
 
 	// -- blocklist (ADR 0260) ---------------------------------------------------
 	/** All blocked_users entries, expired ones included (`active: false`). */

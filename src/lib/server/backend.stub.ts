@@ -20,6 +20,7 @@ import type {
 	AddAllowedUserResult,
 	AdmitAuthorResult,
 	AdmitScope,
+	AdmittedTemplateStatus,
 	AllowedUser,
 	BlockedUser,
 	BlockUserRequest,
@@ -48,7 +49,7 @@ import type {
 	IntroductionSummary,
 	ListIntroductionsInput
 } from '$lib/schemas/api';
-import { DEFAULT_APPROVED_TEMPLATE } from '$lib/schemas/message-template';
+import { DEFAULT_ADMITTED_TEMPLATE, DEFAULT_APPROVED_TEMPLATE, validateAdmittedTemplate } from '$lib/schemas/message-template';
 import { closeEffectKey, formatAddress, issueKey, parseIssueKey, type ActorAddress } from '$lib/schemas/actors';
 import type { AuthorAssociation } from '$lib/schemas/github';
 import type {
@@ -460,6 +461,21 @@ export class StubBackend implements Backend {
 			reopening.push(`${i.owner}/${i.repo}#${i.number}`);
 		}
 		return { login, scope: entryScope, added, unblocked, reopening };
+	}
+
+	private admittedCustom: string | null = null;
+
+	async admittedTemplate(): Promise<AdmittedTemplateStatus> {
+		return { template: this.admittedCustom ?? DEFAULT_ADMITTED_TEMPLATE, custom: this.admittedCustom !== null, default: DEFAULT_ADMITTED_TEMPLATE };
+	}
+
+	async saveAdmittedTemplate(template: string | null): Promise<AdmittedTemplateStatus> {
+		if (template !== null) {
+			const problems = validateAdmittedTemplate(template);
+			if (problems.length) throw new BackendError('invalid', problems.map((p) => p.message).join('; '));
+		}
+		this.admittedCustom = template;
+		return this.admittedTemplate();
 	}
 
 	async removeAllowedUser(login: string, _removedBy: string, scope = ''): Promise<RemoveAllowedUserResult> {

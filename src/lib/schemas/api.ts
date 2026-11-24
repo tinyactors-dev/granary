@@ -393,6 +393,17 @@ export interface AdmitAuthorResult {
 	reopening: string[];
 }
 
+/** The comment granary posts on each item it reopens for an author let in (ADR 0314). */
+export interface AdmittedTemplateStatus {
+	template: string;
+	/** false: the built-in default is in effect. */
+	custom: boolean;
+	default: string;
+}
+/** `template: null` = back to the built-in comment. */
+export const SaveAdmittedTemplateInput = Type.Object({ template: Type.Union([Type.String({ maxLength: 60_000 }), Type.Null()]) }, closed);
+export type SaveAdmittedTemplateInput = Static<typeof SaveAdmittedTemplateInput>;
+
 export interface AddAllowedUserResult {
 	user: AllowedUser;
 	/** false when the login was already on the list (idempotent). */

@@ -21,10 +21,11 @@
  * retry it looks for the marker first; a discussion that is gone is
  * skipped), and replies `github.approved` to `introduction/<key>`.
  *
- * A `reopen:<repoId>:<number>` effect (ADR 0313) reopens one item an admin
- * let its author in for from Activity (idempotent PATCH; the verdict becomes
- * `allowed`, reason `admitted`). Nothing is posted and no actor is told: done
- * or dead, the row is the record.
+ * A `reopen:<repoId>:<number>` effect (ADR 0313, 0314) reopens one item an
+ * admin let its author in for from Activity (idempotent PATCH), then posts
+ * the comment telling them, marked like the closing comment (on a retry it
+ * looks for the marker first); the verdict becomes `allowed`, reason
+ * `admitted`. No actor is told: done or dead, the row is the record.
  */
 import { EVENTS, MAX_EFFECT_ATTEMPTS, issueKey, type GitHubApprovedData, type GitHubClosedData, type GitHubGaveUpData } from '../schemas/actors';
 import { commentMarker } from '../schemas/github';
@@ -32,6 +33,7 @@ import { commentWithMarker, renderClosingBody } from './closing-messages';
 import { isApprovePayload, isReopenPayload, parseOutboxPayload, parseReplyTo, type ApproveEffectPayload, type OutboxRow } from '../schemas/wal';
 import { GitHubGraphQLError, GitHubHttpError, type GitHubClient } from './github-client';
 import { log } from './log';
+import { renderAdmittedComment } from './admitted-message';
 import type { Wal } from './wal';
 
 /** The client for a repository (app mode: its installation's token, ADR 0191). */
@@ -172,11 +174,26 @@ export class Relay {
 				const github = await this.#github(payload);
 				if (payload.kind === 'pull_request') await github.reopenPullRequest(payload.owner, payload.repo, payload.number, signal);
 				else await github.reopenIssue(payload.owner, payload.repo, payload.number, signal);
+				// Then tell the author (ADR 0314): on a retry, look for the comment an earlier attempt may have posted.
+				let commentId = row.comment_id;
+				if (commentId === null) {
+					const marker = commentMarker(key);
+					if (row.attempts > 1) {
+						const comments = await github.listComments(payload.owner, payload.repo, payload.number, signal);
+						commentId = comments.find((c) => c.body.includes(marker))?.id ?? null;
+						if (commentId !== null) this.#wal.setCommentId(key, commentId);
+					}
+					if (commentId === null) {
+						const body = payload.commentBody ?? renderAdmittedComment(this.#wal.db, { author: payload.author, scope: payload.scope, owner: payload.owner, repo: payload.repo });
+						commentId = (await github.createComment(payload.owner, payload.repo, payload.number, commentWithMarker(body, marker), signal)).id;
+						this.#wal.setCommentId(key, commentId);
+					}
+				}
 				this.#wal.tx(() => {
 					this.#wal.markReopened(issueKey(payload.repoId, payload.number), 'admitted');
 					this.#wal.markOutboxDone(key);
 				});
-				log.info(`relay: ${key} done (reopened ${payload.owner}/${payload.repo}#${payload.number} for ${payload.author}, attempt ${row.attempts})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'relay.attempts': row.attempts });
+				log.info(`relay: ${key} done (reopened ${payload.owner}/${payload.repo}#${payload.number} for ${payload.author}, comment ${commentId}, attempt ${row.attempts})`, { 'relay.effect_key': key, 'github.repository': `${payload.owner}/${payload.repo}`, 'github.issue.number': payload.number, 'github.comment_id': commentId, 'relay.attempts': row.attempts });
 				return;
 			}
 			const github = await this.#github(payload);
