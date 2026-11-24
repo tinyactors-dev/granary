@@ -1,6 +1,6 @@
 ---
 name: fakes-first
-description: Build, verify and ship a granary feature through the fakes and simulations before anything touches real GitHub or production. Use for any new feature or behaviour change that involves GitHub (webhooks, REST, GraphQL, permissions, OAuth) or ops targets, when asked to "build this out", "try it", "show me", record a demo, set up a sandbox, or get a change released. Covers checking what GitHub really offers, extending the fake GitHub first, integration tests through traces, a hands-on playground in /admin, browser checks and phone-friendly videos with agent-browser, the production sandbox, and pushing to main through CI.
+description: Build, verify and ship a granary feature through the fakes and simulations before anything touches real GitHub or production. Use FIRST, before reading code, for any request that changes what granary does, however small or casually phrased — a new action, button or icon ("make it so that I get an icon to…"), a page, a behaviour change, anything that reads or writes GitHub (webhooks, REST, GraphQL, permissions, OAuth) or ops targets — and when asked to "build this out", "try it", "show me", record a demo, set up a sandbox, or get a change released. Covers checking what GitHub really offers, extending the fake GitHub first, integration tests through traces, a hands-on playground in /admin, browser checks and phone-friendly videos with agent-browser, the production sandbox, and pushing to main through CI.
 ---
 
 # Fakes first

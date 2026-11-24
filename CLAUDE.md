@@ -15,6 +15,11 @@
    owned by a test harness (spawned and reaped by the harness itself) are fine.
 4. If a process you did not start is in the way (e.g. a port is taken), **ask** —
    use a different port instead of killing it.
+5. **A change to what granary does starts with the `fakes-first` skill** —
+   invoke it with the Skill tool before reading code, however small the
+   request ("add an icon that…", "make it so that…"). A per-prompt hook
+   (`.claude/hooks/user-prompt-submit.sh`) repeats this rule. Questions,
+   reviews and docs-only changes don't need it.
 
 ---
 
@@ -176,7 +181,8 @@ architecture, and add a new ADR for every new decision.
   `claude/...` branch. `.claude/hooks/session-start.sh` moves the checkout to
   `main`, and `.claude/hooks/no-feature-branches.py` refuses creating,
   checking out or pushing a `claude/...` branch. Nothing else is refused or
-  asked: no confirmation before git commands. The cloud environment's setup script installs both as
+  asked: no confirmation before git commands. The cloud environment's setup script installs both,
+  and the per-prompt `fakes-first` reminder (`user-prompt-submit.sh`), as
   user settings, for sessions that start outside this checkout.
 - **No backward compatibility before the first release.** No env-var
   aliases, no "kept for compatibility" code paths, no migration shims for
