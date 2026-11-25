@@ -53,7 +53,7 @@ function sandboxEnv(o: { port: string; githubPort: string; infraPort: string; lo
 	const exeToken = `exe_sandbox_${fakeSecret(12)}`;
 	return `# granary SANDBOX (ADR 0312, 0315) — written by \`granary sandbox init\`.
 # GitHub here is the fake GitHub, started by \`granary sandbox serve\` on this machine.
-# Use it through ${o.via}: ${o.via.startsWith('http://localhost:') ? `an SSH tunnel,\n#   ssh -L ${o.port}:127.0.0.1:${o.port} <this host>` : 'Admin → Sandbox of the production granary there'}
+# Use it through ${o.via}: ${o.via === `http://localhost:${o.port}` ? `an SSH tunnel,\n#   ssh -L ${o.port}:127.0.0.1:${o.port} <this host>` : 'Admin → Sandbox of the production granary there'}
 GRANARY_SANDBOX=1
 # Development mode: "log in as" under /admin/sessions and the fake GitHub's controls under /admin.
 GRANARY_DEV=1
@@ -152,7 +152,7 @@ export async function sandboxInit(ctx: Context, p: Parsed): Promise<number> {
 		'',
 		'Next:',
 		`  granary sandbox serve --data ${d}        (or: granary systemd-unit --unit sandbox --data ${d})`,
-		...(via.startsWith('http://localhost:')
+		...(via === `http://localhost:${appPort}`
 			? [`  ssh -L ${appPort}:127.0.0.1:${appPort} <this host>`, `  open http://localhost:${appPort}/admin/sessions and log in as ${admins.split(',')[0]}`]
 			: [`  open ${via}/admin/sandbox and enter the sandbox`])
 	);

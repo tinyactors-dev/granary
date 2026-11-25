@@ -52,7 +52,7 @@
 			</Card.Header>
 			<Card.Content>
 				<p class="text-muted-foreground mb-3 text-sm">The sandbox has its own sign-in: pick any login on its Sessions page.</p>
-				<Button onclick={enter} disabled={entering} data-testid="sandbox-enter">{entering ? 'Entering…' : 'Enter the sandbox'}</Button>
+				<Button onclick={enter} disabled={entering} class="w-full sm:w-auto" data-testid="sandbox-enter">{entering ? 'Entering…' : 'Enter the sandbox'}</Button>
 			</Card.Content>
 		</Card.Root>
 	{:else}
