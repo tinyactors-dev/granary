@@ -59,7 +59,7 @@ been published, so none of this history protects anybody; it only confuses.
 | `GRANARY_TEST_WATCHDOG_INTERVAL_MS`, `GRANARY_TEST_GRACE_SCALE`, `GRANARY_TEST_RETRY_BASE_MS`, `GRANARY_TEST_RETENTION_INTERVAL_MS`, `GRANARY_TEST_STATFS_OVERRIDE` | app (ops) | ops timings and disk simulation |
 | `GRANARY_TEST_VERBOSE` | test harness | stream subprocess output |
 | `GRANARY_TEST_SYSTEM_DATA_DIR` | CLI | stands in for `/var/lib/granary` in the CLI's data-dir resolution (ADR 0232) |
-| `FAKE_GITHUB_PORT`, `FAKE_GITHUB_HOST`, `FAKE_GITHUB_URL`, `FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS`, `FAKE_GITHUB_OTLP_ENDPOINT` | fake GitHub (URL also app, loadgen) | the fake GitHub (`FAKE_GITHUB_HOST`: bind address, all interfaces unless set; a sandbox sets `127.0.0.1`, ADR 0312) |
+| `FAKE_GITHUB_PORT`, `FAKE_GITHUB_HOST`, `FAKE_GITHUB_URL`, `FAKE_GITHUB_WEB_URL`, `FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS`, `FAKE_GITHUB_OTLP_ENDPOINT` | fake GitHub (URL also app, loadgen) | the fake GitHub (`FAKE_GITHUB_HOST`: bind address, all interfaces unless set; a sandbox sets `127.0.0.1`, ADR 0312; `FAKE_GITHUB_WEB_URL`: where browsers open its pages, the base of every `html_url`, default `FAKE_GITHUB_URL`, ADR 0315) |
 | `FAKE_INFRA_PORT`, `FAKE_INFRA_URL`, `FAKE_INFRA_EXE_TOKEN_PORT`, `FAKE_INFRA_EXE_PEER_PORT`, `FAKE_INFRA_SEED_{BUCKET,JURISDICTION,ACCESS_KEY_ID,SECRET_ACCESS_KEY,EXE_TOKEN}`, `FAKE_INFRA_OTLP_ENDPOINT` | fake-infra (URL also app) | the fake R2 / OTLP / exe.dev proxy |
 | `LOADGEN_PORT`, `LOADGEN_URL`, `LOADGEN_ALLOWLISTED`, `LOADGEN_GRANARY_LOGIN`, `LOADGEN_OTLP_ENDPOINT` | loadgen (URL: app) | the load generator |
 | `NPM_TOKEN`, `CI`, `GITHUB_ACTIONS`, `ACTIONS_ID_TOKEN_REQUEST_URL`, `ACTIONS_ID_TOKEN_REQUEST_TOKEN` | release tooling | publishing |

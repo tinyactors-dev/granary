@@ -6,7 +6,9 @@
  *
  * Env (ADR 0230): FAKE_GITHUB_PORT (4010), FAKE_GITHUB_HOST (bind address,
  * default all interfaces; a sandbox binds 127.0.0.1, ADR 0312), FAKE_GITHUB_URL (public base,
- * default http://localhost:$PORT), FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS,
+ * default http://localhost:$PORT), FAKE_GITHUB_WEB_URL (where browsers open its pages: the
+ * base of every `html_url` and of its pages' links, default FAKE_GITHUB_URL; a sandbox serves
+ * them under `/__sandbox/github`, ADR 0315), FAKE_GITHUB_INSTALLATION_TOKEN_TTL_MS,
  * FAKE_GITHUB_OTLP_ENDPOINT (traces with service.name=fake-github).
  * Webhooks go only to installed GitHub Apps (their manifest's hook URL and
  * secret); REST needs an installation or user-to-server token.
@@ -68,7 +70,7 @@ import { OAUTH_ADDRESS, OAUTH_EVENTS } from './actors/oauth';
 import { REPOSITORY_EVENTS, repositoryAddress } from './actors/repository';
 import { DELIVERY_EVENTS, deliveryAddress, type DeliveryReply } from './actors/delivery';
 import { issuesEvent, repositoryView, userView, type Bases } from './views';
-import { authorizePage, controlPage, threadPage } from './page';
+import { authorizePage, controlPage, pagesRoot, threadPage } from './page';
 import { EventLog } from './events';
 import { createAppRoutes, type DeliveryTarget } from './app-routes';
 import { createGraphQL } from './graphql';
@@ -79,7 +81,9 @@ const nonEmpty = (v: string | undefined) => (v && v.length ? v : undefined);
 
 const port = Number(nonEmpty(env.FAKE_GITHUB_PORT) ?? 4010);
 const base = (nonEmpty(env.FAKE_GITHUB_URL) ?? `http://localhost:${port}`).replace(/\/+$/, '');
-const bases: Bases = { web: base, api: base };
+const bases: Bases = { web: (nonEmpty(env.FAKE_GITHUB_WEB_URL) ?? base).replace(/\/+$/, ''), api: base };
+/** The path of the web base: every page link and form is under it (ADR 0315). */
+const root = pagesRoot(bases.web);
 
 /** ADR 0164: while true, every webhook delivery fails with status_code 0. */
 let webhookOutage = false;
@@ -773,7 +777,7 @@ async function authorize(url: URL): Promise<Response> {
 	if (!q.redirect_uri) return new Response('redirect_uri is required by the fake', { status: 400 });
 	if (!q.login) {
 		const users = (await fake.registry()).users;
-		return new Response(authorizePage(url, users), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+		return new Response(authorizePage(url, users, root), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 	}
 	const user = await ensureUser(q.login);
 	const code = crypto.randomUUID().replaceAll('-', '');
@@ -1054,7 +1058,7 @@ async function threadRoute(m: RegExpExecArray): Promise<Response> {
 	if (kind === 'discussions') {
 		const d = s.discussions?.find((x) => same(x.owner, x.repo) && x.number === number);
 		if (!d) return html('<p>Not Found</p>', 404);
-		return html(threadPage({ kind: 'Discussion', repo: `${d.owner}/${d.repo}`, number, title: d.title, author: d.author, state: null, category: d.category, body: d.body, comments: d.comments }));
+		return html(threadPage({ kind: 'Discussion', repo: `${d.owner}/${d.repo}`, number, title: d.title, author: d.author, state: null, category: d.category, body: d.body, comments: d.comments, root }));
 	}
 	const i = s.issues.find((x) => same(x.owner, x.repo) && x.number === number);
 	if (!i) return html('<p>Not Found</p>', 404);
@@ -1069,7 +1073,8 @@ async function threadRoute(m: RegExpExecArray): Promise<Response> {
 			state: i.state,
 			category: null,
 			body: i.body ?? '',
-			comments: i.comments.map((c) => ({ author: c.user.login, body: c.body ?? '', createdAt: c.created_at ?? '' }))
+			comments: i.comments.map((c) => ({ author: c.user.login, body: c.body ?? '', createdAt: c.created_at ?? '' })),
+			root
 		})
 	);
 }
@@ -1082,7 +1087,7 @@ async function route(req: Request): Promise<Response> {
 	const url = new URL(req.url);
 	const path = url.pathname;
 	if (path === '/' && req.method === 'GET') {
-		return new Response(controlPage(), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+		return new Response(controlPage(root), { headers: { 'Content-Type': 'text/html; charset=utf-8' } });
 	}
 	if (path === '/healthz') return json({ ok: true });
 	const thread = /^\/([^/_][^/]*)\/([^/]+)\/(issues|pull|discussions)\/(\d+)\/?$/.exec(path);
@@ -1122,7 +1127,7 @@ const server = Bun.serve({
 	}
 });
 
-console.log(`[fake-github] listening on ${server.url} (public ${base}); webhooks go to installed GitHub Apps`);
+console.log(`[fake-github] listening on ${server.url} (public ${base}, pages ${bases.web}); webhooks go to installed GitHub Apps`);
 
 const shutdown = () => {
 	server.stop(true);

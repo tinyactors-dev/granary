@@ -1,11 +1,18 @@
 /**
  * HTML for the fake GitHub: `GET /` (drive the control API by hand) and the
  * OAuth "sign in as" page. Plain HTML + a little JS; no build step.
+ *
+ * `root` is the path of the fake's public web base (`FAKE_GITHUB_WEB_URL`,
+ * ADR 0315): empty when the fake is reached directly, `/__sandbox/github`
+ * when a sandbox serves its pages. Every link and form is under it.
  */
 import type { FakeUser } from './schemas';
 
 export const esc = (s: string) =>
 	s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+
+/** The path of a public web base, without a trailing slash: `http://h/__sandbox/github/` → `/__sandbox/github`. */
+export const pagesRoot = (webBase: string): string => new URL(webBase).pathname.replace(/\/+$/, '');
 
 export const STYLE = `
 :root { color-scheme: light dark; --bg:#fff; --fg:#1f2328; --muted:#59636e; --border:#d1d9e0; --accent:#0969da; --ok:#1a7f37; --bad:#cf222e; }
@@ -31,7 +38,7 @@ pre { white-space: pre-wrap; word-break: break-all; margin:0; }
 a { color: var(--accent); }
 `;
 
-export function controlPage(): string {
+export function controlPage(root: string): string {
 	return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Fake GitHub</title><style>${STYLE}</style></head>
@@ -40,7 +47,7 @@ export function controlPage(): string {
 <p class="lead">Drive the <code>/__control</code> API (ADR 0006, ADR 0035). Webhooks go only to installed GitHub Apps (their hook URL and secret).</p>
 <div class="grid">
 <section><h2>Open an issue</h2>
-<form data-endpoint="/__control/issues">
+<form data-endpoint="${root}/__control/issues">
 <label>owner<input name="owner" value="acme" required></label>
 <label>repo<input name="repo" value="widgets" required></label>
 <label>author<input name="author" value="mallory" required></label>
@@ -51,14 +58,14 @@ ${['NONE', 'CONTRIBUTOR', 'FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'MANNEQUIN', 
 <label>body<textarea name="body" rows="2"></textarea></label>
 <button>Create + deliver</button></form></section>
 <section><h2>Reopen</h2>
-<form data-endpoint="/__control/issues/reopen">
+<form data-endpoint="${root}/__control/issues/reopen">
 <label>owner<input name="owner" value="acme" required></label>
 <label>repo<input name="repo" value="widgets" required></label>
 <label>number<input name="number" type="number" min="1" value="1" required></label>
 <label>actor<input name="actor" value="acme" required></label>
 <button>Reopen + deliver</button></form></section>
 <section><h2>Inject a REST fault</h2>
-<form data-endpoint="/__control/faults">
+<form data-endpoint="${root}/__control/faults">
 <label>method<select name="method"><option>POST</option><option>PATCH</option><option>GET</option><option>PUT</option><option>DELETE</option><option>*</option></select></label>
 <label>pathPattern (RegExp, unanchored)<input name="pathPattern" value="/comments$" required></label>
 <label>status<input name="status" type="number" min="400" max="599" value="500" required></label>
@@ -66,7 +73,7 @@ ${['NONE', 'CONTRIBUTOR', 'FIRST_TIME_CONTRIBUTOR', 'FIRST_TIMER', 'MANNEQUIN', 
 <label>retryAfter (s, optional)<input name="retryAfter" type="number" min="0"></label>
 <button>Inject</button></form></section>
 <section><h2>Users &amp; misc</h2>
-<form data-endpoint="/__control/users">
+<form data-endpoint="${root}/__control/users">
 <label>login<input name="login" value="alice" required></label>
 <label>type<select name="type"><option>User</option><option>Bot</option><option>Organization</option></select></label>
 <button>Ensure user</button></form>
@@ -98,11 +105,12 @@ for (const form of document.querySelectorAll('form[data-endpoint]')) {
     call(form.dataset.endpoint, body);
   });
 }
-$('#reset').onclick = () => confirm('Wipe all fake GitHub state?') && call('/__control/reset');
-window.reopen = (owner, repo, number) => call('/__control/issues/reopen', { owner, repo, number, actor: owner });
-window.redeliver = (id) => call('/__control/deliveries/' + encodeURIComponent(id) + '/redeliver');
+const ROOT = ${JSON.stringify(root)};
+$('#reset').onclick = () => confirm('Wipe all fake GitHub state?') && call(ROOT + '/__control/reset');
+window.reopen = (owner, repo, number) => call(ROOT + '/__control/issues/reopen', { owner, repo, number, actor: owner });
+window.redeliver = (id) => call(ROOT + '/__control/deliveries/' + encodeURIComponent(id) + '/redeliver');
 async function refresh() {
-  const s = await (await fetch('/__control/state')).json();
+  const s = await (await fetch(ROOT + '/__control/state')).json();
   $('#issues').innerHTML = s.issues.map((i) => '<tr><td>' + esc(i.owner + '/' + i.repo) + '</td><td>' + i.number + '</td><td>' + esc(i.title) +
     '</td><td>' + esc(i.user.login) + ' <small>' + esc(i.author_association) + '</small></td><td class="' + i.state + '">' + i.state + (i.state_reason ? ' (' + esc(i.state_reason) + ')' : '') +
     '</td><td>' + i.comments.map((c) => '<pre>' + esc(c.user.login + ': ' + c.body) + '</pre>').join('') + '</td><td>' +
@@ -117,11 +125,11 @@ setInterval(refresh, 2000);
 </script></body></html>`;
 }
 
-export function authorizePage(url: URL, users: FakeUser[]): string {
+export function authorizePage(url: URL, users: FakeUser[], root: string): string {
 	const link = (login: string) => {
 		const u = new URL(url);
 		u.searchParams.set('login', login);
-		return u.pathname + u.search;
+		return root + u.pathname + u.search;
 	};
 	const hidden = [...url.searchParams]
 		.filter(([k]) => k !== 'login')
@@ -134,7 +142,7 @@ export function authorizePage(url: URL, users: FakeUser[]): string {
 <h1>Sign in to continue</h1>
 <p class="lead">Fake GitHub OAuth: authorize <code>${esc(url.searchParams.get('client_id') ?? '')}</code> as</p>
 <ul>${users.length ? users.map((u) => `<li><a href="${esc(link(u.login))}">${esc(u.login)}</a> <small>${esc(u.type)}</small></li>`).join('') : '<li>No users yet — type one below.</li>'}</ul>
-<form method="get" action="/login/oauth/authorize">${hidden}
+<form method="get" action="${root}/login/oauth/authorize">${hidden}
 <label>any login<input name="login" required pattern="[A-Za-z0-9][A-Za-z0-9\\-]{0,38}"></label>
 <button>Authorize</button></form>
 </main></body></html>`;
@@ -162,6 +170,7 @@ export function threadPage(t: {
 	category: string | null;
 	body: string;
 	comments: ThreadComment[];
+	root: string;
 }): string {
 	const comment = (c: ThreadComment) =>
 		`<section class="comment"><div class="who"><strong>${esc(c.author)}</strong> <span class="muted">${esc(c.createdAt)}</span></div><pre>${esc(c.body)}</pre></section>`;
@@ -173,7 +182,7 @@ export function threadPage(t: {
 pre { font: 14px/1.5 system-ui, sans-serif; word-break: normal; }
 </style></head>
 <body><main>
-<p class="muted"><a href="/">Fake GitHub</a> · ${esc(t.repo)}</p>
+<p class="muted"><a href="${t.root}/">Fake GitHub</a> · ${esc(t.repo)}</p>
 <h1>${esc(t.title)} <span class="muted">#${t.number}</span></h1>
 <p><span class="badge">${t.kind}</span>${t.category ? `<span class="badge">${esc(t.category)}</span>` : ''}${t.state ? `<span class="badge ${t.state === 'open' ? 'open' : 'closed'}">${esc(t.state)}</span>` : ''}</p>
 ${comment({ author: t.author, body: t.body || '(no description)', createdAt: '' })}

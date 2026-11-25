@@ -15,6 +15,7 @@ export function manifestConfirmPage(args: {
 	state: string;
 	permissions: Record<string, string>;
 	events: string[];
+	root: string;
 }): string {
 	const perms = Object.entries(args.permissions)
 		.map(([k, v]) => `<li><code>${esc(k)}</code>: ${esc(v)}</li>`)
@@ -25,7 +26,7 @@ export function manifestConfirmPage(args: {
 <p class="lead">Create <strong>${esc(args.name)}</strong> for ${args.ownerType === 'Organization' ? 'organization' : 'user'} <strong>${esc(args.owner)}</strong>.</p>
 <h2>Permissions</h2><ul>${perms || '<li>none</li>'}</ul>
 <h2>Events</h2><p>${args.events.map((e) => `<code>${esc(e)}</code>`).join(' ') || 'none'}</p>
-<form method="post" action="/settings/apps/new/confirm">
+<form method="post" action="${args.root}/settings/apps/new/confirm">
 <input type="hidden" name="manifest" value="${esc(args.manifestJson)}">
 <input type="hidden" name="state" value="${esc(args.state)}">
 <input type="hidden" name="owner_type" value="${esc(args.ownerType)}">
@@ -36,11 +37,11 @@ export function manifestConfirmPage(args: {
 }
 
 /** "Install <app>" page: pick the account and the repositories. */
-export function installPage(args: { slug: string; name: string; account: string; state: string | null; knownRepos: string[] }): string {
+export function installPage(args: { slug: string; name: string; account: string; state: string | null; knownRepos: string[]; root: string }): string {
 	return page(
 		`Install ${args.name}`,
 		`<h1>Install ${esc(args.name)}</h1>
-<form method="post" action="/apps/${esc(args.slug)}/installations/new/confirm">
+<form method="post" action="${args.root}/apps/${esc(args.slug)}/installations/new/confirm">
 ${args.state ? `<input type="hidden" name="state" value="${esc(args.state)}">` : ''}
 <label>account <input name="account" value="${esc(args.account)}" required pattern="[A-Za-z0-9][A-Za-z0-9\\-]{0,38}"></label>
 <p><label><input type="radio" name="selection" value="all" checked> All repositories</label>

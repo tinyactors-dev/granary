@@ -28,6 +28,7 @@ import { nextId } from './ids';
 import { APPS_ADDRESS, APPS_EVENTS, repoCovered, type AppDeliveryRecord, type AppRecord, type InstallResult, type InstallationRecord } from './actors/apps';
 import { generateAppKeyPair, looksLikeJwt, peekJwt, randomToken, verifyAppJwt } from './app-crypto';
 import { installPage, manifestConfirmPage } from './app-pages';
+import { pagesRoot } from './page';
 import { userView, type Bases } from './views';
 import type { DeliveryReply } from './actors/delivery';
 
@@ -253,7 +254,8 @@ export function createAppRoutes(deps: AppRouteDeps) {
 				ownerType,
 				state,
 				permissions: (manifest.default_permissions as Record<string, string>) ?? {},
-				events: (manifest.default_events as string[]) ?? []
+				events: (manifest.default_events as string[]) ?? [],
+				root: pagesRoot(bases.web)
 			})
 		);
 	}
@@ -338,7 +340,7 @@ export function createAppRoutes(deps: AppRouteDeps) {
 			return installAndRedirect(app, account, reposParam ? reposParam.split(',').filter(Boolean) : undefined, state);
 		}
 		const knownRepos = (await deps.repos()).filter((r) => r.owner.toLowerCase() === account.toLowerCase()).map((r) => r.fullName);
-		return html(installPage({ slug: app.slug, name: app.name, account, state, knownRepos }));
+		return html(installPage({ slug: app.slug, name: app.name, account, state, knownRepos, root: pagesRoot(bases.web) }));
 	}
 
 	async function installConfirm(req: Request, slug: string): Promise<Response> {
