@@ -6,6 +6,7 @@
  *
  * Env:
  * - FAKE_INFRA_PORT (4090): main listener (S3 under /s3, OTLP under /otlp, control, page)
+ * - FAKE_INFRA_HOST: bind address of every listener (all interfaces unless set; a sandbox sets 127.0.0.1, ADR 0315)
  * - FAKE_INFRA_EXE_TOKEN_PORT (port+1), FAKE_INFRA_EXE_PEER_PORT (port+2): exe proxy fronts (0 = ephemeral)
  * - FAKE_INFRA_SEED_BUCKET, FAKE_INFRA_SEED_JURISDICTION, FAKE_INFRA_SEED_ACCESS_KEY_ID,
  *   FAKE_INFRA_SEED_SECRET_ACCESS_KEY, FAKE_INFRA_SEED_EXE_TOKEN: dev seeds, re-applied after reset
@@ -52,7 +53,8 @@ const exePorts = {
 const infra = createInfraSystem({ otlpEndpoint: nonEmpty(env.FAKE_INFRA_OTLP_ENDPOINT) ?? null });
 const { host } = infra;
 const log = new InfraLog();
-const exeProxy = new ExeProxy({ host, log }, exePorts);
+const hostname = nonEmpty(env.FAKE_INFRA_HOST);
+const exeProxy = new ExeProxy({ host, log }, exePorts, hostname);
 exeProxy.configure({ tokenMode: true, peerMode: true });
 
 // ---------------------------------------------------------------------------
@@ -211,6 +213,7 @@ async function route(req: Request): Promise<Response> {
 
 const server = Bun.serve({
 	port,
+	...(hostname ? { hostname } : {}),
 	idleTimeout: 120,
 	maxRequestBodySize: 2 * 1024 * 1024 * 1024,
 	async fetch(req) {

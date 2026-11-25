@@ -73,7 +73,9 @@ export class ExeProxy {
 
 	constructor(
 		private readonly ctx: Ctx,
-		private readonly ports: { token: number; peer: number }
+		private readonly ports: { token: number; peer: number },
+		/** Bind address (all interfaces unless set). */
+		private readonly hostname?: string
 	) {}
 
 	get state(): { tokenPort: number | null; peerPort: number | null } {
@@ -103,6 +105,7 @@ export class ExeProxy {
 	#listen(mode: 'token' | 'peer', port: number): Server<undefined> {
 		return Bun.serve({
 			port,
+			...(this.hostname ? { hostname: this.hostname } : {}),
 			maxRequestBodySize: 256 * 1024 * 1024,
 			fetch: (req) =>
 				front(mode, req, this.ctx, () => this.#peerSourceVm).catch((e) => {

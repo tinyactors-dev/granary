@@ -19,6 +19,7 @@ import {
 	narrate,
 	personaChart,
 	timed,
+	chance,
 	type PersonaBase
 } from './common';
 
@@ -46,7 +47,6 @@ function decideNext(rng: number, commented: number, opened: number, planned: num
 	}
 	return [opened < planned ? 'draft' : 'done', rng];
 }
-declare function chance(state: number, p: number): [boolean, number];
 
 export const trustedChart = (o: TrustedOptions) =>
 	personaChart<TrustedData>({

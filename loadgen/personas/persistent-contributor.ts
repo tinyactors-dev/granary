@@ -19,6 +19,7 @@ import {
 	narrate,
 	personaChart,
 	timed,
+	rnd,
 	type PersonaBase
 } from './common';
 
@@ -46,7 +47,6 @@ function pickPlan(rng: number): [string, number] {
 	const [v, s] = rnd(rng);
 	return [v < 0.5 ? 'reopen' : 'duplicate', s];
 }
-declare function rnd(state: number): [number, number];
 
 /** A closure while waiting: rage-quit at the last one, else stew. */
 const closedWhileWaiting = scxml`

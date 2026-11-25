@@ -89,6 +89,7 @@ async function route(req: Request): Promise<Response> {
 
 const server = Bun.serve({
 	port: config.port,
+	...(config.hostname ? { hostname: config.hostname } : {}),
 	idleTimeout: 60,
 	async fetch(req) {
 		try {

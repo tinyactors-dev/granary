@@ -6,7 +6,7 @@
  * (6 attempts) always recovers.
  */
 import { lit, scxml } from '../../src/lib/charts';
-import { COUNT_ERROR, GH_ACTIONS, PERSONA_EVENTS as E, act, narrate, personaChart, timed, type PersonaBase } from './common';
+import { COUNT_ERROR, GH_ACTIONS, PERSONA_EVENTS as E, act, between, narrate, personaChart, rnd, timed, type PersonaBase } from './common';
 
 export const KIND = 'chaos-monkey';
 
@@ -38,8 +38,6 @@ function chaosRequest(rng: number, strike: string): [unknown, number] {
 	const [pick, s3] = rnd(s2);
 	return [{ strike, count, retryAfter, pick }, s3];
 }
-declare function between(state: number, min: number, max: number): [number, number];
-declare function rnd(state: number): [number, number];
 
 export const chaosMonkeyChart = personaChart<ChaosMonkeyData>({
 	kind: KIND,

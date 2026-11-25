@@ -140,20 +140,22 @@ export interface PersonaDone {
 // ---------------------------------------------------------------------------
 // Randomness: chart helpers. Each takes the mulberry32 state and returns
 // [value, next state]; they are embedded in the chart, so each is
-// self-contained (the step is `step` of loadgen/rng.ts, inlined).
+// self-contained (the step is `step` of loadgen/rng.ts, inlined). A kind's
+// own helpers that call them import them (never `declare function`): a free
+// name makes the bundler rename these, and the embedded source breaks.
 // ---------------------------------------------------------------------------
 
-function rnd(state: number): [number, number] {
+export function rnd(state: number): [number, number] {
 	const t = (state + 0x6d2b79f5) >>> 0;
 	let r = Math.imul(t ^ (t >>> 15), t | 1);
 	r ^= r + Math.imul(r ^ (r >>> 7), r | 61);
 	return [((r ^ (r >>> 14)) >>> 0) / 4294967296, t];
 }
-function between(state: number, min: number, max: number): [number, number] {
+export function between(state: number, min: number, max: number): [number, number] {
 	const [v, s] = rnd(state);
 	return [min + Math.floor(v * (max - min + 1)), s];
 }
-function chance(state: number, p: number): [boolean, number] {
+export function chance(state: number, p: number): [boolean, number] {
 	const [v, s] = rnd(state);
 	return [v < p, s];
 }
