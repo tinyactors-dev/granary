@@ -80,6 +80,13 @@ are for the tunnel), signing in to the sandbox with production's session.
 - **Bundling the load generator:** persona helpers that call the shared
   random helpers import them; a `declare function` made the bundler rename
   the shared ones, and the chart's embedded helper source broke.
+- **The updater keeps it on production's version:** after `granary update`
+  has production on the channel's version (just updated, or already), it
+  restarts `granary-sandbox` whenever the sandbox's `/healthz` reports
+  another version (`--sandbox <data dir>`, default
+  `/var/lib/granary-sandbox`; only a marked dir whose service is enabled).
+  A sandbox that does not come up is reported, never a reason to roll
+  production back. This replaces ADR 0312's "restart it yourself".
 - **Leaving:** the sandbox strip shows "Back to production" when the request
   came through production.
 

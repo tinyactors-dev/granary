@@ -212,7 +212,7 @@ Print a systemd unit for granary (or for its updater, ADR 0301). It talks to nei
 
 ### `granary update`
 
-Install the newest version of a channel, restart, verify, roll back on failure (ADR 0301, 0302). It talks to neither the server nor the database.
+Install the newest version of a channel, restart, verify, roll back on failure; then bring the sandbox onto it (ADR 0301, 0302, 0315). It talks to neither the server nor the database.
 
 | Option | Description |
 |---|---|
@@ -222,6 +222,8 @@ Install the newest version of a channel, restart, verify, roll back on failure (
 | `--cache <value>` | Where downloaded tarballs are kept (the last three, for rollbacks) (default `/var/cache/granary-update`) |
 | `--bun-install <value>` | BUN_INSTALL of the global install (default `/opt/bun`) |
 | `--service <value>` | systemd service to restart (default `granary`) |
+| `--sandbox <value>` | Data dir of the sandbox next to it (ADR 0315): restarted onto the installed version when its service is enabled; empty skips it (default `/var/lib/granary-sandbox`) |
+| `--sandbox-service <value>` | systemd service of the sandbox (default `granary-sandbox`) |
 | `--timeout <value>` | Seconds to wait for /healthz to report the new version (default `60`) |
 | `--dry-run` | Print what would happen; change nothing |
 

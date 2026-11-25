@@ -21,7 +21,10 @@ A host can follow a channel by itself: a systemd timer runs `granary update`
 every minute. It reads the channel's newest version, and when it differs
 from what `/healthz` reports, installs it, restarts `granary`, and waits for
 `/healthz` to report the new version; if that does not happen within a
-minute it reinstalls the version that ran before.
+minute it reinstalls the version that ran before. A [sandbox](sandbox.md)
+next to it (`granary-sandbox`, enabled) is then restarted onto the same
+version, and on every later run whenever it reports another one; a sandbox
+that does not come up is reported, never a reason to roll production back.
 
 | Channel | Source | A green push to `main` arrives |
 |---|---|---|

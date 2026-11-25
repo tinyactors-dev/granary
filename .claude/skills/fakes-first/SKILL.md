@@ -139,12 +139,15 @@ stack, the sandbox, or a phone through a tunnel.
 
 ## 8. Try it on the production machine: the sandbox
 
-`granary sandbox init --data /var/lib/granary-sandbox` +
-`granary systemd-unit --unit sandbox` run a second granary on the fake
-GitHub, on 127.0.0.1 only, reached with
-`ssh -L 3100:127.0.0.1:3100 -L 4010:127.0.0.1:4010 <host>`
-(`docs/manual/sandbox.md`). Anything the fake supports can be tried there
-safely; restart `granary-sandbox` after an update.
+Production (`ta-granary`) runs a sandbox: a second granary with the whole
+simulation (fake GitHub, fake-infra, load generator) on 127.0.0.1 only
+(ADR 0312, 0315, `docs/manual/sandbox.md`). Admins use it through
+production: Admin → Sandbox → Enter the sandbox. Anything the fakes support
+can be tried there safely; the updater restarts it onto every new version.
+From a cloud session, run commands on the host through exe.dev's HTTPS API
+(`POST https://exe.dev/exec`, body `ssh ta-granary <cmd>`, bearer key from
+1Password item `tinyactors-exe-api-key`, read with `op … --reveal` straight
+into the request, never printed).
 
 ## 9. Ship
 

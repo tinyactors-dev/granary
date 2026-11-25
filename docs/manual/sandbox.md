@@ -64,8 +64,9 @@ its links point at the tunnel.
 
 ## Update, reset, remove
 
-- The updater restarts only `granary`; after an update run
-  `sudo systemctl restart granary-sandbox`.
+- The updater (`granary update`) restarts the sandbox onto production's
+  version after every update, and whenever the two differ. That restart
+  empties the fakes (below).
 - The fakes keep their state in memory: restarting the sandbox empties
   them, and granary connects to the fake GitHub again. To start completely
   fresh, stop the service and delete `/var/lib/granary-sandbox`, then
