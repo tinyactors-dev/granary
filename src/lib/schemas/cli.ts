@@ -107,7 +107,7 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 		name: 'update',
 		args: [],
 		transport: 'none',
-		description: 'Install the newest version of a channel, restart, verify, roll back on failure (ADR 0301, 0302)',
+		description: 'Install the newest version of a channel, restart, verify, roll back on failure; then bring the sandbox onto it (ADR 0301, 0302, 0315)',
 		options: [
 			DATA,
 			JSON_OUT,
@@ -115,6 +115,8 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 			{ name: 'cache', type: 'string', description: 'Where downloaded tarballs are kept (the last three, for rollbacks)', default: '/var/cache/granary-update' },
 			{ name: 'bun-install', type: 'string', description: 'BUN_INSTALL of the global install', default: '/opt/bun' },
 			{ name: 'service', type: 'string', description: 'systemd service to restart', default: 'granary' },
+			{ name: 'sandbox', type: 'string', description: 'Data dir of the sandbox next to it (ADR 0315): restarted onto the installed version when its service is enabled; empty skips it', default: '/var/lib/granary-sandbox' },
+			{ name: 'sandbox-service', type: 'string', description: 'systemd service of the sandbox', default: 'granary-sandbox' },
 			{ name: 'timeout', type: 'string', description: 'Seconds to wait for /healthz to report the new version', default: '60' },
 			{ name: 'dry-run', type: 'boolean', description: 'Print what would happen; change nothing' }
 		]

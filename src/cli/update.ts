@@ -18,14 +18,20 @@
  *    downloaded tarball, kept in the cache dir under its versioned name),
  *    `systemctl restart <service>`, then wait until `/healthz` reports it;
  * 3. if it does not within the timeout, reinstall the version that ran
- *    before (its cached tarball, else npm), restart, and fail.
+ *    before (its cached tarball, else npm), restart, and fail;
+ * 4. the sandbox next to it (ADR 0312, 0315), when its data dir is marked
+ *    and its service enabled, runs the same installed package: whenever its
+ *    `/healthz` reports another version than production's, restart it and
+ *    wait for it. Also when production was already up to date, so a sandbox
+ *    that missed an update catches up. A sandbox that does not come up is
+ *    reported, never a reason to roll production back.
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Parsed } from './args';
-import { CliError, print, type Context } from './context';
-import { EXIT } from '../lib/schemas/cli';
+import { CliError, parseEnvFile, print, type Context } from './context';
+import { DATA_DIR_LAYOUT, EXIT } from '../lib/schemas/cli';
 import { VERSION } from '../lib/version';
 
 const PACKAGE = '@tinyactors/granary';
@@ -40,6 +46,14 @@ export interface UpdateResult {
 	running: string | null;
 	target: string;
 	action: 'up-to-date' | 'updated' | 'not-yet-available' | 'planned';
+	/** The sandbox next to production (ADR 0315); absent when there is none (or it is not enabled). */
+	sandbox?: SandboxSync;
+}
+
+export interface SandboxSync {
+	service: string;
+	running: string | null;
+	action: 'in-sync' | 'restarted' | 'planned' | 'failed';
 }
 
 interface Release {
@@ -122,6 +136,49 @@ async function run(cmd: string[], env: Record<string, string> = {}): Promise<{ c
 	return { code: await p.exited, out: `${out}${err}`.trim() };
 }
 
+/**
+ * Bring the sandbox in `dataDir` onto `version` (ADR 0315): restart its
+ * service when its `/healthz` reports anything else. Null when there is no
+ * marked sandbox there or its service is not enabled.
+ */
+async function syncSandbox(o: { dataDir: string; service: string; version: string; dryRun: boolean; timeoutMs: number }): Promise<SandboxSync | null> {
+	if (!o.dataDir || !existsSync(join(o.dataDir, DATA_DIR_LAYOUT.sandboxMarker))) return null;
+	if ((await run(['systemctl', 'is-enabled', '--quiet', `${o.service}.service`])).code !== 0) return null;
+	const envFile = join(o.dataDir, DATA_DIR_LAYOUT.envFile);
+	const health = healthURL(existsSync(envFile) ? parseEnvFile(await Bun.file(envFile).text()) : {});
+	const running = await runningVersion(health);
+	const sync = (action: SandboxSync['action']): SandboxSync => ({ service: o.service, running, action });
+	if (running === o.version) return sync('in-sync');
+	if (o.dryRun) return sync('planned');
+	const r = await run(['systemctl', 'restart', `${o.service}.service`]);
+	if (r.code !== 0) {
+		console.error(`granary update: systemctl restart ${o.service} failed: ${r.out}`);
+		return sync('failed');
+	}
+	const deadline = Date.now() + o.timeoutMs;
+	while (Date.now() < deadline) {
+		if ((await runningVersion(health)) === o.version) return sync('restarted');
+		await Bun.sleep(1000);
+	}
+	console.error(`granary update: the sandbox (${o.service}) did not report ${o.version} within ${o.timeoutMs / 1000}s`);
+	return sync('failed');
+}
+
+const sandboxLine = (s: SandboxSync | null, version: string): string => {
+	if (!s) return '';
+	const was = s.running ?? '(not responding)';
+	switch (s.action) {
+		case 'in-sync':
+			return `\nsandbox (${s.service}) runs ${version} too`;
+		case 'planned':
+			return `\nwould restart the sandbox (${s.service}): ${was} → ${version}`;
+		case 'restarted':
+			return `\nsandbox (${s.service}) restarted: ${was} → ${version}`;
+		case 'failed':
+			return `\nsandbox (${s.service}) did NOT come up on ${version} (was ${was}); production is fine. See journalctl -u ${s.service}`;
+	}
+};
+
 export async function update(ctx: Context, p: Parsed): Promise<number> {
 	const channel = String(p.options.channel ?? 'edge');
 	if (!(CHANNELS as readonly string[]).includes(channel)) throw new CliError(`--channel must be one of ${CHANNELS.join(', ')}`, EXIT.usage);
@@ -131,6 +188,9 @@ export async function update(ctx: Context, p: Parsed): Promise<number> {
 	const timeoutMs = Number(p.options.timeout ?? 60) * 1000;
 	const dryRun = p.options['dry-run'] === true;
 	const health = healthURL(ctx.envFileVars);
+	const sandbox = (version: string) =>
+		syncSandbox({ dataDir: String(p.options.sandbox ?? '/var/lib/granary-sandbox'), service: String(p.options['sandbox-service'] ?? 'granary-sandbox'), version, dryRun, timeoutMs });
+	const withSandbox = (r: UpdateResult, s: SandboxSync | null): UpdateResult => (s ? { ...r, sandbox: s } : r);
 
 	const release = channel === 'edge' ? await edgeRelease(cache) : await npmRelease(channel);
 	const running = await runningVersion(health);
@@ -143,11 +203,17 @@ export async function update(ctx: Context, p: Parsed): Promise<number> {
 	const say = (r: UpdateResult, text: string) => print(ctx, r, () => text);
 
 	if (running === target) {
-		say(result('up-to-date'), `granary ${running} is the newest ${channel} version`);
+		if (!dryRun && process.getuid?.() !== 0) {
+			say(result('up-to-date'), `granary ${running} is the newest ${channel} version`);
+			return EXIT.ok;
+		}
+		const s = await sandbox(target);
+		say(withSandbox(result('up-to-date'), s), `granary ${running} is the newest ${channel} version${sandboxLine(s, target)}`);
 		return EXIT.ok;
 	}
 	if (dryRun) {
-		say(result('planned'), `would update granary ${running ?? '(not responding)'} → ${target} (${channel}), restart ${service}.service, wait for ${health}`);
+		const s = await sandbox(target);
+		say(withSandbox(result('planned'), s), `would update granary ${running ?? '(not responding)'} → ${target} (${channel}), restart ${service}.service, wait for ${health}${sandboxLine(s, target)}`);
 		return EXIT.ok;
 	}
 	if (process.getuid?.() !== 0) throw new CliError('granary update installs under BUN_INSTALL and restarts the service: run it as root', EXIT.error);
@@ -180,7 +246,8 @@ export async function update(ctx: Context, p: Parsed): Promise<number> {
 	}
 	if (await restartAndWait(target)) {
 		pruneCache(cache);
-		say(result('updated'), `granary updated to ${target}; ${health} reports it`);
+		const s = await sandbox(target);
+		say(withSandbox(result('updated'), s), `granary updated to ${target}; ${health} reports it${sandboxLine(s, target)}`);
 		return EXIT.ok;
 	}
 
