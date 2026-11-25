@@ -234,12 +234,15 @@ Set up a sandbox: a second granary whose GitHub is the fake GitHub on this machi
 | `--data <value>` | The sandbox data dir (required), e.g. /var/lib/granary-sandbox |
 | `--port <value>` | Port of the sandbox app (127.0.0.1) (default `3100`) |
 | `--github-port <value>` | Port of the fake GitHub (127.0.0.1) (default `4010`) |
+| `--infra-port <value>` | Port of fake-infra (127.0.0.1); its exe.dev proxy fronts take the next two (default `4090`) |
+| `--loadgen-port <value>` | Port of the load generator (127.0.0.1) (default `4040`) |
 | `--admins <value>` | Admin logins (comma-separated) (default `admin`) |
+| `--via <value>` | Where browsers reach the sandbox: the production origin that serves it (ADR 0315), else http://localhost:<port> through an SSH tunnel |
 | `--json` | Print the raw JSON result |
 
 ### `granary sandbox serve`
 
-Run a sandbox: the fake GitHub as a child process, then the app (ADR 0312). It talks to neither the server nor the database.
+Run a sandbox: the fake GitHub, fake-infra and the load generator as child processes, then the app (ADR 0312, 0315). It talks to neither the server nor the database.
 
 | Option | Description |
 |---|---|

@@ -15,7 +15,7 @@ superseded by N`) and the newer ADR says what changed.
 - **UI structure:** six-item main nav (Overview, Activity, Policy, Ops, Settings, Admin), one glossary (item, delivery, decision, action) and one banner per page (0291); `/admin` for admins in every environment, each area gated by a capability (0290). On phones tables stack into cards and the nav is a drawer (0295, 0296).
 - **tinyactors:** granary runs on @tinyactors/node 0.4.0: SCXML charts built in TypeScript, no loaders, no debugger (0300).
 - **Introductions:** people introduce themselves in an Introductions discussion category; admins approve (scoped allowlist entry, closed items reopened, a reply on the discussion) or decline (0310); allowlist entries are scoped to everywhere, an owner or a repository (0311); admins can also let an author in from a closed Activity row, which allowlists them, lifts an active block, reopens what was closed on them and comments on each item (0313, 0314).
-- **Sandbox:** `granary sandbox init|serve` runs a second granary on the fake GitHub next to production, loopback only (0312).
+- **Sandbox:** `granary sandbox init|serve` runs a second granary with the whole simulation (fake GitHub, fake-infra, load generator) next to production, loopback only (0312); production's admins enter it from Admin → Sandbox, no tunnel (0315).
 - **Production:** granary.tinyactors.dev (VM ta-granary), telemetry to the shared ta-metrics stack (0231); deploy with `mise run deploy`, runbook in `docs/manual/operations-runbook.md` (0233); every green push to main is released (npm `dev`, and the GitHub prerelease `edge`) and pulled by `granary update` (0301, 0302).
 
 | ADR | Title | State |
@@ -204,3 +204,4 @@ superseded by N`) and the newer ADR says what changed.
 | [0312](0312-sandbox-next-to-production.md) | A sandbox next to production: a second granary on the fake GitHub | active |
 | [0313](0313-let-them-in-from-activity.md) | Let an author in from Activity: allowlist them and reopen what was closed | active |
 | [0314](0314-comment-when-letting-an-author-in.md) | Tell the author when an admin lets them in: a comment on each reopened item | active |
+| [0315](0315-sandbox-through-production.md) | Use the sandbox, with the whole simulation, through production: no SSH tunnel | active |
