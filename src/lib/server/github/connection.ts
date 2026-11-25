@@ -225,7 +225,7 @@ export class GitHubConnection {
 	settingsUrl(): string | null {
 		const app = this.#store.getApp();
 		if (!app) return null;
-		const web = this.#config.githubWebUrl.replace(/\/+$/, '');
+		const web = this.#config.githubPagesUrl.replace(/\/+$/, '');
 		const orgOwned =
 			app.owner_type !== null
 				? app.owner_type === 'Organization'
@@ -427,7 +427,7 @@ export class GitHubConnection {
 	}
 
 	installUrl(slug: string): string {
-		return `${this.#config.githubWebUrl}/apps/${encodeURIComponent(slug)}/installations/new`;
+		return `${this.#config.githubPagesUrl}/apps/${encodeURIComponent(slug)}/installations/new`;
 	}
 
 	async completeManifest(code: string, state: string, actor: string, now = Date.now()): Promise<CompleteManifestResult> {

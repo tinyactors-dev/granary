@@ -53,9 +53,11 @@ afterAll(async () => {
 describe('sandbox', () => {
 	const appPort = freePort();
 	const githubPort = freePort();
+	const infraPort = freePort();
+	const loadgenPort = freePort();
 
 	test('init writes a marked data dir whose GitHub is the local fake; the two kinds of data dir are never mixed up', async () => {
-		const r = await cli(['sandbox', 'init', '--data', dataDir, '--port', String(appPort), '--github-port', String(githubPort), '--json']);
+		const r = await cli(['sandbox', 'init', '--data', dataDir, '--port', String(appPort), '--github-port', String(githubPort), '--infra-port', String(infraPort), '--loadgen-port', String(loadgenPort), '--json']);
 		expect(r.code).toBe(EXIT.ok);
 		const env = await Bun.file(join(dataDir, 'granary.env')).text();
 		expect(env).toContain('GRANARY_SANDBOX=1');

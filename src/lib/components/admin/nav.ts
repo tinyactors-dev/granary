@@ -9,6 +9,7 @@ import WaypointsIcon from '@lucide/svelte/icons/waypoints';
 import CpuIcon from '@lucide/svelte/icons/cpu';
 import ComponentIcon from '@lucide/svelte/icons/component';
 import InboxIcon from '@lucide/svelte/icons/inbox';
+import FlaskIcon from '@lucide/svelte/icons/flask-conical';
 import { UI_CATALOG } from '$lib/dev-ui/catalog';
 import type { AdminCapabilities, AdminCapability } from '$lib/schemas/admin';
 import type { Component } from 'svelte';
@@ -36,6 +37,7 @@ export const ADMIN_NAV: AdminNavItem[] = [
 	{ href: '/admin/actors', label: 'Actors', icon: CpuIcon, group: 'Inspect', description: 'Resident actors and the inspector' },
 	{ href: '/admin/deliveries', label: 'Deliveries', icon: InboxIcon, group: 'Inspect', description: 'Every webhook, including ones not about an issue or PR' },
 	{ href: '/admin/traces', label: 'Traces', icon: WaypointsIcon, group: 'Inspect', description: 'Span trees of recent work' },
+	{ href: '/admin/sandbox', label: 'Sandbox', icon: FlaskIcon, group: 'Simulate', description: 'A throwaway granary on the fake GitHub, next to this one' },
 	{ href: '/admin/github', label: 'Fake GitHub', icon: GithubIcon, group: 'Simulate', description: 'Open issues and PRs as anyone, faults, deliveries', capability: 'fakeGithub' },
 	{ href: '/admin/infra', label: 'Fake infra', icon: CloudIcon, group: 'Simulate', description: 'Fake R2, OTLP intake, exe.dev proxy', capability: 'fakeInfra' },
 	{ href: '/admin/load', label: 'Load tester', icon: ActivityIcon, group: 'Simulate', description: 'Scenarios, metrics, invariants', capability: 'loadgen', exact: true },

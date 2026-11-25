@@ -39,6 +39,19 @@ export const RawEnv = Type.Object(
 		/** GitHub's REST and web base URLs; point them at the fake GitHub in dev/tests (or at GitHub Enterprise). */
 		GRANARY_GITHUB_API_URL: Type.Optional(Url),
 		GRANARY_GITHUB_WEB_URL: Type.Optional(Url),
+		/**
+		 * Where browsers open GitHub's pages, when that differs from
+		 * `GRANARY_GITHUB_WEB_URL` (only a sandbox reached through production does,
+		 * ADR 0315): the base of the GitHub links granary shows. Default
+		 * `GRANARY_GITHUB_WEB_URL`.
+		 */
+		GRANARY_GITHUB_PAGES_URL: Type.Optional(Url),
+		/**
+		 * Production: where its sandbox listens on this machine (ADR 0315); default
+		 * `http://127.0.0.1:3100`, empty turns it off. Must be a loopback URL. Admins
+		 * use the sandbox through production at Admin → Sandbox.
+		 */
+		GRANARY_SANDBOX_URL: Type.Optional(Type.Union([Url, Type.Literal('')])),
 		/** Seeds (ADR 0161, 0040): logins added once, never overwriting in-product changes. */
 		GRANARY_SEED_ADMINS: Type.Optional(Type.String()),
 		GRANARY_SEED_ALLOWLIST: Type.Optional(Type.String()),
@@ -105,6 +118,13 @@ export interface Config {
 	granaryDev: boolean;
 	/** `GRANARY_SANDBOX=1` (ADR 0312): GitHub is the local fake; the UI shows a sandbox banner. */
 	sandbox: boolean;
+	/**
+	 * Production's sandbox on this machine (`GRANARY_SANDBOX_URL`, ADR 0315), no
+	 * trailing slash; null when turned off, and always in a sandbox itself.
+	 */
+	sandboxUrl: string | null;
+	/** `GRANARY_GITHUB_PAGES_URL` (ADR 0315): the base of GitHub links shown in the browser. */
+	githubPagesUrl: string;
 	/** `GRANARY_STUB_BACKEND=1`: register `StubBackend` instead of the real one (UI work). */
 	stubBackend: boolean;
 	/** Which simulation URLs were set explicitly (not defaulted), ADR 0290. */
@@ -165,7 +185,10 @@ export function isLoopbackUrl(url: string): boolean {
 	}
 }
 
-const FLAGS = new Set(['GRANARY_DEV', 'GRANARY_SANDBOX', 'GRANARY_STUB_BACKEND', 'GRANARY_DEV_GITHUB_AUTOCONNECT', 'GRANARY_SEED_ADMINS', 'GRANARY_SEED_ALLOWLIST']);
+/** Where `granary sandbox init` puts a sandbox's app (ADR 0312, 0315). */
+export const DEFAULT_SANDBOX_URL = 'http://127.0.0.1:3100';
+
+const FLAGS = new Set(['GRANARY_SANDBOX_URL', 'GRANARY_DEV', 'GRANARY_SANDBOX', 'GRANARY_STUB_BACKEND', 'GRANARY_DEV_GITHUB_AUTOCONNECT', 'GRANARY_SEED_ADMINS', 'GRANARY_SEED_ALLOWLIST']);
 
 export function loadConfig(env: Record<string, string | undefined>): Config {
 	// Treat empty strings as unset (except flags/lists) so `FOO=` behaves like no FOO.
@@ -190,19 +213,26 @@ export function loadConfig(env: Record<string, string | undefined>): Config {
 			.map((k) => `${k}: a sandbox (GRANARY_SANDBOX=1) needs the fake GitHub on this machine, e.g. http://localhost:4010 (got ${JSON.stringify(raw[k] ?? null)})`);
 		if (sandboxProblems.length) throw new ConfigError(sandboxProblems);
 	}
+	// ADR 0315: production forwards admins to its sandbox, only ever on this machine.
+	if (raw.GRANARY_SANDBOX_URL && !isLoopbackUrl(raw.GRANARY_SANDBOX_URL)) {
+		throw new ConfigError([`GRANARY_SANDBOX_URL: the sandbox must be on this machine, e.g. ${DEFAULT_SANDBOX_URL} (got ${JSON.stringify(raw.GRANARY_SANDBOX_URL)})`]);
+	}
+	const githubWebUrl = trimSlash(raw.GRANARY_GITHUB_WEB_URL ?? 'https://github.com');
 	const dataDir = resolveDataDir(cleaned);
 	return {
 		dataDir,
 		databasePath: `${dataDir}/${DATA_DIR_LAYOUT.database}`,
 		host: raw.HOST ?? '0.0.0.0',
 		githubApiUrl: trimSlash(raw.GRANARY_GITHUB_API_URL ?? 'https://api.github.com'),
-		githubWebUrl: trimSlash(raw.GRANARY_GITHUB_WEB_URL ?? 'https://github.com'),
+		githubWebUrl,
+		githubPagesUrl: raw.GRANARY_GITHUB_PAGES_URL ? trimSlash(raw.GRANARY_GITHUB_PAGES_URL) : githubWebUrl,
 		seedAdmins: list(raw.GRANARY_SEED_ADMINS).map((s) => s.toLowerCase()),
 		seedAllowlist: list(raw.GRANARY_SEED_ALLOWLIST),
 		origin: raw.ORIGIN ? trimSlash(raw.ORIGIN) : null,
 		port: Number(raw.PORT ?? 3000),
 		granaryDev: raw.GRANARY_DEV === '1',
 		sandbox: raw.GRANARY_SANDBOX === '1',
+		sandboxUrl: raw.GRANARY_SANDBOX === '1' || raw.GRANARY_SANDBOX_URL === '' ? null : trimSlash(raw.GRANARY_SANDBOX_URL ?? DEFAULT_SANDBOX_URL),
 		logLevel: (raw.GRANARY_LOG_LEVEL || 'info') as Config['logLevel'],
 		stubBackend: raw.GRANARY_STUB_BACKEND === '1',
 		simulation: { fakeGithub: raw.FAKE_GITHUB_URL !== undefined, fakeInfra: raw.FAKE_INFRA_URL !== undefined, loadgen: raw.LOADGEN_URL !== undefined },

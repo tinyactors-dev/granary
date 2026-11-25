@@ -128,7 +128,14 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 			{ name: 'data', type: 'string', description: 'The sandbox data dir (required), e.g. /var/lib/granary-sandbox' },
 			{ name: 'port', type: 'string', description: 'Port of the sandbox app (127.0.0.1)', default: '3100' },
 			{ name: 'github-port', type: 'string', description: 'Port of the fake GitHub (127.0.0.1)', default: '4010' },
+			{ name: 'infra-port', type: 'string', description: 'Port of fake-infra (127.0.0.1); its exe.dev proxy fronts take the next two', default: '4090' },
+			{ name: 'loadgen-port', type: 'string', description: 'Port of the load generator (127.0.0.1)', default: '4040' },
 			{ name: 'admins', type: 'string', description: 'Admin logins (comma-separated)', default: 'admin' },
+			{
+				name: 'via',
+				type: 'string',
+				description: 'Where browsers reach the sandbox: the production origin that serves it (ADR 0315), else http://localhost:<port> through an SSH tunnel'
+			},
 			JSON_OUT
 		]
 	},
@@ -136,7 +143,7 @@ export const CLI_COMMANDS: readonly CliCommand[] = [
 		name: 'sandbox serve',
 		args: [],
 		transport: 'none',
-		description: 'Run a sandbox: the fake GitHub as a child process, then the app (ADR 0312)',
+		description: 'Run a sandbox: the fake GitHub, fake-infra and the load generator as child processes, then the app (ADR 0312, 0315)',
 		options: [{ name: 'data', type: 'string', description: 'The sandbox data dir (required)' }]
 	},
 	{ name: 'version', args: [], transport: 'none', description: 'Print granary, Bun and tinyactors versions', options: [DATA, JSON_OUT] }

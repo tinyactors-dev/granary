@@ -279,7 +279,7 @@ export function startRuntime(config: Config, opts: { devMode: boolean }): Runtim
 	spawnCatchup();
 
 	// 5c. introductions (ADR 0310): check every repository's Discussions once connected.
-	const introductions = new IntroductionSetup({ wal, github, webUrl: config.githubWebUrl });
+	const introductions = new IntroductionSetup({ wal, github, webUrl: config.githubPagesUrl });
 	const checkIntroductions = () => {
 		introductions.checkAll().catch((e) => log.warn('introductions: setup check failed', e));
 	};

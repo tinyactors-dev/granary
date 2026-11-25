@@ -8,7 +8,7 @@
 import { error, redirect, type RequestHandler } from '@sveltejs/kit';
 import { OAuthCallbackQuery } from '$lib/schemas/github';
 import { check } from '$lib/schemas/standard';
-import { OAUTH_STATE_COOKIE, safeRedirectPath, setSessionCookie } from '$lib/server/auth';
+import { oauthStateCookieName, safeRedirectPath, setSessionCookie } from '$lib/server/auth';
 import { getBackend } from '$lib/server/backend';
 import { getConfig } from '$lib/server/config';
 import { log } from '$lib/server/log';
@@ -18,12 +18,12 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	const config = getConfig();
 	const query = Object.fromEntries(url.searchParams);
 	if (!check(OAuthCallbackQuery, query)) error(400, 'Missing code or state');
-	const stored = decodeOAuthState(cookies.get(OAUTH_STATE_COOKIE));
+	const stored = decodeOAuthState(cookies.get(oauthStateCookieName()));
 	if (!stored || !sameState(stored.state, query.state)) {
 		log.warn('auth: GitHub sign-in rejected, invalid or expired state', { 'auth.method': 'github', 'auth.outcome': 'invalid-state' });
 		error(400, 'Invalid or expired sign-in state; please try again');
 	}
-	cookies.delete(OAUTH_STATE_COOKIE, { path: '/auth', httpOnly: true, sameSite: 'lax', secure: url.protocol === 'https:' });
+	cookies.delete(oauthStateCookieName(), { path: '/auth', httpOnly: true, sameSite: 'lax', secure: url.protocol === 'https:' });
 
 	const origin = config.origin ?? url.origin;
 	let user;

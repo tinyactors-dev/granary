@@ -7,7 +7,7 @@
  */
 import { randomBytes } from 'node:crypto';
 import { error, redirect, type RequestHandler } from '@sveltejs/kit';
-import { OAUTH_STATE_COOKIE, safeRedirectPath } from '$lib/server/auth';
+import { oauthStateCookieName, safeRedirectPath } from '$lib/server/auth';
 import { getConfig } from '$lib/server/config';
 import { encodeOAuthState, oauthCredentials } from '$lib/server/oauth';
 
@@ -17,7 +17,7 @@ export const GET: RequestHandler = async ({ url, cookies }) => {
 	if (!creds) error(503, 'GitHub sign-in is not set up yet. An admin can sign in with a link from `granary login-link <login>`.');
 	const state = randomBytes(24).toString('base64url');
 	const target = safeRedirectPath(url.searchParams.get('redirect'));
-	cookies.set(OAUTH_STATE_COOKIE, encodeOAuthState({ state, redirect: target }), {
+	cookies.set(oauthStateCookieName(), encodeOAuthState({ state, redirect: target }), {
 		path: '/auth',
 		httpOnly: true,
 		sameSite: 'lax',

@@ -35,6 +35,10 @@
 	<!-- ADR 0312: not one of the page banners (ADR 0291) — a strip on every page, signed in or not. -->
 	<div class="bg-amber-400 px-4 py-1 text-center text-xs font-medium text-amber-950" role="note" data-testid="sandbox-strip">
 		Sandbox — GitHub here is the fake GitHub on this machine. Nothing you do reaches github.com or the real granary.
+		{#if data.sandboxLeave}
+			<!-- ADR 0315: production serves this sandbox; leaving is production's own page. -->
+			<a href={data.sandboxLeave} data-sveltekit-reload class="ml-2 font-semibold underline underline-offset-2" data-testid="sandbox-leave">Back to production</a>
+		{/if}
 	</div>
 {/if}
 <!-- top-center below the sticky header: bottom-right toasts covered form buttons (design audit) -->

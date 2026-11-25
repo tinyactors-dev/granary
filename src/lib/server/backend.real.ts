@@ -544,7 +544,7 @@ export class RealBackend implements Backend {
 	}
 
 	async introductionSetup(): Promise<IntroductionSetupStatus> {
-		const web = this.#rt.config.githubWebUrl.replace(/\/+$/, '');
+		const web = this.#rt.config.githubPagesUrl.replace(/\/+$/, '');
 		const connected = this.#rt.github.mode() === 'app';
 		return {
 			connected,
@@ -725,7 +725,7 @@ export class RealBackend implements Backend {
 		const c = this.#rt.config;
 		const tools: DevTool[] = [
 			{ id: 'ops', name: 'Ops', url: '/ops', description: 'Backups, telemetry and self-healing', group: 'granary', up: null, external: false },
-			{ id: 'fake-github', name: 'Fake GitHub', url: `${c.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: null, external: true },
+			{ id: 'fake-github', name: 'Fake GitHub', url: `${c.sandbox ? c.githubPagesUrl : c.fakeGithubUrl}/`, description: 'Open issues as anyone, faults, deliveries', group: 'fakes', up: null, external: true },
 			{ id: 'fake-infra', name: 'Fake infra', url: `${c.fakeInfraUrl}/`, description: 'Fake R2, OTLP receiver, exe.dev proxy', group: 'fakes', up: null, external: true },
 			{ id: 'loadgen', name: 'Load generator', url: '/admin/load', description: `Scenarios and personas (API ${c.loadgenUrl})`, group: 'fakes', up: null, external: false }
 		];

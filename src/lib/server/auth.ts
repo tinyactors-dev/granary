@@ -12,6 +12,7 @@
 import { error } from '@sveltejs/kit';
 import type { Cookies } from '@sveltejs/kit';
 import { getRequestEvent } from '$app/server';
+import { env } from '$env/dynamic/private';
 import type { SessionUser } from '$lib/schemas/api';
 import { SESSION_TTL_MS } from '$lib/schemas/wal';
 
@@ -59,15 +60,23 @@ export function currentUser(): SessionUser | null {
 // Session cookie (ADR 0034)
 // ---------------------------------------------------------------------------
 
-export const SESSION_COOKIE = 'granary_session';
+/**
+ * Production's own cookies. A sandbox names its cookies differently, because
+ * production serves it on production's origin (ADR 0315).
+ */
+export const PRODUCTION_COOKIES = { session: 'granary_session', oauthState: 'granary_oauth_state' } as const;
+const SANDBOX_COOKIES = { session: 'granary_sandbox_session', oauthState: 'granary_sandbox_oauth_state' } as const;
+const cookieNames = () => (env.GRANARY_SANDBOX === '1' ? SANDBOX_COOKIES : PRODUCTION_COOKIES);
+/** The session cookie of this instance. */
+export const sessionCookieName = (): string => cookieNames().session;
 /** Short-lived cookie holding the OAuth `state` between /auth/login and /auth/callback. */
-export const OAUTH_STATE_COOKIE = 'granary_oauth_state';
+export const oauthStateCookieName = (): string => cookieNames().oauthState;
 /** 30 days. */
 export const SESSION_MAX_AGE_SECONDS = SESSION_TTL_MS / 1000;
 
-/** Set `granary_session` (httpOnly, sameSite=lax, path=/, secure on https, expires at `expiresAt`). */
+/** Set the session cookie (httpOnly, sameSite=lax, path=/, secure on https, expires at `expiresAt`). */
 export function setSessionCookie(cookies: Cookies, sessionId: string, expiresAt: number, url: URL): void {
-	cookies.set(SESSION_COOKIE, sessionId, {
+	cookies.set(sessionCookieName(), sessionId, {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',
@@ -77,7 +86,7 @@ export function setSessionCookie(cookies: Cookies, sessionId: string, expiresAt:
 }
 
 export function clearSessionCookie(cookies: Cookies, url: URL): void {
-	cookies.delete(SESSION_COOKIE, {
+	cookies.delete(sessionCookieName(), {
 		path: '/',
 		httpOnly: true,
 		sameSite: 'lax',

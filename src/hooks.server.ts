@@ -3,7 +3,8 @@
  * - init: register the Backend (stub when GRANARY_STUB_BACKEND=1, else boot the real one).
  * - handle: fill locals.devMode / sessionId / user / setupState; health probes
  *   skip sessions; while setup is `needs-github`, admins land on
- *   /settings/github (ADR 0161, 0163).
+ *   /settings/github (ADR 0161, 0163); admins who entered the sandbox are
+ *   served by it (ADR 0315).
  * The actor-system agent owns this file and may extend it.
  */
 import { redirect, type Handle, type HandleServerError, type HandleValidationError, type ServerInit } from '@sveltejs/kit';
@@ -11,7 +12,8 @@ import { dev } from '$app/environment';
 import { env } from '$env/dynamic/private';
 import { loadConfig, isDevMode } from '$lib/schemas/config';
 import { hasBackend, getBackend, setBackend } from '$lib/server/backend';
-import { SESSION_COOKIE } from '$lib/server/auth';
+import { sessionCookieName } from '$lib/server/auth';
+import { SANDBOX_COOKIE, SANDBOX_LEAVE_PATH, clearSandboxCookie, forwardToSandbox, forwardsToSandbox, probeSandbox } from '$lib/server/sandbox-proxy';
 import { hasOpsBackend, setOpsBackend } from '$lib/ops/contract';
 import type { SetupState } from '$lib/schemas/admins';
 import { adminCapabilities, isAdminPath, type AdminCapabilities } from '$lib/schemas/admin';
@@ -51,6 +53,49 @@ function capabilities(devMode: boolean): AdminCapabilities {
 	}
 	capsCache = adminCapabilities({ devMode, simulation });
 	return capsCache;
+}
+
+/** Production's sandbox on this machine (ADR 0315), from configuration; computed once. */
+let sandboxUrlCache: { url: string | null } | null = null;
+function sandboxUrl(): string | null {
+	if (sandboxUrlCache) return sandboxUrlCache.url;
+	let url: string | null = null;
+	try {
+		url = loadConfig(env).sandboxUrl;
+	} catch {
+		/* invalid config fails at boot */
+	}
+	sandboxUrlCache = { url };
+	return url;
+}
+
+/**
+ * The sandbox through production (ADR 0315): a production admin who entered
+ * it (cookie) is served by the sandbox; `/__sandbox/github/*` always is.
+ * Anyone else loses the cookie and gets production.
+ */
+async function sandboxResponse(event: Parameters<Handle>[0]['event']): Promise<Response | null> {
+	const target = sandboxUrl();
+	if (!target) return null;
+	const path = event.url.pathname;
+	const entered = event.cookies.get(SANDBOX_COOKIE) === '1';
+	if (path === SANDBOX_LEAVE_PATH) {
+		clearSandboxCookie(event.cookies, event.url);
+		redirect(303, '/admin/sandbox');
+	}
+	if (!forwardsToSandbox(path, entered)) return null;
+	if (!event.locals.user?.isAdmin) {
+		if (entered) clearSandboxCookie(event.cookies, event.url);
+		return null;
+	}
+	const status = await probeSandbox(target);
+	if (status.state === 'up') return forwardToSandbox(event.request, new URL(event.request.url), status);
+	if (entered) {
+		// The sandbox went away: back to production, where Admin → Sandbox says why.
+		clearSandboxCookie(event.cookies, event.url);
+		if (event.request.method === 'GET') redirect(303, '/admin/sandbox');
+	}
+	return null;
 }
 
 /**
@@ -105,7 +150,7 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 	event.locals.user = null;
 	event.locals.setupState = 'ready';
 	if (PROBES.has(event.url.pathname)) return resolve(event);
-	const sid = event.cookies.get(SESSION_COOKIE);
+	const sid = event.cookies.get(sessionCookieName());
 	if (sid && hasBackend()) {
 		const user = await getBackend().resolveSession(sid);
 		if (user) {
@@ -113,6 +158,8 @@ const handleRequest: Handle = async ({ event, resolve }) => {
 			event.locals.user = user;
 		}
 	}
+	const sandboxed = await sandboxResponse(event);
+	if (sandboxed) return sandboxed;
 	const moved = movedTo(event.url.pathname);
 	if (moved) return new Response(null, { status: 308, headers: { location: moved + event.url.search } });
 	// The admin section (ADR 0290): admins everywhere; in development mode also

@@ -131,6 +131,11 @@ async function remoteIds(h: Harness, cookie: string, pagePath: string): Promise<
  * (`POST /_app/remote/<id>`, devalue payload, url-safe base64), as `cookie`.
  */
 export async function remoteCommand<T>(h: Harness, cookie: string, pagePath: string, name: string, arg: unknown): Promise<T> {
+	return (await remoteCall<T>(h, cookie, pagePath, name, arg)).result;
+}
+
+/** `remoteCommand`, also returning the HTTP response (e.g. for the cookies a command sets). */
+export async function remoteCall<T>(h: Harness, cookie: string, pagePath: string, name: string, arg: unknown): Promise<{ result: T; response: Response }> {
 	const devalue = await import('devalue');
 	const id = (await remoteIds(h, cookie, pagePath)).get(name);
 	if (!id) throw new Error(`remote function ${name} not found in the client chunks of ${pagePath}`);
@@ -148,7 +153,7 @@ export async function remoteCommand<T>(h: Harness, cookie: string, pagePath: str
 	});
 	const body = (await res.json()) as { type: string; data?: string; error?: unknown; status?: number };
 	if (!res.ok || body.type !== 'result') throw new Error(`${name}: ${res.status} ${JSON.stringify(body.error ?? body)}`);
-	return (body.data ? (devalue.parse(body.data) as { _: T })._ : undefined) as T;
+	return { result: (body.data ? (devalue.parse(body.data) as { _: T })._ : undefined) as T, response: res };
 }
 
 /**
